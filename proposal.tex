@@ -1,0 +1,103 @@
+\documentclass[10pt]{article}
+\usepackage[letterpaper,margin=0.7in]{geometry}
+\usepackage{booktabs}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage[T1]{fontenc}
+\usepackage[protrusion=true,expansion=false]{microtype}
+\usepackage[hidelinks]{hyperref}
+
+% Tight section spacing to fit 1.5 pages
+\titlespacing*{\section}{0pt}{3pt}{1pt}
+\titleformat{\section}{\normalfont\normalsize\bfseries}{\thesection}{0.5em}{}
+\setlist{nosep,leftmargin=1.1em}
+\setlength{\parskip}{1.5pt}
+\setlength{\parindent}{0pt}
+\pagestyle{empty}
+\linespread{0.98}
+
+\begin{document}
+
+\begin{center}
+  {\large\bfseries Label-Efficient Dark-Vessel Detection in SAR:}\\[1pt]
+  {\normalsize Does In-Domain Self-Supervision Beat Optical Transfer?}\\[2pt]
+  {\small John Roth \& Kyle Wagner \quad$\cdot$\quad EN.705.643 Deep Learning Developments with PyTorch}
+\end{center}
+
+\vspace{1pt}
+
+\section{Problem and Motivation}
+Detecting ``dark'' vessels --- ships not broadcasting AIS --- in spaceborne synthetic aperture radar (SAR) is the operationally critical, label-starved case in maritime monitoring. The xView3-SAR benchmark provides Sentinel-1 imagery for this task, but its scenes are few and its dark-vessel labels are precious and human-verified, so supervised-only training risks overfitting. Pretrained foundation backbones promise to close that gap, but it is unclear which kind transfers best to this regime: a generic optical-satellite model, a SAR-specific one, or labeled out-of-domain SAR. We measure this directly, holding the detector and its size fixed and comparing downloaded pretrained backbones, so the only variable is the initialization. We pretrain nothing ourselves --- a deliberate choice that removes pretraining compute and novel pretraining code as risks, and concentrates effort on a clean, metric-matched evaluation.
+
+\section{Research Question}
+\emph{Under one fixed-size detection harness, how much labeled xView3 data does each class of pretrained backbone save for dark-vessel detection --- and does a SAR-domain foundation model (SARMAE) deliver materially better label efficiency than a strong optical one (SatDINO) in the scarce-label regime?} \textbf{Hypothesis:} the SAR-domain foundation model yields the steepest label-efficiency gains and the largest dark-vessel-recall advantage at low budgets, with arms ordered random $<$ SatDINO $\lesssim$ supervised $<$ SARMAE at low label fractions and converging as labels grow; the optical$\rightarrow$SAR gap quantifies the value of domain-matched pretraining.
+
+\section{Approach}
+The harness is a plain ViT-B/16 backbone (\,$\sim$86M parameters) with a heatmap detection head: each vessel is a Gaussian blob on a stride-4 response map, decoded by peak-finding with distance-based non-maximum suppression. This is point-native: xView3's labels are points and its official metric matches predictions to ground truth by distance (not box IoU), so a heatmap-and-distance formulation mirrors the metric exactly and avoids synthesizing bounding boxes the data never had. \textbf{Fairness by construction:} all four study arms use the same ViT-B/16 architecture, the same head, the same fine-tuning schedule and seeds, and a single fixed input representation ([VH, VV, VH$-$VV] in dB); only the downloaded initialization differs. Both foundation-model arms (SatDINO, SARMAE) are ViT-B/16 and both fine-tune end to end, so there is no architecture or size confound between them; they do differ in self-supervised method (DINO vs.\ masked autoencoding), which we treat as a documented caveat rather than control, comparing the best released foundation model of each domain as-is. We report parameter count and GPU-hours per arm. Data is xView3 via the SARFish mirror (Sentinel-1 GRD, dual-pol VH/VV, scene-level splits); LS-SSDD-v1.0 provides the labeled SAR-ship source for the supervised-transfer arm.
+
+\begin{table}[h]
+\centering
+\small
+\renewcommand{\arraystretch}{1.05}
+\begin{tabular}{@{}clll@{}}
+\toprule
+\textbf{Arm} & \textbf{Pretraining} & \textbf{Role} \\
+\midrule
+\multicolumn{3}{@{}l}{\textit{Controlled study (plotted on the label-efficiency curve)}}\\
+1 & none (random init) & no-pretraining floor \\
+2 & SatDINO ViT-B (fMoW-RGB, optical DINO) & optical-domain transfer anchor \\
+3 & SARMAE ViT-B (SAR-1M, downloaded) & SAR-domain FM; the central comparison \\
+4 & supervised on LS-SSDD-v1.0 (we train) & labeled near-domain transfer \\
+\addlinespace
+\multicolumn{3}{@{}l}{\textit{Reported separately (not on the curve)}}\\
+5 & best FM + pooled supervised, unconstrained & leaderboard entry \\
+6 & YOLO26-COCO; LocateAnything zero-shot & external reference range \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+SatDINO (Arm 2) is an optical-satellite foundation model (DINO self-distillation on fMoW-RGB; Straka \& Gruber 2025); SARMAE (Arm 3) is a SAR foundation model --- a masked autoencoder with speckle-aware enhancement, pretrained on the million-image SAR-1M dataset (Liu et al., CVPR 2026). Both are downloaded ViT-B/16 checkpoints; we pretrain neither. Two honest caveats, stated rather than hidden. First, the two arms differ in self-supervised method (DINO vs.\ MAE) as well as domain --- no downloadable optical ViT-B MAE was available to match SARMAE's method, so we compare the strongest released model of each domain as-is. Second, each was pretrained on 3-channel inputs that are not dual-pol SAR (SatDINO on optical RGB, SARMAE on single-pol SAR mapped to three channels), so feeding both the fixed [VH, VV, VH$-$VV] tensor leaves a third channel each adapts during fine-tuning --- a bounded transfer gap shared symmetrically by the two foundation-model arms, not a confound between them. This situates the work as a controlled label-efficiency benchmark of pretrained backbones: it isolates optical-domain versus SAR-domain foundation-model transfer, specifically on dark-vessel, scarce-label detection, which to our knowledge has not been done, and it connects to the pre-training-versus-self-training question of Zoph et al. Arm 5 stacks the best foundation model with pooled supervised data and unconstrained tricks (ensembling, test-time augmentation, pseudo-labeling), reported separately as a leaderboard attempt, not part of the controlled comparison. All training uses one PyTorch Lightning code path, so seeding, mixed precision, and distributed training are identical across arms.
+
+\section{Evaluation Plan}
+We split xView3 training scenes 75/15/10 at the \emph{scene} level (no chip-level leakage); the $\sim$50 human-verified validation scenes are reserved and touched once, at final evaluation. The headline deliverable is a \textbf{label-efficiency curve}: detection F1 versus 10/25/50/100\% of real labels, one line per study arm (Figure 1). The gap above the floor at 10\% labels quantifies the value of a pretrained initialization, and the arm ordering doubles as an optical$\rightarrow$SAR transferability result (we expect SatDINO $<$ SARMAE if domain match predicts transfer). We additionally report \emph{dark-vessel recall} and \emph{close-to-shore F1}, the operationally hardest slices, where any SAR-domain advantage should concentrate.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.6\linewidth]{fig_curve.pdf}
+\caption{Hypothesized label-efficiency curves for the four study arms (illustrative). Pretraining is expected to help most when labels are scarce; the arms converge as labels grow.}
+\end{figure}
+
+\section{Timeline, Compute, and Feasibility}
+Two contributors work largely independent lanes --- one owns data and the scorer, the other the detection harness and evaluation --- with no hard dependency, since both foundation models are downloaded and there is no pretraining handoff to block on. Compute is one 8$\times$V100 (32\,GB) node plus an RTX 5070\,Ti for development. Because we pretrain nothing, the total is modest: each fine-tune is a few GPU-hours and the full $\sim$36-run grid plus the single supervised-transfer backbone comes to roughly \textbf{130 GPU-hours}, about a day on the node --- an order of magnitude below what self-pretraining a SAR model would cost, which is precisely why we download instead. The foundation-model arms run \emph{first}, because the main technical risk is the channel-format gap (whether a patch-embed pretrained on 3-channel optical or single-pol SAR accepts the [VH, VV, VH$-$VV] input); a quick load-and-train check de-risks the shared input for all arms before the grid. We will confirm each dataset and checkpoint downloads and opens before committing. As prior work just like this --- foundation models and label-efficient detection for SAR --- appears at venues such as the CVPR EarthVision and ICCV remote-sensing workshops, we will target one such workshop for submission.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Weeks} & \textbf{Milestone} \\
+\midrule
+1--2 & SARFish/LS-SSDD download, chipping, sacred scorer + harness \\
+2--4 & Run SatDINO + SARMAE (downloaded) + floor arms; channel-format check; references \\
+4--6 & Supervised arm; full label-fraction grid; seed reruns \\
+6--8 & Corpus ablation; dark-vessel and shoreline error analysis \\
+8+ & Writeup; optional unconstrained challenge entry \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section*{Key References}
+\small
+\begin{enumerate}[label={[\arabic*]}]
+\item Paolo et al. \textit{xView3-SAR: Detecting Dark Fishing Activity Using SAR Imagery}. NeurIPS 2022.
+\item He et al. \textit{Masked Autoencoders Are Scalable Vision Learners}. CVPR 2022.
+\item Straka \& Gruber. \textit{SatDINO: A Deep Dive into Self-Supervised Pretraining for Remote Sensing}. 2025 (arXiv:2508.21402).
+\item Liu et al. \textit{SARMAE: Masked Autoencoder for SAR Representation Learning}. CVPR 2026 (arXiv:2512.16635).
+\item Zhang et al. \textit{LS-SSDD-v1.0: A Large-Scale SAR Ship Detection Dataset}. 2020.
+\item Zoph et al. \textit{Rethinking Pre-training and Self-training}. NeurIPS 2020.
+\item Jocher et al. \textit{Ultralytics YOLO26}, 2026.
+\end{enumerate}
+
+\end{document}

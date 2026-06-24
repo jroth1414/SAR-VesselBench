@@ -1,0 +1,102 @@
+name: CI
+
+# Enforcement layer for the anti-drift guard tests (see DEVPLAN §1b).
+# Runs on every push and pull request. A PR cannot merge if these fail.
+# This is intentionally CPU-only and lightweight: it checks correctness
+# invariants, not model training. No GPU, no large data, no network to
+# model registries — the guard tests must run on tiny fixtures.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs on the same branch to save minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  guard-tests:
+    name: Guard tests (anti-drift invariants)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('requirements-ci.txt') }}
+
+      - name: Install CI dependencies
+        # CPU-only, minimal: enough to import the package and run the guard
+        # tests against tiny fixtures. NOT the full training environment
+        # (no CUDA-pinned torch — see locks/ for the GPU machines).
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          if [ -f requirements-ci.txt ]; then
+            pip install -r requirements-ci.txt
+          else
+            echo "::warning::requirements-ci.txt not found; installing minimal set"
+            pip install pytest numpy timm transformers
+          fi
+
+      - name: Run the four anti-drift guard tests (DEVPLAN §1b)
+        # These four must pass for any PR to merge. Each kills one silent-
+        # corruption mode: leakage, architecture divergence, wrong SSL
+        # target, scorer drift.
+        run: |
+          pytest -v \
+            tests/test_split_disjoint.py \
+            tests/test_backbone_parity.py \
+            tests/test_fm_checkpoints_load.py \
+            tests/test_scorer_immutable.py
+
+  full-suite:
+    name: Full test suite
+    runs-on: ubuntu-latest
+    # Run the rest of the tests too, but the guard job above is the one that
+    # encodes the study-validity invariants.
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('requirements-ci.txt') }}
+
+      - name: Install CI dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          if [ -f requirements-ci.txt ]; then
+            pip install -r requirements-ci.txt
+          else
+            pip install pytest numpy timm transformers
+          fi
+
+      - name: Run full test suite
+        # Do not fail the whole CI if only non-guard tests are missing early
+        # in the project; the guard job is the hard gate. Once tests exist,
+        # this runs them all.
+        run: |
+          pytest -v tests/ || {
+            echo "::error::Test suite failed. If this is the guard tests, do NOT merge.";
+            exit 1;
+          }

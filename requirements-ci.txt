@@ -1,0 +1,12 @@
+# CI-only dependencies (CPU, minimal).
+# This is deliberately NOT the training environment. The GPU machines use
+# locks/env-5070ti.txt (sm_120 nightly) and locks/env-v100node.txt (sm_70 cu12x).
+# CI only needs enough to import the package and run the four guard tests
+# against tiny in-repo fixtures — no CUDA, no large data, no model downloads.
+pytest>=8.0
+numpy>=1.26
+# CPU torch is installed in the workflow via the cpu index-url to keep it small.
+# timm is needed by test_backbone_parity; transformers is needed for SatDINO's
+# AutoModel/trust_remote_code guard path.
+timm>=1.0
+transformers>=4.51
