@@ -5,6 +5,7 @@
 # against tiny in-repo fixtures — no CUDA, no large data, no model downloads.
 pytest>=8.0
 numpy>=1.26
+scipy>=1.12
 # CPU torch is installed in the workflow via the cpu index-url to keep it small.
 # timm is needed by test_backbone_parity; transformers is needed for SatDINO's
 # AutoModel/trust_remote_code guard path.
