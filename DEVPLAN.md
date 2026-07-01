@@ -24,7 +24,7 @@ Development plan for a coding agent (Claude Code or similar). Execute phases in 
 ### Status ledger (ground truth as of this revision)
 | Phase | Sprint branch | State | Evidence | Missing to reach DONE |
 |---|---|---|---|---|
-| 0 Env/scaffold | `sprint-0-env` | **PARTIAL** | have `.github/workflows/ci.yml`, `DEVPLAN.md`, `AGENTS.md`, `proposal.*`, `requirements-ci.txt` | `pyproject.toml`, `Makefile`, `README.md`, `.gitignore`, `locks/env-*.txt`, `configs/*`, `scripts/gpu_sanity.py` |
+| 0 Env/scaffold | `sprint-0-env` | **PARTIAL** | have `.github/workflows/ci.yml`, docs, `requirements-ci.txt`, `.gitignore`, minimal `pyproject.toml` (pytest `pythonpath` only) | full `pyproject.toml` (`[build-system]`/`[project]` + `pip install -e .`), `Makefile`, `README.md`, `locks/env-*.txt`, `configs/*`, `scripts/gpu_sanity.py` |
 | 1 Data/splits | `sprint-1-data` | **NOT STARTED** | — | all `src/data/`, `data/splits.json`, `data/stats.json`, `data/lsssdd_split.json`, P1 tests |
 | 2 Scorer/decode | `sprint-2-scorer` | **DONE — scorer frozen (pin corrected)** | `5e8faf3` (PR #1) + pin fix; `scorer.py`+`decode.py`, 16/16 tests pass | open design items **BLOCKER-2/3** (threshold home; near-shore slice FP) — acting on BLOCKER-3 requires a re-pin |
 | 3 Harness | `sprint-3-harness` | NOT STARTED | — | `src/models/*`, `src/train/*`, `configs/harness.yaml` |
