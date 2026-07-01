@@ -42,12 +42,11 @@ jobs:
         # (no CUDA-pinned torch — see locks/ for the GPU machines).
         run: |
           python -m pip install --upgrade pip
-          pip install torch --index-url https://download.pytorch.org/whl/cpu
           if [ -f requirements-ci.txt ]; then
             pip install -r requirements-ci.txt
           else
             echo "::warning::requirements-ci.txt not found; installing minimal set"
-            pip install pytest numpy timm transformers
+            pip install pytest numpy torch --index-url https://download.pytorch.org/whl/cpu
           fi
 
       - name: Run the four anti-drift guard tests (DEVPLAN §1b)
@@ -84,11 +83,10 @@ jobs:
       - name: Install CI dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install torch --index-url https://download.pytorch.org/whl/cpu
           if [ -f requirements-ci.txt ]; then
             pip install -r requirements-ci.txt
           else
-            pip install pytest numpy timm transformers
+            pip install pytest numpy torch --index-url https://download.pytorch.org/whl/cpu
           fi
 
       - name: Run full test suite

@@ -20,7 +20,7 @@ A controlled label-efficiency comparison of **downloaded pretrained backbones** 
    - MAE skeleton → `facebookresearch/mae`
    - Arm-3 weights (SAR FM) → **SARMAE** (`MiliLab/SARMAE`, file `SARMAE_vitb_checkpoint-last`; Liu et al. CVPR 2026): downloaded ViT-B, encoder only, CC BY-NC. We do NOT pretrain it.
    - Backbone + any channel change → `timm` `vit_base_patch16_224`, `in_chans=` (Repeat-with-rescaling). Never hand-roll patch-embed surgery.
-   - Arm-2 weights (optical FM) → SatDINO ViT-B/16 fMoW-RGB (`strakajk/satdino-vit_base-16`, `trust_remote_code=True`; Apache-2.0). DINO, not MAE — differs from SARMAE in method as well as domain (documented caveat). SatDINO's default forward returns CLS; the harness must request all tokens and use patch tokens only.
+   - Arm-2 weights (optical FM) → SatDINO ViT-B/16 fMoW-RGB (`strakajk/satdino-vit_base-16`, `trust_remote_code=True`; Apache-2.0). DINO, not MAE — differs from SARMAE in method as well as domain (documented caveat).
    - Head/decode → CenterNet / TRANSAR (heatmap, peak + distance-NMS).
 
 2. **Pretraining is the only variable across arms 1–4.** Same ViT-B/16, same head, same optimizer/schedule/seeds, same fixed 3-channel input `[VH, VV, VH−VV]`. Never tune something per-arm. (Arm 5 / challenge is exempt and reported separately.)
@@ -39,7 +39,7 @@ A PR **cannot merge** if any of these fail. They are not optional and they encod
 
 - `test_split_disjoint` — no scene in two splits (anti-leakage).
 - `test_backbone_parity` — all four arms = identical ViT-B param count (anti-architecture-drift).
-- `test_fm_checkpoints_load` — SatDINO and SARMAE both load into ViT-B with expected keys, exercising SatDINO's `trust_remote_code` path and patch-token extraction (anti-silent-random-weights).
+- `test_fm_checkpoints_load` — SatDINO and SARMAE both load into ViT-B with expected keys, exercising SatDINO's `trust_remote_code` path (anti-silent-random-weights).
 - `test_scorer_immutable` — `scorer.py` hash matches the pinned value (anti-scorer-drift).
 
 If you believe a guard test must change, that is itself a STOP — surface it, don't edit the test to pass.
