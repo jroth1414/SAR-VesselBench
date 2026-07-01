@@ -45,6 +45,7 @@ class PredictionPoint:
     x_m: float
     y_m: float
     score: float
+    distance_from_shore_km: float | None = None
 
 
 @dataclass(frozen=True)
@@ -83,6 +84,13 @@ class ScoreResult:
     aggregate: Metrics
     slices: Mapping[str, Metrics]
     matches: Sequence[Match]
+
+
+@dataclass(frozen=True)
+class DatasetScoreResult:
+    aggregate: Metrics
+    slices: Mapping[str, Metrics]
+    scene_results: Mapping[str, ScoreResult]
 
 
 def score_points(
@@ -144,13 +152,53 @@ def score_points(
 
     slices = {
         "dark": _slice_metrics(
-            gt, matches, positive_indices, lambda point: point.is_dark
+            gt, pred, matches, positive_indices, lambda point: point.is_dark
         ),
         "near_shore": _slice_metrics(
-            gt, matches, positive_indices, lambda point: point.is_near_shore
+            gt,
+            pred,
+            matches,
+            positive_indices,
+            lambda point: point.is_near_shore,
+            prediction_predicate=_prediction_is_near_shore,
         ),
     }
     return ScoreResult(aggregate=aggregate, slices=slices, matches=tuple(matches))
+
+
+def score_dataset(
+    ground_truth_by_scene: Mapping[str, Iterable[GroundTruthPoint]],
+    predictions_by_scene: Mapping[str, Iterable[PredictionPoint]],
+    *,
+    tolerance_m: float = 200.0,
+    low_conf_ignore: bool = True,
+) -> DatasetScoreResult:
+    """Score every scene independently, then aggregate metrics.
+
+    Matching across scenes is invalid even when coordinates coincide, so callers
+    should use this wrapper for split-level metrics.
+    """
+
+    scene_ids = sorted(set(ground_truth_by_scene) | set(predictions_by_scene))
+    scene_results = {
+        scene_id: score_points(
+            ground_truth_by_scene.get(scene_id, ()),
+            predictions_by_scene.get(scene_id, ()),
+            tolerance_m=tolerance_m,
+            low_conf_ignore=low_conf_ignore,
+        )
+        for scene_id in scene_ids
+    }
+    return DatasetScoreResult(
+        aggregate=_sum_metrics(result.aggregate for result in scene_results.values()),
+        slices={
+            "dark": _sum_metrics(result.slices["dark"] for result in scene_results.values()),
+            "near_shore": _sum_metrics(
+                result.slices["near_shore"] for result in scene_results.values()
+            ),
+        },
+        scene_results=scene_results,
+    )
 
 
 def _nearest_index(
@@ -171,9 +219,12 @@ def _nearest_index(
 
 def _slice_metrics(
     ground_truth: Sequence[GroundTruthPoint],
+    predictions: Sequence[PredictionPoint],
     matches: Sequence[Match],
     positive_indices: Sequence[int],
     predicate: Callable[[GroundTruthPoint], bool],
+    *,
+    prediction_predicate: Callable[[PredictionPoint], bool] | None = None,
 ) -> Metrics:
     slice_gt = {
         gt_index for gt_index in positive_indices if predicate(ground_truth[gt_index])
@@ -185,7 +236,33 @@ def _slice_metrics(
     }
     tp = len(matched_slice_gt)
     fn = len(slice_gt - matched_slice_gt)
+    fp = (
+        sum(
+            prediction_predicate(predictions[match.prediction_index])
+            for match in matches
+            if match.outcome == "fp"
+        )
+        if prediction_predicate is not None
+        else 0
+    )
 
-    # Slice attrs live on GT. Predictions inherit slice membership only through
-    # a matched GT, so unmatched false positives are not assigned to slices here.
-    return Metrics(tp=tp, fp=0, fn=fn)
+    return Metrics(tp=tp, fp=fp, fn=fn)
+
+
+def _prediction_is_near_shore(prediction: PredictionPoint) -> bool:
+    if prediction.distance_from_shore_km is None:
+        raise ValueError(
+            "PredictionPoint.distance_from_shore_km is required for unmatched "
+            "false positives when computing the near_shore slice."
+        )
+    return prediction.distance_from_shore_km <= 2.0
+
+
+def _sum_metrics(metrics: Iterable[Metrics]) -> Metrics:
+    items = list(metrics)
+    return Metrics(
+        tp=sum(item.tp for item in items),
+        fp=sum(item.fp for item in items),
+        fn=sum(item.fn for item in items),
+        ignored_predictions=sum(item.ignored_predictions for item in items),
+    )

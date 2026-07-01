@@ -2,7 +2,7 @@
 
 Development plan for a coding agent (Claude Code or similar). Execute phases in order; each phase ends with explicit acceptance criteria. Do not start a phase until the previous phase's criteria pass, except where a phase is marked parallel-safe.
 
-**Project question (the study).** Under one fixed point-detection harness, how much labeled xView3 data does each class of *pretrained backbone* save for dark-vessel detection — does a SAR-domain foundation model beat an optical one in the scarce-label regime, and **does that finding hold across architecture families (ViT and CNN)?** The headline deliverable is a **label-efficiency curve** with two matched tracks (ViT and CNN); the optical-vs-SAR contrast and its architecture-generality are the central results.
+**Project question (the study).** Under one fixed point-detection harness, how much labeled xView3 data does each class of *pretrained backbone* save for dark-vessel detection — does a SAR-domain checkpoint beat an optical one in the scarce-label regime, and **does that finding hold across architecture families (ViT and CNN)?** The headline deliverable is a **label-efficiency curve** with two matched tracks (ViT and CNN); the optical-vs-SAR contrast and its architecture-generality are the central results.
 
 **What this is and is not.** This is a *controlled label-efficiency comparison of pretrained backbones across two architecture families*. Foundation-model backbones are downloaded; the only thing we train ourselves is a supervised-detection backbone per family (on LS-SSDD), which is cheap. This scope removes the project's two largest risks (self-pretraining a foundation model — its GPU-hours and novel code) while still answering both the domain-of-pretraining question and the architecture-generality question. The novelty is the systematic comparison — optical vs SAR pretraining, ViT vs CNN, on *dark-vessel, scarce-label* detection through a point-native harness — which to our knowledge has not been done.
 
@@ -14,11 +14,11 @@ Development plan for a coding agent (Claude Code or similar). Execute phases in 
 
 > **Purpose.** This section lets any fresh agent (or human) resume the project *from any point* using only the repo. Read it **before** AGENTS.md and before choosing a phase or a branch. **Section 1's repository layout below is the TARGET tree, not the current one** — most of it does not exist yet.
 >
-> **Update discipline.** Update the status ledger and add a `phase-N-done` git tag at every sprint merge. If the ledger looks stale, rebuild it with the *state-detection runbook* below — **the repo is ground truth; this table is a cache.**
+> **Update discipline.** Update the status ledger and add a `phase-N-done` git tag at every sprint merge. The `sprint-2b-eval-hardening` merge must be tagged `phase-2-done`; later phase merges follow the same pattern. If the ledger looks stale, rebuild it with the *state-detection runbook* below — **the repo is ground truth; this table is a cache.**
 
 ### Branch model (as actually built — this overrides the "main" phrasing elsewhere)
 - The integration / default branch is **`dev`** (GitHub `HEAD → dev`), **not `main`**; `main` currently lags `dev`. Everywhere this plan or AGENTS.md says "land on `main`" / "no direct commits to `main`," read **`dev`**: open each sprint branch off `dev` and PR back into `dev`.
-- Branches present: `dev` (active), `main` (behind `dev`), `sprint-2-scorer` (merged into `dev` via PR #1).
+- Branches present: `dev` (active), `main` (behind `dev`), `sprint-2-scorer` (merged into `dev` via PR #1), and repair branch `sprint-2b-eval-hardening` until merged.
 - CI must trigger on `dev` (see the CI-trigger fix in §1b) or it never runs on the active branch.
 
 ### Status ledger (ground truth as of this revision)
@@ -26,7 +26,7 @@ Development plan for a coding agent (Claude Code or similar). Execute phases in 
 |---|---|---|---|---|
 | 0 Env/scaffold | `sprint-0-env` | **PARTIAL** | have `.github/workflows/ci.yml`, `README.md`, docs, `requirements-ci.txt`, `.gitignore`, minimal `pyproject.toml` (pytest `pythonpath` only) | full `pyproject.toml` (`[build-system]`/`[project]` + `pip install -e .`), `Makefile`, `locks/env-*.txt`, `configs/*`, `scripts/gpu_sanity.py` |
 | 1 Data/splits | `sprint-1-data` | **NOT STARTED** | — | all `src/data/`, `data/splits.json`, `data/stats.json`, `data/lsssdd_split.json`, P1 tests |
-| 2 Scorer/decode | `sprint-2-scorer` | **DONE — scorer frozen (pin corrected)** | `5e8faf3` (PR #1) + pin fix; `scorer.py`+`decode.py`, 16/16 tests pass | open design items **BLOCKER-2/3** (threshold home; near-shore slice FP) — acting on BLOCKER-3 requires a re-pin |
+| 2 Scorer/decode/threshold | `sprint-2-scorer` + `sprint-2b-eval-hardening` | **DONE — scorer re-frozen after eval hardening** | `scorer.py` counts near-shore FPs and exposes per-scene aggregation; `threshold.py` owns dev threshold selection; `decode.py` rejects non-finite heatmaps; Phase-2 tests pass | tag the merge commit `phase-2-done` |
 | 3 Harness | `sprint-3-harness` | NOT STARTED | — | `src/models/*`, `src/train/*`, `configs/harness.yaml` |
 | 4 FM+floor arms+refs | `sprint-4/5/6` | NOT STARTED | — | — |
 | 5 Supervised+grid | `sprint-7-grid` | NOT STARTED | — | — |
@@ -35,9 +35,9 @@ Development plan for a coding agent (Claude Code or similar). Execute phases in 
 | 8 Contingent ref (opt) | `sprint-10-ref-optional` | NOT STARTED | — | — |
 
 ### Known blockers — resolve before the affected phase (do not skip)
-- **BLOCKER-1 — scorer freeze pin (RESOLVED).** The pin in `tests/test_scorer_immutable.py` was mis-recorded at birth (`570accd4…` never matched the committed `scorer.py`, `8606bb5e…`, which is byte-identical to its `5e8faf3` blob). It has been **corrected to `8606bb5e…`** under human sign-off, so the guard is now GREEN and the freeze baseline is the current `scorer.py`. ⚠️ **Caveat:** BLOCKER-3 below is a real metric issue *in this frozen scorer* — if the team acts on it, `scorer.py` changes and the pin must be re-recorded (guard change = human STOP). Still open: make the guard CWD-independent (§P2.3).
-- **BLOCKER-2 (Phase-2 design) — the dev-tuned threshold sweep has no home.** P2.1 mandates the F1-maximizing threshold sweep, but the scorer is declared frozen. Put the sweep in a *separate* non-frozen `src/eval/threshold.py`, not in `scorer.py` (see P2.1/P2.2b).
-- **BLOCKER-3 (Phase-2 design) — the near-shore slice cannot count false positives.** `_slice_metrics` hardcodes `fp=0`, so "near-shore F1" is recall mislabeled — artificially high exactly where SAR false alarms concentrate. Choose Option A (assign FP predictions to slices) or Option B (report slice *recall*) and fix **before** the freeze (§P2.1).
+- **BLOCKER-1 — scorer freeze pin (RESOLVED).** The original pin in `tests/test_scorer_immutable.py` was mis-recorded at birth; `sprint-2b-eval-hardening` intentionally re-pinned the scorer after the BLOCKER-3 metric fix. Future scorer changes require human sign-off and a new pin.
+- **BLOCKER-2 (RESOLVED).** Dev-tuned threshold selection lives in non-frozen `src/eval/threshold.py`; `scorer.py` stays pure scoring.
+- **BLOCKER-3 (RESOLVED).** Near-shore F1 now counts unmatched FP predictions with `PredictionPoint.distance_from_shore_km <= 2.0`; missing shore distance on an unmatched FP raises. Dark-vessel remains a GT-defined recall slice, not a precision/F1 slice.
 - **Expected CI color.** `test_scorer_immutable` is now GREEN (pin corrected). The three not-yet-written guards (`test_split_disjoint`, `test_backbone_parity`, `test_fm_checkpoints_load`) are *skipped* until their files exist, so the guard job is green-with-skips — not a fresh invariant violation. Cross-check any red against this ledger before treating it as a STOP.
 
 ### State-detection runbook (rebuild the ledger from the repo)
@@ -204,7 +204,7 @@ This section governs *how* the plan is executed, not what it builds. Its purpose
 
 ### Schedule (calendar)
 
-The project runs **July 1 to September 1, 2026** (about nine weeks); the final project is due **Sep 1**. All dates in phase headers below are calendar dates on this window. Because foundation models are downloaded (no self-pretraining of an FM), the schedule is gated by engineering and analysis, not training compute (~245–310 GPU-hours total, roughly two to three nights on the node). High-level mapping of phases to dates:
+The project runs **July 1 to September 1, 2026** (about nine weeks); the final project is due **Sep 1**. All dates in phase headers below are calendar dates on this window. Because foundation models are downloaded (no self-pretraining of an FM), the schedule is gated by engineering and analysis, not training compute (~293–360 GPU-hours total, roughly three to four nights on the node). High-level mapping of phases to dates:
 
 | Dates (2026) | Focus (phases) |
 |---|---|
@@ -368,9 +368,9 @@ Owner: harness owner. Jul 1–14 (parallel-safe with Phase 1).
 ### P2.1 `src/eval/scorer.py` (SACRED — pure scoring only)
 - Inputs: predictions `[(x_m, y_m, score)]` and ground truth `[(x_m, y_m, attrs)]` per scene, in meters (chip px × 10 m GSD, offset by chip origin).
 - Greedy matching: sort predictions by score desc; each matches the nearest unmatched GT within `tol_m = 200`. Matched → TP; unmatched prediction → FP; unmatched GT → FN.
-- Outputs: precision, recall, aggregate F1, plus sliced metrics on attrs: `dark` (`source == "Manual"`, no AIS correlate), `near_shore` (`distance_from_shore_km <= 2`), and a `low_conf_ignore` protocol where LOW-confidence GT neither count as FN nor award TP.
-- **BLOCKER-3 — slice false positives (resolve before the freeze).** The current `_slice_metrics` returns `fp=0`, so a slice "F1" is really recall and reads artificially high exactly where shoreline false alarms concentrate — which can flip the SAR-vs-optical near-shore result the study is trying to measure. Pick one and fix *before* `scorer.py` is finalized: **Option A** — assign unmatched-FP predictions to a slice by spatial attributes (a prediction near shore → `near_shore` FP; in a dark region → `dark` FP) so slice precision/F1 are meaningful; **Option B** — report the slice as **recall** only and rename "near-shore F1" → "near-shore recall" everywhere (P7.1, risk register, Appendices). Prefer Option A if the near-shore comparison depends on precision; Option B is the minimal honest fix.
-- **BLOCKER-2 — the threshold sweep does NOT live in the frozen scorer.** Operating-point selection moves to `src/eval/threshold.py` (P2.2b) so `scorer.py` stays pure and its hash-pin stable; `scorer.py` contains no threshold-selection code.
+- Outputs: precision, recall, aggregate F1, plus sliced metrics on attrs: `dark` (`source == "Manual"`, no AIS correlate; reported as recall), `near_shore` (`distance_from_shore_km <= 2`; reported as F1 with unmatched near-shore FPs counted), and a `low_conf_ignore` protocol where LOW-confidence GT neither count as FN nor award TP.
+- Near-shore slice FPs are assigned from prediction-side `distance_from_shore_km`; an unmatched FP prediction missing that field raises. This is the sprint-2b resolution of BLOCKER-3.
+- The threshold sweep does NOT live in the frozen scorer. Operating-point selection lives in `src/eval/threshold.py` (P2.2b), so `scorer.py` stays pure and hash-pinned.
 
 ### P2.2 `src/eval/decode.py`
 - `peaks = (heat == maxpool3x3(heat)) & (heat > tau)` → candidates with scores.
@@ -381,20 +381,20 @@ Owner: harness owner. Jul 1–14 (parallel-safe with Phase 1).
 - The operating-point logic P2.1 keeps out of the frozen scorer. Given raw scored predictions, return the **F1-maximizing threshold selected on dev**; freeze it for test/eval and apply it verbatim (no re-selection on test/eval). Consumes `scorer.py`'s `score_points()` output. `P5.4`/`P6.1` reference this module as the single home for threshold selection — no per-arm code reimplements it.
 
 ### P2.3 Tests
-- `tests/test_scorer.py`: exact hit; hit at 199 m (TP); miss at 201 m (FN+FP); two predictions on one GT (1 TP + 1 FP); score-order priority; LOW-confidence ignore behavior; dark / near-shore slice math per the BLOCKER-3 resolution (see Appendix A).
-- `tests/test_decode.py`: plateau handling, NMS suppression order, empty heatmap, and the 40 m/px unit assertion — a peak at output-pixel `(r,c)` with `output_stride_m=40.0` lands at `(40r, 40c)` m, pinning the decode↔scorer coupling before the freeze.
+- `tests/test_scorer.py`: exact hit; hit at 199 m (TP); miss at 201 m (FN+FP); two predictions on one GT (1 TP + 1 FP); score-order priority; LOW-confidence ignore behavior; dark recall; near-shore slice FPs; per-scene dataset aggregation so coordinates cannot match across scenes.
+- `tests/test_decode.py`: plateau handling, NMS suppression order, empty heatmap, non-finite heatmap rejection, and the 40 m/px unit assertion — a peak at output-pixel `(r,c)` with `output_stride_m=40.0` lands at `(40r, 40c)` m, pinning the decode↔scorer coupling before the freeze.
 - `tests/test_threshold.py`: the dev-selected threshold is applied unchanged to a held-out set (assert no re-selection on test).
-- `tests/test_scorer_immutable.py`: make the guard **CWD-independent** — `scorer_path = Path(__file__).resolve().parents[1] / "src" / "eval" / "scorer.py"` (the current CWD-relative `Path("src/eval/scorer.py")` raises `FileNotFoundError` when pytest runs from `tests/`).
+- `tests/test_scorer_immutable.py`: CWD-independent guard path and pinned scorer hash after sprint-2b eval hardening.
 
 **Scorer freeze protocol (who / when / how — this is BLOCKER-1's resolution).**
-1. **Resolve BLOCKER-2 and BLOCKER-3 first** so `scorer.py` is in final form (pure scoring; slice-FP decision made).
+1. **Resolve BLOCKER-2 and BLOCKER-3 first** so `scorer.py` is in final form (pure scoring; near-shore slice-FP decision made).
 2. The **harness owner** records the pinned sha256 in the **final commit before the `sprint-2` merge** — `python -c "import hashlib;print(hashlib.sha256(open('src/eval/scorer.py','rb').read()).hexdigest())"` — noting the merge SHA beside the pin.
 3. From that commit the scorer is frozen (ground rule 1, do-not-touch manifest). A hash **mismatch on a fresh clone is a STOP** to surface, never a silent re-pin.
-4. **Current state:** the pin has been **corrected** to `8606bb5e…` (the committed `scorer.py`, byte-identical to its `5e8faf3` blob) — the original `570accd4…` was mis-recorded, not scorer drift — so the guard passes and the freeze is established on the current `scorer.py`. If BLOCKER-3 (near-shore slice FP) is acted on, `scorer.py` changes and the pin must be re-recorded per steps 1–3 (human STOP).
+4. **Current state:** the pin has been intentionally re-recorded to `85dec7ab…` after sprint-2b eval hardening fixed near-shore slice FPs and added per-scene aggregation. A future hash mismatch is a STOP.
 
 **Entry preconditions:** `sprint-0-env` merged (package installable). Phase 2 is *parallel-safe* with Phase 1 (touches no data artifacts).
 
-**Definition of Done — machine-checkable:** `pytest tests/test_scorer.py tests/test_decode.py tests/test_threshold.py tests/test_scorer_immutable.py` exits 0 (the immutable guard now passes — pin corrected). Scorer reproduces a synthetic scene's known P/R exactly. Tag `phase-2-done` on merge.
+**Definition of Done — machine-checkable:** `pytest tests/test_scorer.py tests/test_decode.py tests/test_threshold.py tests/test_scorer_immutable.py` exits 0. Scorer reproduces a synthetic scene's known P/R exactly, counts near-shore FPs, and refuses cross-scene matching via `score_dataset()`. Tag `phase-2-done` on merge.
 
 ## 5. Phase 3 — Models and the shared fine-tune harness
 
@@ -485,19 +485,19 @@ Owner: harness owner. Jul 29–Aug 11. This runs the only two backbone trainings
 
 - **P5.1** `src/train/pretrain_supervised.py`: pretrain a backbone + heatmap head on **LS-SSDD-v1.0 only**, centroids as targets (P1.4), same loss/sampler/aug as the fine-tune harness. Run it **twice** — once with the ViT-B backbone (→ `vit_supervised`, Arm 4) and once with the ConvNeXt-V2-B backbone (→ `cnn_supervised`, Arm 8). Same single matched source keeps each supervised arm's contrast clean within its track. ~10–30 GPU-h each; these are the only backbones we train.
 - **P5.2** Arm 4 (`vit_supervised`) and Arm 8 (`cnn_supervised`) fine-tuned at all four label fractions — 8 runs. (Arms 1,2,3,5,6,7 already ran in Phase 4; this completes the eight-arm grid.)
-- **P5.3** Seed reruns: the 25% and 100% cells of **all eight** study arms with 2 extra seeds — 32 runs — so the headline cells carry error bars. One config per card per night; ~4–5 nights across the 8-GPU node.
+- **P5.3** Seed reruns: the 10%, 25%, and 100% cells of **all eight** study arms with 2 extra seeds — 48 runs — so the scarce-label headline and high-label endpoints carry error bars. One config per card per night; ~6 nights across the 8-GPU node.
 - **P5.4** Per run: freeze the dev-tuned threshold, score the test split, append to `runs/summary/grid.csv` via `curves.py`; render the two-track label-efficiency figure (x = label fraction, log-scale; y = test F1; eight curves — solid for ViT, dashed for CNN, one color per pretraining role; shaded seed bands).
 - **P5.5** Headline computations: (a) *within-track* — arm ordering at 10% labels for each track (optical vs SAR vs supervised vs floor); (b) *cross-track* — for each pretraining role, the ViT-vs-CNN gap at each fraction (does the SAR-domain advantage hold for both architectures?); (c) the interpolated label budget at which each arm matches the SAR-FM arm @25% within its track.
 
-**Acceptance:** `grid.csv` has 32 core (8 arms × 4 fractions) + 32 seed rows, no NaNs; the eight-curve two-track figure renders; a `monotonicity_ok` boolean per arm (F1 non-decreasing in label fraction, within seed noise) is emitted into `grid.csv` and must be **true** for every arm — a false value is a STOP (§1b rule 3), not a soft "investigate."
+**Acceptance:** `grid.csv` has 32 core (8 arms × 4 fractions) + 48 seed rows, no NaNs, plus per-fraction scene/vessel/dark-proxy/near-shore counts; the eight-curve two-track figure renders; a `monotonicity_ok` boolean per arm (F1 non-decreasing in label fraction, within seed noise) is emitted into `grid.csv` and must be **true** for every arm — a false value is a STOP (§1b rule 3), not a soft "investigate."
 
 **Entry preconditions (Phase 5):** Phase 4 arms landed; `data/lsssdd_split.json` frozen; `src/eval/threshold.py` exists (P2.2b).
 
-**Definition of Done — machine-checkable (Phase 5):** `test -f runs/summary/grid.csv` and a check that `grid.csv` has 64 rows, zero NaNs, and `monotonicity_ok == true` for all arms, exits 0; the eight-curve figure renders. Tag `phase-5-done`.
+**Definition of Done — machine-checkable (Phase 5):** `test -f runs/summary/grid.csv` and a check that `grid.csv` has 80 rows, zero NaNs, per-fraction count columns populated, and `monotonicity_ok == true` for all arms, exits 0; the eight-curve figure renders. Tag `phase-5-done`.
 
 ## 8. Phase 6 — Final eval
 
-- **P6.1** FINAL EVAL (once): best config per study arm at 100% (and the 25% cells) scored on the verified scenes via `final_eval.py --i-am-sure`. These are the study's headline numbers; nothing is tuned after this.
+- **P6.1** FINAL EVAL (once): best config per study arm at 10%, 25%, and 100% scored on the verified scenes via `final_eval.py --i-am-sure`. These are the study's headline numbers; nothing is tuned after this.
 
 **Entry preconditions (Phase 6):** Phase 5 complete (`grid.csv` full, monotonicity green); dev-tuned thresholds frozen (P2.2b/P5.4); the verified-scene lockfile does **not** yet exist (this eval runs exactly once).
 
@@ -551,13 +551,13 @@ Owner: either. Aug 26–Sep 1, **only if the eight core arms have landed and tim
 
 Study grid — `exp = {init}-f{frac}-s{seed}`, init ∈ ViT {`vitrand`,`satdino`,`sarmae`,`vitsup`} + CNN {`cnnrand`,`beS2`,`beS1`,`cnnsup`}:
 - Core (8 arms × 4 fractions, seed 0): 32 runs — e.g. `satdino-f25-s0`, `beS1-f10-s0`.
-- Seed reruns (`-f25-` and `-f100-`, seeds 1–2, all 8 arms): 32 runs.
+- Seed reruns (`-f10-`, `-f25-`, and `-f100-`, seeds 1–2, all 8 arms): 48 runs.
 
 References: `yolo26-f100`, `locateanything-zs`.
 Backbone trainings we run (not fine-tunes): `vitsup-lsssdd`, `cnnsup-lsssdd` (the two supervised-transfer backbones).
 Contingent reference (optional): `imgnetcnn-f{10,25,50,100}-s0` — only if core arms finish early.
 
-Total = 64 study fine-tunes (32 core + 32 seed) + 2 reference runs + 2 supervised-transfer backbones + up to 4 optional contingent-reference fine-tunes. **No foundation-model pretraining** — all four FMs downloaded. Each fine-tune fits one V100 overnight; the 8-GPU node clears the whole grid in a few nights.
+Total = 80 study fine-tunes (32 core + 48 seed) + 2 reference runs + 2 supervised-transfer backbones + up to 4 optional contingent-reference fine-tunes. **No foundation-model pretraining** — all four FMs downloaded. Each fine-tune fits one V100 overnight; the 8-GPU node clears the whole grid in several nights.
 
 ### GPU-hour estimates (planning, not measured)
 
@@ -566,15 +566,15 @@ Order-of-magnitude only. Assumes 8×V100, 512px crops; ConvNeXt-V2-B ≈ ViT-B c
 | Component | Runs | ~GPU-h each | ~GPU-h total |
 |---|---|---|---|
 | Core grid (8 arms × 4 fractions) | 32 | 3 | ~96 |
-| Seed reruns (25% + 100% cells, 8 arms) | 32 | 3 | ~96 |
+| Seed reruns (10% + 25% + 100% cells, 8 arms) | 48 | 3 | ~144 |
 | Supervised-transfer backbones (LS-SSDD: ViT + CNN) | 2 | 10–30 | 20–60 |
 | YOLO26 reference | 1 | 5–15 | ~10 |
 | LocateAnything zero-shot (5070 Ti) | 1 | 1–2 | ~2 |
 | SatDINO/SARMAE/BigEarthNet weights | — | 0 (downloaded) | 0 |
-| **Core total** | | | **~245–310** |
+| **Core total** | | | **~293–360** |
 | Contingent ImageNet-ConvNeXt reference (if run) | 4 | 3 | ~24 |
 
-Controlled eight-arm study ≈ **~245–310 GPU-hours**. The point estimate is ~245 (roughly two days on the 8×V100 node), but the honest high end is ~3 nights once the supervised-backbone spread (2 × 10–30 h = 20–60) and the acknowledged 1.2–1.5× CNN-cell penalty on the ~96 GPU-h CNN half are carried through rather than "treated as noise." Size the schedule's release-valve logic to the **high end**. Still an order of magnitude below a from-scratch-pretraining design (~1,200–2,200 GPU-h); the FM downloads keep it cheap, and the only training we run is the two small supervised-transfer backbones. Adding the contingent reference brings it to ~270–335. Note earlier project drafts quoted ~130 GPU-h for a four-arm ViT-only study; doubling to two tracks roughly doubles it.
+Controlled eight-arm study ≈ **~293–360 GPU-hours** after adding 10% seed reruns for the scarce-label headline. The point estimate is just over 290 GPU-hours, but the honest high end is ~4 nights once the supervised-backbone spread (2 × 10–30 h = 20–60) and the acknowledged 1.2–1.5× CNN-cell penalty are carried through rather than "treated as noise." Size the schedule's release-valve logic to the **high end**. Still well below a from-scratch-pretraining design (~1,200–2,200 GPU-h); the FM downloads keep it cheap, and the only training we run is the two small supervised-transfer backbones. Adding the contingent reference brings it to ~317–384. Note earlier project drafts quoted ~130 GPU-h for a four-arm ViT-only study; doubling to two tracks plus 10% seeds roughly doubles it again.
 
 ## 13. Risk register
 

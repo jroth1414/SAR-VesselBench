@@ -9,8 +9,8 @@ name: CI
 # Expected color on a fresh clone (see the DEVPLAN cold-start runbook):
 #   - The three not-yet-written guards are SKIPPED (each runs only if its file
 #     exists), so the guard job is green-with-skips early in the project.
-#   - test_scorer_immutable is RED until BLOCKER-1 (scorer re-freeze) is
-#     resolved. This is expected and documented — not a fresh violation.
+#   - test_scorer_immutable is GREEN after sprint-2b's intentional scorer
+#     re-freeze; any future red is a STOP.
 
 on:
   push:
@@ -104,8 +104,7 @@ jobs:
 
       - name: Run full test suite
         # Do not fail the whole CI on missing non-guard tests early in the
-        # project; the guard job is the hard gate. Note: test_scorer_immutable
-        # is expected RED until BLOCKER-1 (scorer re-freeze) is resolved.
+        # project; the guard job above is the hard gate for frozen artifacts.
         run: |
           pytest -v tests/ || {
             echo "::error::Test suite failed. If this is the guard tests, do NOT merge.";

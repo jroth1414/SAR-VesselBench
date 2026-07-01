@@ -74,3 +74,12 @@ def test_decode_applies_output_stride_before_nms():
 def test_decode_rejects_non_2d_heatmaps():
     with pytest.raises(ValueError, match="2D"):
         decode_heatmap(np.zeros((1, 2, 3)), threshold=0.5)
+
+
+@pytest.mark.parametrize("bad_value", [np.nan, np.inf, -np.inf])
+def test_decode_rejects_non_finite_heatmaps(bad_value):
+    heatmap = np.zeros((4, 4), dtype=float)
+    heatmap[1, 1] = bad_value
+
+    with pytest.raises(ValueError, match="finite"):
+        decode_heatmap(heatmap, threshold=0.5)
