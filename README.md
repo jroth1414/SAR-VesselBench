@@ -26,7 +26,7 @@ We hold the detector, its head, its training schedule, and its input fixed, and 
 downloaded **initialization** (within a track) and the **architecture family** (across tracks):
 
 > *Under one fixed point-detection harness, how much labeled xView3 data does each class of pretrained
-> backbone save for dark-vessel detection; does a SAR-domain foundation model beat an optical one in the
+> backbone save for dark-vessel detection; does a SAR-domain checkpoint beat an optical one in the
 > scarce-label regime; and does that finding hold across two architecture families (ViT and CNN)?*
 
 **Hypothesis:** within each architecture, SAR-domain pretraining gives the steepest label-efficiency
@@ -72,7 +72,7 @@ the invariants that keep the arms comparable (see §6).
 
 **Headline deliverable:** a **two-track label-efficiency curve** — detection F1 vs. 10 / 25 / 50 / 100%
 of real labels, eight lines (solid ViT, dashed CNN; one color per pretraining role) — plus the hardest
-slices: **dark-vessel recall** and **near-shore** performance, where any SAR advantage should concentrate.
+slices: **dark-vessel recall** and **near-shore F1**, where any SAR advantage should concentrate.
 
 ---
 
@@ -119,7 +119,8 @@ adapts to this input via the standard `timm` `in_chans` path.
 
 **Labels / dark-vessel proxy:** detection positives are `is_vessel` with confidence ∈ {HIGH, MEDIUM};
 LOW-confidence labels become ignore regions; a vessel is treated as **"dark"** when `source == "Manual"`
-(no AIS correlate). Scoring is a distance-matched greedy F1 (200 m tolerance) with dark / near-shore slices.
+(no AIS correlate). Scoring is a per-scene distance-matched greedy F1 (200 m tolerance) with
+dark-vessel recall and near-shore F1 slices.
 
 ---
 
@@ -128,8 +129,9 @@ LOW-confidence labels become ignore regions; a vessel is treated as **"dark"** w
 This is a **plan-driven** research repo: [`DEVPLAN.md`](DEVPLAN.md) is the source of truth and most of the
 pipeline is still to be built. Current state (see the DEVPLAN cold-start runbook for the live ledger):
 
-- ✅ **Phase 2 (scorer + decode)** — `src/eval/scorer.py` (frozen, distance-matched F1 + slices) and
-  `src/eval/decode.py` (peak-finding + distance-NMS), with tests.
+- ✅ **Phase 2 (scorer + decode + thresholds)** — `src/eval/scorer.py` (frozen, per-scene
+  distance-matched F1 + slices), `src/eval/decode.py` (peak-finding + distance-NMS), and
+  `src/eval/threshold.py` (dev-selected operating point), with tests.
 - 🟡 **Phase 0 (env/scaffold)** — partial: CI, docs, `.gitignore`, and a minimal `pyproject.toml` exist;
   `Makefile`, `README.md` (this file), the two GPU lockfiles, `configs/`, and `scripts/gpu_sanity.py` are
   still to come.
@@ -141,7 +143,7 @@ JHU-xView3/
   AGENTS.md           # non-negotiables for any coding agent
   proposal.tex/.pdf   # 1.5-page course proposal
   requirements-ci.txt # minimal CPU deps for CI guard tests
-  src/eval/           # scorer.py (frozen), decode.py  ← built
+  src/eval/           # scorer.py (frozen), decode.py, threshold.py  ← built
   tests/              # scorer / decode / guard tests
   .github/workflows/  # CI: anti-drift guard tests
   # planned: src/{data,models,train,references,analysis}, configs/, locks/, Makefile, data/, runs/
@@ -173,7 +175,7 @@ Guards run only once their target files exist, so a fresh clone is green-with-sk
 ones. The real training environment is **not** CI — see `locks/` (to be created) and DEVPLAN Appendix C for
 the two GPU machines (an 8×V100 node, Volta/sm_70, fp16-only; and an RTX 5070 Ti, Blackwell/sm_120).
 
-**Compute budget:** ~245–310 GPU-hours total (foundation models are downloaded, so there is no
+**Compute budget:** ~293–360 GPU-hours total (foundation models are downloaded, so there is no
 from-scratch pretraining) — roughly two to three nights on the 8×V100 node.
 
 ---

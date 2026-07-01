@@ -27,7 +27,7 @@ A controlled label-efficiency comparison of **downloaded pretrained backbones** 
 
 2. **Initialization is the only variable *within* a track; architecture is the only variable *across* matched roles.** Within each track (ViT arms 1–4, CNN arms 5–8): same backbone, head, optimizer/schedule/seeds, same fixed 3-channel input `[VH, VV, VH−VV]`. The head/optimizer/schedule are shared across both tracks too — only the backbone (and its head adapter) differs. Never tune something per-arm. (There is no challenge arm.)
 
-3. **The scorer is sacred.** `src/eval/scorer.py` is written first (sprint-2), then frozen. Never modify it after it's locked. Every reported number flows through it.
+3. **The scorer is sacred.** `src/eval/scorer.py` was written in sprint-2 and intentionally re-frozen in `sprint-2b-eval-hardening` after the near-shore FP fix. Never modify it after that lock without a human STOP and re-pin. Every reported number flows through it.
 
 4. **Scene-level splits only.** No `scene_id` may appear in more than one split. No dev/test/eval scene may appear in any training or pretraining corpus. The ~50 human-verified scenes are touched exactly once, at final eval.
 
@@ -42,7 +42,7 @@ A PR **cannot merge** if any of these fail (once its target file exists). They a
 - `test_split_disjoint` — no scene in two splits (anti-leakage).
 - `test_backbone_parity` — within each track all four arms share an identical param count (ViT-B/16 for arms 1–4, ConvNeXt-V2-B for arms 5–8), **and** both tracks' adapters emit the same stride-4 / 128×128 / C output (anti-architecture-drift + anti-adapter-geometry-drift).
 - `test_fm_checkpoints_load` — all four downloaded backbones load **value-sensitively** (not just by key name): SatDINO + SARMAE (ViT-B; SatDINO via `trust_remote_code`) and BigEarthNet-S1 + BigEarthNet-S2 (ConvNeXt-V2-B, via `configilm`/reBEN). Asserts loaded encoder tensors differ from a fresh random init (anti-silent-random-weights). CI runs the CPU-offline structural half; the value-sensitive load runs on the GPU boxes.
-- `test_scorer_immutable` — `scorer.py` hash matches the pinned value (anti-scorer-drift). *(Pin corrected — the original was mis-recorded at birth; see BLOCKER-1 in the DEVPLAN cold-start runbook.)*
+- `test_scorer_immutable` — `scorer.py` hash matches the sprint-2b pinned value (anti-scorer-drift). *(The scorer was intentionally re-pinned after the near-shore FP fix; see the DEVPLAN cold-start runbook.)*
 
 If you believe a guard test must change, that is itself a STOP — surface it, don't edit the test to pass.
 

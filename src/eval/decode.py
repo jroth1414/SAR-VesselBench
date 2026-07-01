@@ -29,6 +29,7 @@ def decode_heatmap(
     array = np.asarray(heatmap, dtype=float)
     if array.ndim != 2:
         raise ValueError(f"heatmap must be 2D, got shape {array.shape}")
+    _validate_finite(array)
 
     peaks = find_peaks(array, threshold=threshold)
     candidates = [
@@ -48,6 +49,7 @@ def find_peaks(heatmap: np.ndarray, *, threshold: float) -> list[DecodedPoint]:
     array = np.asarray(heatmap, dtype=float)
     if array.ndim != 2:
         raise ValueError(f"heatmap must be 2D, got shape {array.shape}")
+    _validate_finite(array)
     if array.size == 0:
         return []
 
@@ -140,3 +142,8 @@ def _neighbors8(
             n_col = col + d_col
             if 0 <= n_row < shape[0] and 0 <= n_col < shape[1]:
                 yield n_row, n_col
+
+
+def _validate_finite(array: np.ndarray) -> None:
+    if not np.isfinite(array).all():
+        raise ValueError("heatmap must contain only finite values")
