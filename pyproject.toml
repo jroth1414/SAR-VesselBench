@@ -1,0 +1,8 @@
+# Minimal project config. sprint-0-env (Phase 0) will extend this with
+# [build-system] / [project] metadata + base deps so `pip install -e .` works
+# (DEVPLAN P0.1). For now it guarantees `from src.…` imports resolve under a
+# bare `pytest` run — in CI and locally — instead of relying on pytest's
+# accidental sys.path insertion (the C5 / P0.1 fix).
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
