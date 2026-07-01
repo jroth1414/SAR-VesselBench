@@ -42,7 +42,7 @@ A PR **cannot merge** if any of these fail (once its target file exists). They a
 - `test_split_disjoint` — no scene in two splits (anti-leakage).
 - `test_backbone_parity` — within each track all four arms share an identical param count (ViT-B/16 for arms 1–4, ConvNeXt-V2-B for arms 5–8), **and** both tracks' adapters emit the same stride-4 / 128×128 / C output (anti-architecture-drift + anti-adapter-geometry-drift).
 - `test_fm_checkpoints_load` — all four downloaded backbones load **value-sensitively** (not just by key name): SatDINO + SARMAE (ViT-B; SatDINO via `trust_remote_code`) and BigEarthNet-S1 + BigEarthNet-S2 (ConvNeXt-V2-B, via `configilm`/reBEN). Asserts loaded encoder tensors differ from a fresh random init (anti-silent-random-weights). CI runs the CPU-offline structural half; the value-sensitive load runs on the GPU boxes.
-- `test_scorer_immutable` — `scorer.py` hash matches the pinned value (anti-scorer-drift). *(Currently RED — the pin was mis-recorded at birth; see BLOCKER-1 in the DEVPLAN cold-start runbook.)*
+- `test_scorer_immutable` — `scorer.py` hash matches the pinned value (anti-scorer-drift). *(Pin corrected — the original was mis-recorded at birth; see BLOCKER-1 in the DEVPLAN cold-start runbook.)*
 
 If you believe a guard test must change, that is itself a STOP — surface it, don't edit the test to pass.
 

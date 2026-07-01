@@ -26,7 +26,7 @@ Development plan for a coding agent (Claude Code or similar). Execute phases in 
 |---|---|---|---|---|
 | 0 Env/scaffold | `sprint-0-env` | **PARTIAL** | have `.github/workflows/ci.yml`, `DEVPLAN.md`, `AGENTS.md`, `proposal.*`, `requirements-ci.txt` | `pyproject.toml`, `Makefile`, `README.md`, `.gitignore`, `locks/env-*.txt`, `configs/*`, `scripts/gpu_sanity.py` |
 | 1 Data/splits | `sprint-1-data` | **NOT STARTED** | — | all `src/data/`, `data/splits.json`, `data/stats.json`, `data/lsssdd_split.json`, P1 tests |
-| 2 Scorer/decode | `sprint-2-scorer` | **DONE (functional) — FREEZE INVALID** | `5e8faf3` (PR #1); `scorer.py`+`decode.py`+3 tests, 15/16 pass | scorer freeze not validly established → **BLOCKER-1**; design gaps **BLOCKER-2/3** |
+| 2 Scorer/decode | `sprint-2-scorer` | **DONE — scorer frozen (pin corrected)** | `5e8faf3` (PR #1) + pin fix; `scorer.py`+`decode.py`, 16/16 tests pass | open design items **BLOCKER-2/3** (threshold home; near-shore slice FP) — acting on BLOCKER-3 requires a re-pin |
 | 3 Harness | `sprint-3-harness` | NOT STARTED | — | `src/models/*`, `src/train/*`, `configs/harness.yaml` |
 | 4 FM+floor arms+refs | `sprint-4/5/6` | NOT STARTED | — | — |
 | 5 Supervised+grid | `sprint-7-grid` | NOT STARTED | — | — |
@@ -35,10 +35,10 @@ Development plan for a coding agent (Claude Code or similar). Execute phases in 
 | 8 Contingent ref (opt) | `sprint-10-ref-optional` | NOT STARTED | — | — |
 
 ### Known blockers — resolve before the affected phase (do not skip)
-- **BLOCKER-1 — the scorer freeze is not valid.** `tests/test_scorer_immutable.py` pins `570accd4…` but the committed `src/eval/scorer.py` hashes to `8606bb5e…` (unchanged since `5e8faf3`; the pin was wrong at birth, not scorer drift). The sacred guard is therefore RED. **Resolution is a Phase-2 task, not a silent re-pin:** resolve BLOCKER-2/3 first, then re-establish the freeze on the final `scorer.py` and update the pin under explicit human sign-off (the sanctioned "guard change = human STOP," §1b). Also make the guard CWD-independent (§P2.3).
+- **BLOCKER-1 — scorer freeze pin (RESOLVED).** The pin in `tests/test_scorer_immutable.py` was mis-recorded at birth (`570accd4…` never matched the committed `scorer.py`, `8606bb5e…`, which is byte-identical to its `5e8faf3` blob). It has been **corrected to `8606bb5e…`** under human sign-off, so the guard is now GREEN and the freeze baseline is the current `scorer.py`. ⚠️ **Caveat:** BLOCKER-3 below is a real metric issue *in this frozen scorer* — if the team acts on it, `scorer.py` changes and the pin must be re-recorded (guard change = human STOP). Still open: make the guard CWD-independent (§P2.3).
 - **BLOCKER-2 (Phase-2 design) — the dev-tuned threshold sweep has no home.** P2.1 mandates the F1-maximizing threshold sweep, but the scorer is declared frozen. Put the sweep in a *separate* non-frozen `src/eval/threshold.py`, not in `scorer.py` (see P2.1/P2.2b).
 - **BLOCKER-3 (Phase-2 design) — the near-shore slice cannot count false positives.** `_slice_metrics` hardcodes `fp=0`, so "near-shore F1" is recall mislabeled — artificially high exactly where SAR false alarms concentrate. Choose Option A (assign FP predictions to slices) or Option B (report slice *recall*) and fix **before** the freeze (§P2.1).
-- **Expected CI color.** Until the three unwritten guard tests exist, CI's guard job is *green-with-skips* by design (see §1b CI note); `test_scorer_immutable` is **RED until BLOCKER-1 is resolved**. Read red here as *expected-pending-resolution*, cross-checked against this ledger — **not** a fresh invariant violation.
+- **Expected CI color.** `test_scorer_immutable` is now GREEN (pin corrected). The three not-yet-written guards (`test_split_disjoint`, `test_backbone_parity`, `test_fm_checkpoints_load`) are *skipped* until their files exist, so the guard job is green-with-skips — not a fresh invariant violation. Cross-check any red against this ledger before treating it as a STOP.
 
 ### State-detection runbook (rebuild the ledger from the repo)
 Run from the repo root; the repo, not this table, is ground truth:
@@ -296,7 +296,7 @@ A sprint cannot merge with a failing guard test. If a guard test must legitimate
 
 These tests are enforced by **GitHub Actions CI** (`.github/workflows/ci.yml`), which runs them on every push and PR — so enforcement does not depend on any agent or human remembering to run them. CI is CPU-only and uses a minimal `requirements-ci.txt` (not the GPU training environment); guard tests must therefore run against tiny in-repo fixtures. A companion **`AGENTS.md`** at the repo root gives any coding agent the short list of non-negotiables (this section is the detail behind it); AGENTS.md is the instruction layer, CI is the enforcement layer, and this DEVPLAN is the single source of truth.
 
-**CI trigger & expected color (cold-start).** `ci.yml` must trigger on **`dev`** (the active branch), not only `main`, or it never runs where work happens. The guard job runs each of the four guard files **only if present**, so on a fresh clone it is **green-with-skips** for the three not-yet-written guards (`test_split_disjoint`, `test_backbone_parity`, `test_fm_checkpoints_load`). `test_scorer_immutable` exists and is currently **RED** pending BLOCKER-1 (scorer re-freeze); this is *expected*, is recorded in the cold-start ledger, and must not be read as a fresh invariant violation. Once a guard's target file exists it becomes a hard, merge-blocking gate. CI installs `scipy` (imported by `decode.py`) and needs no model downloads (it runs only guard half (a), the structural checkpoint check).
+**CI trigger & expected color (cold-start).** `ci.yml` must trigger on **`dev`** (the active branch), not only `main`, or it never runs where work happens. The guard job runs each of the four guard files **only if present**, so on a fresh clone it is **green-with-skips** for the three not-yet-written guards (`test_split_disjoint`, `test_backbone_parity`, `test_fm_checkpoints_load`). `test_scorer_immutable` exists and is **GREEN** (its pin was corrected — see BLOCKER-1 in the cold-start ledger). Once a guard's target file exists it becomes a hard, merge-blocking gate. CI installs `scipy` (imported by `decode.py`) and needs no model downloads (it runs only guard half (a), the structural checkpoint check).
 
 ## 2. Phase 0 — Environment and smoke checks
 
@@ -390,11 +390,11 @@ Owner: harness owner. Jul 1–14 (parallel-safe with Phase 1).
 1. **Resolve BLOCKER-2 and BLOCKER-3 first** so `scorer.py` is in final form (pure scoring; slice-FP decision made).
 2. The **harness owner** records the pinned sha256 in the **final commit before the `sprint-2` merge** — `python -c "import hashlib;print(hashlib.sha256(open('src/eval/scorer.py','rb').read()).hexdigest())"` — noting the merge SHA beside the pin.
 3. From that commit the scorer is frozen (ground rule 1, do-not-touch manifest). A hash **mismatch on a fresh clone is a STOP** to surface, never a silent re-pin.
-4. **Current state:** the committed `scorer.py` (`8606bb5e…`) does not match the recorded pin (`570accd4…`) — the pin was wrong at creation (`5e8faf3`), not scorer drift. Do the freeze on the *final* `scorer.py` per steps 1–3 before any downstream eval runs.
+4. **Current state:** the pin has been **corrected** to `8606bb5e…` (the committed `scorer.py`, byte-identical to its `5e8faf3` blob) — the original `570accd4…` was mis-recorded, not scorer drift — so the guard passes and the freeze is established on the current `scorer.py`. If BLOCKER-3 (near-shore slice FP) is acted on, `scorer.py` changes and the pin must be re-recorded per steps 1–3 (human STOP).
 
 **Entry preconditions:** `sprint-0-env` merged (package installable). Phase 2 is *parallel-safe* with Phase 1 (touches no data artifacts).
 
-**Definition of Done — machine-checkable:** `pytest tests/test_scorer.py tests/test_decode.py tests/test_threshold.py tests/test_scorer_immutable.py` exits 0 (the immutable guard passes only once BLOCKER-1's re-freeze is done). Scorer reproduces a synthetic scene's known P/R exactly. Tag `phase-2-done` on merge.
+**Definition of Done — machine-checkable:** `pytest tests/test_scorer.py tests/test_decode.py tests/test_threshold.py tests/test_scorer_immutable.py` exits 0 (the immutable guard now passes — pin corrected). Scorer reproduces a synthetic scene's known P/R exactly. Tag `phase-2-done` on merge.
 
 ## 5. Phase 3 — Models and the shared fine-tune harness
 
