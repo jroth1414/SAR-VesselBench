@@ -1,16 +1,22 @@
 name: CI
 
 # Enforcement layer for the anti-drift guard tests (see DEVPLAN §1b).
-# Runs on every push and pull request. A PR cannot merge if these fail.
-# This is intentionally CPU-only and lightweight: it checks correctness
-# invariants, not model training. No GPU, no large data, no network to
-# model registries — the guard tests must run on tiny fixtures.
+# Runs on every push and PR to the active branches. A PR cannot merge if these
+# fail (once a guard's target file exists). Intentionally CPU-only and
+# lightweight: it checks correctness invariants, not model training — no GPU,
+# no large data, no model downloads; the guard tests run on tiny fixtures.
+#
+# Expected color on a fresh clone (see the DEVPLAN cold-start runbook):
+#   - The three not-yet-written guards are SKIPPED (each runs only if its file
+#     exists), so the guard job is green-with-skips early in the project.
+#   - test_scorer_immutable is RED until BLOCKER-1 (scorer re-freeze) is
+#     resolved. This is expected and documented — not a fresh violation.
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
-    branches: [main]
+    branches: [main, dev]
 
 # Cancel superseded runs on the same branch to save minutes.
 concurrency:
@@ -38,27 +44,37 @@ jobs:
 
       - name: Install CI dependencies
         # CPU-only, minimal: enough to import the package and run the guard
-        # tests against tiny fixtures. NOT the full training environment
-        # (no CUDA-pinned torch — see locks/ for the GPU machines).
+        # tests against tiny fixtures. NOT the full training environment (no
+        # CUDA-pinned torch — see locks/ for the GPU machines). Install a small
+        # CPU torch wheel EXPLICITLY, before requirements-ci.txt, so timm does
+        # not pull the large default (CUDA) wheel transitively.
         run: |
           python -m pip install --upgrade pip
-          if [ -f requirements-ci.txt ]; then
-            pip install -r requirements-ci.txt
-          else
-            echo "::warning::requirements-ci.txt not found; installing minimal set"
-            pip install pytest numpy torch --index-url https://download.pytorch.org/whl/cpu
-          fi
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements-ci.txt
 
-      - name: Run the four anti-drift guard tests (DEVPLAN §1b)
-        # These four must pass for any PR to merge. Each kills one silent-
-        # corruption mode: leakage, architecture divergence, wrong SSL
-        # target, scorer drift.
+      - name: Run the anti-drift guard tests (DEVPLAN §1b)
+        # Each guard kills one silent-corruption mode: leakage, architecture
+        # drift, wrong/partial checkpoint load, scorer drift. A guard runs only
+        # if its file exists yet, so a fresh clone is green-with-skips for the
+        # not-yet-written guards (see the cold-start runbook).
         run: |
-          pytest -v \
-            tests/test_split_disjoint.py \
-            tests/test_backbone_parity.py \
-            tests/test_fm_checkpoints_load.py \
-            tests/test_scorer_immutable.py
+          ran=0
+          for f in tests/test_split_disjoint.py \
+                   tests/test_backbone_parity.py \
+                   tests/test_fm_checkpoints_load.py \
+                   tests/test_scorer_immutable.py; do
+            if [ -f "$f" ]; then
+              echo "== running $f =="
+              pytest -v "$f"
+              ran=1
+            else
+              echo "::notice::$f not present yet — skipped (expected early in the project)"
+            fi
+          done
+          if [ "$ran" = "0" ]; then
+            echo "::warning::no guard test files present yet"
+          fi
 
   full-suite:
     name: Full test suite
@@ -83,16 +99,13 @@ jobs:
       - name: Install CI dependencies
         run: |
           python -m pip install --upgrade pip
-          if [ -f requirements-ci.txt ]; then
-            pip install -r requirements-ci.txt
-          else
-            pip install pytest numpy torch --index-url https://download.pytorch.org/whl/cpu
-          fi
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements-ci.txt
 
       - name: Run full test suite
-        # Do not fail the whole CI if only non-guard tests are missing early
-        # in the project; the guard job is the hard gate. Once tests exist,
-        # this runs them all.
+        # Do not fail the whole CI on missing non-guard tests early in the
+        # project; the guard job is the hard gate. Note: test_scorer_immutable
+        # is expected RED until BLOCKER-1 (scorer re-freeze) is resolved.
         run: |
           pytest -v tests/ || {
             echo "::error::Test suite failed. If this is the guard tests, do NOT merge.";

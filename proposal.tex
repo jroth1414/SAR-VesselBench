@@ -22,7 +22,7 @@
 
 \begin{center}
   {\large\bfseries Label-Efficient Dark-Vessel Detection in SAR:}\\[1pt]
-  {\normalsize Does In-Domain Self-Supervision Beat Optical Transfer?}\\[2pt]
+  {\normalsize Does SAR-Domain Pretraining Beat Optical --- and Does It Hold Across ViT and CNN?}\\[2pt]
   {\small John Roth \& Kyle Wagner \quad$\cdot$\quad EN.705.643 Deep Learning Developments with PyTorch}
 \end{center}
 
@@ -76,7 +76,7 @@ We split xView3 training scenes 75/15/10 at the \emph{scene} level (no chip-leve
 \end{figure}
 
 \section{Timeline, Compute, and Feasibility}
-The project runs from July 1 to the September 1 deadline, about nine weeks. Two contributors work largely independent lanes (data/scorer; harness/evaluation) with no hard dependency, since the foundation models are downloaded and there is no pretraining handoff to block on. Compute is one 8$\times$V100 (32\,GB) node plus an RTX 5070\,Ti for development. Because we pretrain no foundation model, the total stays modest: each fine-tune is a few GPU-hours and the full eight-arm grid (both tracks, with seed reruns) plus the two small LS-SSDD supervised backbones comes to roughly \textbf{245 GPU-hours}, about two days on the node. The downloaded-backbone arms run \emph{first}, since the main technical risk is the channel-format gap (whether each pretrained stem accepts the [VH, VV, VH$-$VV] input); a quick load-and-train check de-risks the shared input per architecture before the full grid, and we confirm every dataset and checkpoint opens before committing. Given the focus on SAR foundation models and label-efficient detection, we will target a remote-sensing workshop such as CVPR EarthVision or ICCV.
+The project runs from July 1 to the September 1 deadline, about nine weeks. Two contributors work largely independent lanes (data/scorer; harness/evaluation) with no hard dependency, since the foundation models are downloaded and there is no pretraining handoff to block on. Compute is one 8$\times$V100 (32\,GB) node plus an RTX 5070\,Ti for development. Because we pretrain no foundation model, the total stays modest: each fine-tune is a few GPU-hours and the full eight-arm grid (both tracks, with seed reruns) plus the two small LS-SSDD supervised backbones comes to roughly \textbf{245--310 GPU-hours}, about two to three nights on the node. The downloaded-backbone arms run \emph{first}, since the main technical risk is the channel-format gap (whether each pretrained stem accepts the [VH, VV, VH$-$VV] input); a quick load-and-train check de-risks the shared input per architecture before the full grid, and we confirm every dataset and checkpoint opens before committing. Given the focus on SAR foundation models and label-efficient detection, we will target a remote-sensing workshop such as CVPR EarthVision or ICCV.
 
 \begin{table}[h]
 \centering
