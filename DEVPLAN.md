@@ -2,9 +2,9 @@
 
 Development plan for a coding agent (Claude Code or similar). Execute phases in order; each phase ends with explicit acceptance criteria. Do not start a phase until the previous phase's criteria pass, except where a phase is marked parallel-safe.
 
-**Project question (the study).** Under one fixed point-detection harness, how much labeled xView3 data does each class of *pretrained backbone* save for dark-vessel detection — does a SAR-domain checkpoint beat an optical one in the scarce-label regime, and **does that finding hold across architecture families (ViT and CNN)?** The headline deliverable is a **label-efficiency curve** with two matched tracks (ViT and CNN); the optical-vs-SAR contrast and its architecture-generality are the central results.
+**Project question (the study).** Under one fixed point detector, how much labeled xView3 data does each class of *pretrained backbone* save for dark-vessel detection — does a SAR-domain checkpoint beat an optical one in the scarce-label regime, and **does that finding hold across architecture families (ViT and CNN)?** The headline deliverable is a **label-efficiency curve** with two matched tracks (ViT and CNN); the optical-vs-SAR contrast and its architecture-generality are the central results.
 
-**What this is and is not.** This is a *controlled label-efficiency comparison of pretrained backbones across two architecture families*. Foundation-model backbones are downloaded; the only thing we train ourselves is a supervised-detection backbone per family (on LS-SSDD), which is cheap. This scope removes the project's two largest risks (self-pretraining a foundation model — its GPU-hours and novel code) while still answering both the domain-of-pretraining question and the architecture-generality question. The novelty is the systematic comparison — optical vs SAR pretraining, ViT vs CNN, on *dark-vessel, scarce-label* detection through a point-native harness — which to our knowledge has not been done.
+**What this is and is not.** This is a *controlled label-efficiency comparison of pretrained backbones across two architecture families*. Foundation-model backbones are downloaded; the only thing we train ourselves is a supervised-detection backbone per family (on LS-SSDD), which is cheap. This scope removes the project's two largest risks (self-pretraining a foundation model — its GPU-hours and novel code) while still answering both the domain-of-pretraining question and the architecture-generality question. The novelty is the systematic comparison — optical vs SAR pretraining, ViT vs CNN, on *dark-vessel, scarce-label* detection through a point-native detector — which to our knowledge has not been done.
 
 **Design principle: architecture-matched fairness.** The study has **two tracks — a ViT track (ViT-B/16, ~86M) and a CNN track (ConvNeXt-V2-Base, ~89M, size-matched).** Within each track, all four arms share the *same* backbone architecture, detection head, fine-tuning schedule, and seeds; only the downloaded initialization differs. Across tracks, the two backbones are deliberately size-matched (~86M vs ~89M) so ViT-vs-CNN is a fair architecture comparison. Every claim about pretraining is made *within* a track (architecture held fixed); every architecture-generality claim is made by comparing *matched roles across* tracks (pretraining role held fixed). We report parameter count and GPU-hours per arm.
 
@@ -27,7 +27,7 @@ Development plan for a coding agent (Claude Code or similar). Execute phases in 
 | 0 Env/scaffold | `sprint-0-env` | **PARTIAL** | have `.github/workflows/ci.yml`, `README.md`, docs, `requirements-ci.txt`, `.gitignore`, minimal `pyproject.toml` (pytest `pythonpath` only) | full `pyproject.toml` (`[build-system]`/`[project]` + `pip install -e .`), `Makefile`, `locks/env-*.txt`, `configs/*`, `scripts/gpu_sanity.py` |
 | 1 Data/splits | `sprint-1-data` | **NOT STARTED** | — | all `src/data/`, `data/splits.json`, `data/stats.json`, `data/lsssdd_split.json`, P1 tests |
 | 2 Scorer/decode/threshold | `sprint-2-scorer` + `sprint-2b-eval-hardening` | **DONE — scorer re-frozen after eval hardening** | `scorer.py` counts near-shore FPs and exposes per-scene aggregation; `threshold.py` owns dev threshold selection; `decode.py` rejects non-finite heatmaps; Phase-2 tests pass | tag the merge commit `phase-2-done` |
-| 3 Harness | `sprint-3-harness` | NOT STARTED | — | `src/models/*`, `src/train/*`, `configs/harness.yaml` |
+| 3 Detector | `sprint-3-detector` | NOT STARTED | — | `src/models/*`, `src/train/*`, `configs/detector.yaml` |
 | 4 FM+floor arms+refs | `sprint-4/5/6` | NOT STARTED | — | — |
 | 5 Supervised+grid | `sprint-7-grid` | NOT STARTED | — | — |
 | 6 Final eval | `sprint-8-final-eval` | NOT STARTED | — | — |
@@ -49,14 +49,14 @@ ls src/data src/models src/train configs locks 2>/dev/null # which phases are sc
 python -m pytest --collect-only -q                         # which tests exist / import cleanly
 python -c "import hashlib;print(hashlib.sha256(open('src/eval/scorer.py','rb').read()).hexdigest())"  # vs the pin
 ```
-Map: `src/data/` + `data/splits.json` present ⇒ Phase 1 underway/done; `configs/harness.yaml` present ⇒ Phase 3 underway; a `phase-N-done` tag ⇒ that phase merged.
+Map: `src/data/` + `data/splits.json` present ⇒ Phase 1 underway/done; `configs/detector.yaml` present ⇒ Phase 3 underway; a `phase-N-done` tag ⇒ that phase merged.
 
 ### Per-phase gates
 Each phase header below carries an **Entry preconditions** block (artifacts/tests that must already exist) and a **Definition of Done — machine-checkable** command whose exit code *is* the gate. Subjective "eyeball" checks are listed separately as **Human review (non-blocking for an unattended agent)** so a cold agent is never forced to wait on a human that is not there.
 
 ## The arms
 
-The experiment is a set of **downloaded (or, for the two supervised arms, cheaply-trained) backbone initializations** fed through one fixed detection harness, in two architecture-matched tracks. The initialization is the only variable *within* each track; the architecture is the only variable *across* matched roles.
+The experiment is a set of **downloaded (or, for the two supervised arms, cheaply-trained) backbone initializations** fed through one fixed detector, in two architecture-matched tracks. The initialization is the only variable *within* each track; the architecture is the only variable *across* matched roles.
 
 | Arm | Track | Backbone | Initialization | On curve? | Role |
 |-----|-------|----------|----------------|-----------|------|
@@ -119,7 +119,7 @@ JHU-xView3/
   Makefile                    # one target per phase entrypoint
   configs/
     data.yaml                 # paths, chip size, split fractions, seed
-    harness.yaml              # SHARED: head, optimizer, aug, decode (never edited per study-arm)
+    detector.yaml              # SHARED: head, optimizer, aug, decode (never edited per study-arm)
     arms.yaml                 # the run matrix (Section 13)
   data/                       # gitignored; symlink to large storage
     raw/
@@ -208,7 +208,7 @@ The project runs **July 1 to September 1, 2026** (about nine weeks); the final p
 
 | Dates (2026) | Focus (phases) |
 |---|---|
-| Jul 1–14 | Data pipeline + sacred scorer + harness (Phases 0–3, parallel lanes) |
+| Jul 1–14 | Data pipeline + sacred scorer + detector (Phases 0–3, parallel lanes) |
 | Jul 15–28 | Both tracks' FM + floor arms (ViT: SatDINO, SARMAE; CNN: BigEarthNet S1/S2); channel-format check; references (Phase 4) |
 | Jul 29–Aug 11 | Supervised-transfer arms (ViT+CNN on LS-SSDD) + full label-fraction grid + seed reruns (Phase 5) |
 | Aug 12–25 | Final verified-scene eval + ViT-vs-CNN error analysis; begin writeup (Phases 6–7) |
@@ -234,7 +234,7 @@ Each sprint branch carries a short `SPRINT.md` stating its goal, its acceptance 
 | `sprint-0-env` | Phase 0 | Leaf | tooling only; can't corrupt results |
 | `sprint-1-data` | Phase 1 | **Foundation** | a leaky split silently poisons every run |
 | `sprint-2-scorer` | Phase 2 | **Foundation** | defines correctness for every reported number |
-| `sprint-3-harness` | Phase 3 | Spine | the harness *is* the fairness guarantee |
+| `sprint-3-detector` | Phase 3 | Spine | the detector *is* the fairness guarantee |
 | `sprint-4-vit-arms` | Phase 4 (Arms 2,3) | Spine | ViT FM arms (SatDINO, SARMAE) + channel-format check |
 | `sprint-5-cnn-arms` | Phase 4 (Arms 6,7) | Spine | CNN backbone integration + BigEarthNet S1/S2 arms |
 | `sprint-6-floor-refs` | Phase 4 (rest) | Leaf | both floors (1,5) + external refs (R2,R3); off the controlled curves |
@@ -253,8 +253,8 @@ Each sprint branch carries a short `SPRINT.md` stating its goal, its acceptance 
 
 Sub-agents are safe only on **independent** work; they drift badly when they share hidden state. Match distribution to the two-owner lane split, not to "one agent per sprint":
 
-- **Parallelizable lanes:** the data pipeline (`sprint-1`) and the scorer (`sprint-2`) are independent and can run as parallel sub-agents from day one. The **external** reference models — R2/R3 only (`yolo26_ref.py`, `locateanything_zs.py`, in `sprint-6`) — are independent of the study spine and may run as a parallel sub-agent. (There is **no pretraining lane** — all four FMs are downloaded — which removes the project's old long-pole background job. The two LS-SSDD supervised-transfer backbones for Arms 4/8 are trained inside `sprint-7-grid` under the serial harness owner, **not** as a parallel lane.)
-- **Must be serial — one owner:** every sprint that touches the shared harness (`sprint-3-harness → sprint-4-vit-arms → sprint-5-cnn-arms → sprint-6-floor-refs`) modifies the same `lit_modules.py`/`finetune.py`. In particular `sprint-5-cnn-arms` is Spine-tier CNN backbone/harness integration (see the sprint table) — it is on this serial chain and must **not** be run as an independent parallel sub-agent. The floor arms (1, 5) also live in `sprint-6` but run *through* the shared harness; only the external R2/R3 references are the parallel exception. Do **not** parallelize the harness sprints across sub-agents — they would each edit the shared code and silently diverge, reintroducing the per-arm inconsistency the fairness design exists to prevent. One agent owns the harness; arms run through it sequentially.
+- **Parallelizable lanes:** the data pipeline (`sprint-1`) and the scorer (`sprint-2`) are independent and can run as parallel sub-agents from day one. The **external** reference models — R2/R3 only (`yolo26_ref.py`, `locateanything_zs.py`, in `sprint-6`) — are independent of the study spine and may run as a parallel sub-agent. (There is **no pretraining lane** — all four FMs are downloaded — which removes the project's old long-pole background job. The two LS-SSDD supervised-transfer backbones for Arms 4/8 are trained inside `sprint-7-grid` under the serial detector owner, **not** as a parallel lane.)
+- **Must be serial — one owner:** every sprint that touches the shared detector (`sprint-3-detector → sprint-4-vit-arms → sprint-5-cnn-arms → sprint-6-floor-refs`) modifies the same `lit_modules.py`/`finetune.py`. In particular `sprint-5-cnn-arms` is Spine-tier CNN backbone/detector integration (see the sprint table) — it is on this serial chain and must **not** be run as an independent parallel sub-agent. The floor arms (1, 5) also live in `sprint-6` but run *through* the shared detector; only the external R2/R3 references are the parallel exception. Do **not** parallelize the detector sprints across sub-agents — they would each edit the shared code and silently diverge, reintroducing the per-arm inconsistency the fairness design exists to prevent. One agent owns the detector; arms run through it sequentially.
 - Do not subdivide finer than these lanes; coordination overhead and shared-state drift outgrow the speedup.
 
 ### Mandatory STOP conditions (halt and ask a human — not optional)
@@ -278,10 +278,10 @@ Once merged, these are locked; modifying them requires an explicit human decisio
 - `data/splits.json` — frozen after `sprint-1`; scene-level membership never changes mid-study.
 - `data/stats.json` — frozen after `sprint-1`; train-split-only per-polarization mean/std, computed ONCE over the 100%-train scene set and reused unchanged for every label fraction, both tracks, and all seeds (see P1.5).
 - `data/lsssdd_split.json` — frozen after `sprint-1`; the LS-SSDD internal train/val partition consumed identically by the Arm-4 (ViT) and Arm-8 (CNN) supervised pretrainings (see P1.5).
-- `configs/harness.yaml` — the shared head/optimizer/schedule, frozen after `sprint-3`; this is the fairness contract.
+- `configs/detector.yaml` — the shared head/optimizer/schedule, frozen after `sprint-3`; this is the fairness contract.
 - The verified-scene eval protocol / its lockfile — touched exactly once (ground rule 4).
 
-Each frozen artifact should carry a machine-checkable freeze guard analogous to `test_scorer_immutable` (a pinned sha256 activated at its sprint merge): `test_splits_immutable` (`data/splits.json`, sprint-1), `test_harness_immutable` (`configs/harness.yaml`, sprint-3). This gives "Phase 1 done" / "Phase 3 done" the same binary, cold-agent-checkable signal the scorer freeze has.
+Each frozen artifact should carry a machine-checkable freeze guard analogous to `test_scorer_immutable` (a pinned sha256 activated at its sprint merge): `test_splits_immutable` (`data/splits.json`, sprint-1), `test_detector_immutable` (`configs/detector.yaml`, sprint-3). This gives "Phase 1 done" / "Phase 3 done" the same binary, cold-agent-checkable signal the scorer freeze has.
 
 ### Guard tests (machine-enforced, wired to pre-merge CI)
 
@@ -344,7 +344,7 @@ Fetch and register, each into `data/raw/<name>/`:
 - Manifest: one parquet per scene/source — chip path, scene_id, origin row/col, n_vessels, has_low_conf, land_frac.
 
 ### P1.4 Centroid conversion — `src/data/to_centroids.py`
-- The harness trains on **center points**, so every labeled supervised source is reduced to centroids. Box → center; rotated box → center; instance mask → centroid. This is the move that lets LS-SSDD feed the same heatmap head (for both the ViT Arm 4 and CNN Arm 8 supervised backbones) with no box-format harmonization.
+- The detector trains on **center points**, so every labeled supervised source is reduced to centroids. Box → center; rotated box → center; instance mask → centroid. This is the move that lets LS-SSDD feed the same heatmap head (for both the ViT Arm 4 and CNN Arm 8 supervised backbones) with no box-format harmonization.
 - Intensity normalization of LS-SSDD to the common dB range used study-wide.
 - `tests/test_centroids.py`: box/rbox/mask → expected center within 1 px.
 
@@ -363,7 +363,7 @@ Fetch and register, each into `data/raw/<name>/`:
 
 ## 4. Phase 2 — Scorer and decode (before any model code)
 
-Owner: harness owner. Jul 1–14 (parallel-safe with Phase 1).
+Owner: detector owner. Jul 1–14 (parallel-safe with Phase 1).
 
 ### P2.1 `src/eval/scorer.py` (SACRED — pure scoring only)
 - Inputs: predictions `[(x_m, y_m, score)]` and ground truth `[(x_m, y_m, attrs)]` per scene, in meters (chip px × 10 m GSD, offset by chip origin).
@@ -375,7 +375,7 @@ Owner: harness owner. Jul 1–14 (parallel-safe with Phase 1).
 ### P2.2 `src/eval/decode.py`
 - `peaks = (heat == maxpool3x3(heat)) & (heat > tau)` → candidates with scores.
 - Distance NMS at `d_nms_m = 120` (config): sort by score, suppress candidates within `d_nms` of a kept one. Use `scipy.spatial.cKDTree` so whole-scene decode stays fast.
-- **Heatmap-px → meters unit contract (owned by `infer_scene.py`, machine-checked).** The head output is stride-4 (P3.3) and GSD is 10 m, so one output pixel = `4 × 10 = 40 m`. Callers must pass `decode_heatmap(..., output_stride_m = 40.0)` and then add the chip-origin offset before handing points to the scorer; the `output_stride_m=1.0` default in `decode.py` is **for unit tests only**. `src/eval/infer_scene.py` is the single site performing `heatmap-px → chip-px (×4) → meters (×10) → scene-meters (+origin)`. Put `decode_stride_px: 4`, `gsd_m: 10`, `output_stride_m: 40` in `configs/harness.yaml`. A caller left at the `1.0` default feeds the scorer coordinates 40× too small — inside the 200 m tolerance and 120 m NMS radius — producing plausibly-high but meaningless F1 with no error.
+- **Heatmap-px → meters unit contract (owned by `infer_scene.py`, machine-checked).** The head output is stride-4 (P3.3) and GSD is 10 m, so one output pixel = `4 × 10 = 40 m`. Callers must pass `decode_heatmap(..., output_stride_m = 40.0)` and then add the chip-origin offset before handing points to the scorer; the `output_stride_m=1.0` default in `decode.py` is **for unit tests only**. `src/eval/infer_scene.py` is the single site performing `heatmap-px → chip-px (×4) → meters (×10) → scene-meters (+origin)`. Put `decode_stride_px: 4`, `gsd_m: 10`, `output_stride_m: 40` in `configs/detector.yaml`. A caller left at the `1.0` default feeds the scorer coordinates 40× too small — inside the 200 m tolerance and 120 m NMS radius — producing plausibly-high but meaningless F1 with no error.
 
 ### P2.2b `src/eval/threshold.py` (NOT frozen)
 - The operating-point logic P2.1 keeps out of the frozen scorer. Given raw scored predictions, return the **F1-maximizing threshold selected on dev**; freeze it for test/eval and apply it verbatim (no re-selection on test/eval). Consumes `scorer.py`'s `score_points()` output. `P5.4`/`P6.1` reference this module as the single home for threshold selection — no per-arm code reimplements it.
@@ -388,7 +388,7 @@ Owner: harness owner. Jul 1–14 (parallel-safe with Phase 1).
 
 **Scorer freeze protocol (who / when / how — this is BLOCKER-1's resolution).**
 1. **Resolve BLOCKER-2 and BLOCKER-3 first** so `scorer.py` is in final form (pure scoring; near-shore slice-FP decision made).
-2. The **harness owner** records the pinned sha256 in the **final commit before the `sprint-2` merge** — `python -c "import hashlib;print(hashlib.sha256(open('src/eval/scorer.py','rb').read()).hexdigest())"` — noting the merge SHA beside the pin.
+2. The **detector owner** records the pinned sha256 in the **final commit before the `sprint-2` merge** — `python -c "import hashlib;print(hashlib.sha256(open('src/eval/scorer.py','rb').read()).hexdigest())"` — noting the merge SHA beside the pin.
 3. From that commit the scorer is frozen (ground rule 1, do-not-touch manifest). A hash **mismatch on a fresh clone is a STOP** to surface, never a silent re-pin.
 4. **Current state:** the pin has been intentionally re-recorded to `85dec7ab…` after sprint-2b eval hardening fixed near-shore slice FPs and added per-scene aggregation. A future hash mismatch is a STOP.
 
@@ -396,15 +396,15 @@ Owner: harness owner. Jul 1–14 (parallel-safe with Phase 1).
 
 **Definition of Done — machine-checkable:** `pytest tests/test_scorer.py tests/test_decode.py tests/test_threshold.py tests/test_scorer_immutable.py` exits 0. Scorer reproduces a synthetic scene's known P/R exactly, counts near-shore FPs, and refuses cross-scene matching via `score_dataset()`. Tag `phase-2-done` on merge.
 
-## 5. Phase 3 — Models and the shared fine-tune harness
+## 5. Phase 3 — Models and the shared fine-tune pipeline
 
-Owner: harness owner. Jul 8–21. Dev card: 5070 Ti. This harness is frozen once Phase 4 begins (ground rule 1–2). It must support **two backbone families** (ViT-B/16 and ConvNeXt-V2-Base) behind one head and one training loop.
+Owner: detector owner. Jul 8–21. Dev card: 5070 Ti. This detector is frozen once Phase 4 begins (ground rule 1–2). It must support **two backbone families** (ViT-B/16 and ConvNeXt-V2-Base) behind one head and one training loop.
 
 ### P3.1 `src/models/backbones.py`
 - **ViT arm backbone:** ViT-B/16 via timm (`vit_base_patch16_224`, `in_chans=3` on the fixed [VH,VV,VH−VV] input), learnable pos-embed interpolated to 512×512 inputs (32×32 tokens), final norm kept. SatDINO and SARMAE are both this architecture.
 - **CNN arm backbone:** ConvNeXt-V2-Base via timm (`convnextv2_base`, `in_chans=3` on the same input). Use `features_only=True` or take the stage-3 feature map; ConvNeXt-V2-B at 512 input gives a stride-32 feature map (16×16, 1024-dim). BigEarthNet arms are this architecture.
 - Both expose a uniform `(feature_map, channels, stride)` interface to the head adapter. ViT: reshape the stride-16 token grid to (B, 768, 32, 32). ConvNeXt: the stride-32 (B, 1024, 16, 16) stage-3 map.
-- Smaller-variant fallback (ViT-S/16 for the ViT track, ConvNeXt-Tiny for the CNN track) documented in `harness.yaml`; the trigger is **STOP condition #6** (a step's measured compute exceeds ~2× its budget, §1b) and the "Backbone too slow on the node" risk-register row — **not** a "P6 throughput check" (P6 is the once-only Final Eval; never run throughput probing against it). If invoked, drop the whole track to the smaller variant uniformly, preserving within-track parity.
+- Smaller-variant fallback (ViT-S/16 for the ViT track, ConvNeXt-Tiny for the CNN track) documented in `detector.yaml`; the trigger is **STOP condition #6** (a step's measured compute exceeds ~2× its budget, §1b) and the "Backbone too slow on the node" risk-register row — **not** a "P6 throughput check" (P6 is the once-only Final Eval; never run throughput probing against it). If invoked, drop the whole track to the smaller variant uniformly, preserving within-track parity.
 
 ### P3.2 `src/models/init_loaders.py`
 Eight loaders behind one enum, four per track. Each prints matched/missing/unexpected key counts after loading. **Within a track all four produce the identical backbone; only the weights differ.**
@@ -451,13 +451,13 @@ The four downloaded backbones all fine-tune normally, so there is no frozen-feat
 
 **Entry preconditions (Phase 3):** `sprint-1-data` and `sprint-2-scorer` merged to `dev`; `data/splits.json`, `data/stats.json`, `data/lsssdd_split.json` exist; `test_split_disjoint` and `test_scorer_immutable` green (scorer freeze valid — BLOCKER-1 resolved).
 
-**Definition of Done — machine-checkable (Phase 3):** `pytest tests/test_backbone_parity.py tests/test_fm_checkpoints_load.py && test -f configs/harness.yaml && python -m src.train.finetune --init vit_random --label_frac 0.1 --epochs 3 --smoke` exits 0. On merge, pin `configs/harness.yaml` via `test_harness_immutable` and tag `phase-3-done`.
+**Definition of Done — machine-checkable (Phase 3):** `pytest tests/test_backbone_parity.py tests/test_fm_checkpoints_load.py && test -f configs/detector.yaml && python -m src.train.finetune --init vit_random --label_frac 0.1 --epochs 3 --smoke` exits 0. On merge, pin `configs/detector.yaml` via `test_detector_immutable` and tag `phase-3-done`.
 
 **Human review (non-blocking):** the P3.5 smoke overlays (`runs/qa/pred_gallery.png`) look sane.
 
 ## 6. Phase 4 — Both tracks' foundation-model + floor arms, and references
 
-Owner: harness owner. Jul 15–28. One config per V100 per night. **No FM pretraining in this project** (all FMs downloaded), so the old "long pole" is gone; this phase plus the grid is the bulk of the compute, and it is cheap.
+Owner: detector owner. Jul 15–28. One config per V100 per night. **No FM pretraining in this project** (all FMs downloaded), so the old "long pole" is gone; this phase plus the grid is the bulk of the compute, and it is cheap.
 
 **Ordering rationale.** Run the four downloaded-backbone arms (2,3,6,7) early, because the highest-risk unknown is the **channel-format gap** per track: whether the fixed [VH,VV,VH−VV] tensor loads cleanly into each pretrained stem. The P3.6 check catches a catastrophic mismatch before the full grid, once per architecture. Since the channel representation is study-wide, validating it on the FM arms de-risks the shared input for every arm. The two floors (1,5) and references need no special handling and run alongside.
 
@@ -475,15 +475,15 @@ Owner: harness owner. Jul 15–28. One config per V100 per night. **No FM pretra
 
 **Acceptance:** 24 study runs (arms 1,2,3,5,6,7 × 4 fractions) + 2 reference runs have `final_metrics.json`; a partial two-track label-efficiency plot (6 curves) renders from `curves.py`; the channel representation is confirmed working on real SAR for *both* backbone families via the four FM arms.
 
-**Entry preconditions (Phase 4):** `sprint-3-harness` merged (`configs/harness.yaml` frozen); each downloaded backbone's `data/weights/<name>/LICENSE.note` written (P3.2); the P3.6 channel-format check recorded per track in `runs/decisions.md`.
+**Entry preconditions (Phase 4):** `sprint-3-detector` merged (`configs/detector.yaml` frozen); each downloaded backbone's `data/weights/<name>/LICENSE.note` written (P3.2); the P3.6 channel-format check recorded per track in `runs/decisions.md`.
 
 **Definition of Done — machine-checkable (Phase 4):** a `runs/<exp_id>/final_metrics.json` exists for arms 1,2,3,5,6,7 × 4 fractions + `yolo26-f100` + `locateanything-zs` (or R3 explicitly skipped per its droppable note); `curves.py` renders the partial figure without error. Tag `phase-4-done`.
 
 ## 7. Phase 5 — Supervised-transfer arms (4, 8) + the label-efficiency grid
 
-Owner: harness owner. Jul 29–Aug 11. This runs the only two backbone trainings in the project (the ViT and CNN supervised-transfer backbones on LS-SSDD); everything else is downloaded.
+Owner: detector owner. Jul 29–Aug 11. This runs the only two backbone trainings in the project (the ViT and CNN supervised-transfer backbones on LS-SSDD); everything else is downloaded.
 
-- **P5.1** `src/train/pretrain_supervised.py`: pretrain a backbone + heatmap head on **LS-SSDD-v1.0 only**, centroids as targets (P1.4), same loss/sampler/aug as the fine-tune harness. Run it **twice** — once with the ViT-B backbone (→ `vit_supervised`, Arm 4) and once with the ConvNeXt-V2-B backbone (→ `cnn_supervised`, Arm 8). Same single matched source keeps each supervised arm's contrast clean within its track. ~10–30 GPU-h each; these are the only backbones we train.
+- **P5.1** `src/train/pretrain_supervised.py`: pretrain a backbone + heatmap head on **LS-SSDD-v1.0 only**, centroids as targets (P1.4), same loss/sampler/aug as the fine-tune pipeline. Run it **twice** — once with the ViT-B backbone (→ `vit_supervised`, Arm 4) and once with the ConvNeXt-V2-B backbone (→ `cnn_supervised`, Arm 8). Same single matched source keeps each supervised arm's contrast clean within its track. ~10–30 GPU-h each; these are the only backbones we train.
 - **P5.2** Arm 4 (`vit_supervised`) and Arm 8 (`cnn_supervised`) fine-tuned at all four label fractions — 8 runs. (Arms 1,2,3,5,6,7 already ran in Phase 4; this completes the eight-arm grid.)
 - **P5.3** Seed reruns: the 10%, 25%, and 100% cells of **all eight** study arms with 2 extra seeds — 48 runs — so the scarce-label headline and high-label endpoints carry error bars. One config per card per night; ~6 nights across the 8-GPU node.
 - **P5.4** Per run: freeze the dev-tuned threshold, score the test split, append to `runs/summary/grid.csv` via `curves.py`; render the two-track label-efficiency figure (x = label fraction, log-scale; y = test F1; eight curves — solid for ViT, dashed for CNN, one color per pretraining role; shaded seed bands).
@@ -505,7 +505,7 @@ Owner: harness owner. Jul 29–Aug 11. This runs the only two backbone trainings
 
 ## 9. Phase 7 — Error analysis and figures (study)
 
-Owner: harness owner. Aug 12–25 (begin writeup in parallel).
+Owner: detector owner. Aug 12–25 (begin writeup in parallel).
 
 - **P7.1** `error_slices.py`: per-arm dark-vessel recall and near-shore F1 vs label fraction, for **both tracks**; FP taxonomy on ~200 sampled FPs (shoreline clutter / fixed infrastructure / sea clutter / sidelobe). Two headline slices: the **SAR-vs-optical dark-vessel-recall gap within each track**, and the **ViT-vs-CNN gap at matched pretraining roles** (does the SAR-domain advantage generalize across architectures?).
 - **P7.2** `qualitative.py`: a fixed gallery of 24 chips (8 dark-vessel hits, 8 misses, 8 FPs) rendered identically for all eight study arms — the money figure beside the two-track curve.
@@ -521,7 +521,7 @@ Owner: harness owner. Aug 12–25 (begin writeup in parallel).
 
 Owner: either. Aug 26–Sep 1, **only if the eight core arms have landed and time remains before the deadline.** Reported in the references section, not on the controlled curves. (The unconstrained challenge/leaderboard arm was removed entirely from the project to protect the deadline; this contingent reference replaces it as the schedule's release valve.)
 
-- **P8.1** Arm R1 — `bigearthnet`-style but ImageNet: load ImageNet-pretrained ConvNeXt-V2-B (`timm` `convnextv2_base`, FCMAE ImageNet weights), fine-tune through the identical harness at all four label fractions — 4 runs. This is the "generic natural-image pretraining" baseline for the CNN track: comparing R1 to Arm 6/7 (BigEarthNet RS pretraining) answers *how much of the CNN's transfer comes from RS-specific pretraining vs. generic visual pretraining?*
+- **P8.1** Arm R1 — `bigearthnet`-style but ImageNet: load ImageNet-pretrained ConvNeXt-V2-B (`timm` `convnextv2_base`, FCMAE ImageNet weights), fine-tune through the identical detector at all four label fractions — 4 runs. This is the "generic natural-image pretraining" baseline for the CNN track: comparing R1 to Arm 6/7 (BigEarthNet RS pretraining) answers *how much of the CNN's transfer comes from RS-specific pretraining vs. generic visual pretraining?*
 - **P8.2** Add R1's curve to the references panel (not the controlled two-track figure). One paragraph on the RS-vs-generic-pretraining gap for CNNs.
 
 **Entry preconditions (Phase 8):** all eight core arms landed (Phases 4–5 done) **and** time remains before Sep 1 — otherwise skip; the study is complete without R1.
@@ -624,4 +624,4 @@ LS-SSDD carries only boxes → reduced to centroids (P1.4); it has no confidence
 - **IC-ViT (isolated-channel patchify) for channel handling** — considered, not default. It patchifies each polarization separately with no channel-specific parameters (arXiv 2503.09826), a principled "VH and VV as separate streams" approach, but it changes tokenization and complicates the same-input fairness story. The fixed 3-channel [VH,VV,VH−VV] representation is the default; adopt IC-ViT only on an explicit human decision.
 - **Image-space super-resolution** — confound-heavy and no HR Sentinel-1 target exists; the only SR-flavored move considered is a stride-2 decoder ablation, and even that is optional.
 - **Complex-valued SLC / Doppler** — a separate project (storage + non-square pixels); not in this plan.
-- **DETR / box heads as the harness** — the point-native heatmap head is the harness; a box-head comparison is at most a one-off, not a study arm.
+- **DETR / box heads as the detector** — the point-native heatmap head is the detector; a box-head comparison is at most a one-off, not a study arm.

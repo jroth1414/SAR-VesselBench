@@ -4,7 +4,7 @@
 
 A controlled study of how much labeled data different classes of *pretrained backbone* save
 for detecting **dark vessels** (ships not broadcasting AIS) in Sentinel-1 synthetic-aperture-radar
-(SAR) imagery, under one fixed point-detection harness.
+(SAR) imagery, under one fixed point detector.
 
 *John Roth & Kyle Wagner · JHU EN.705.643 Deep Learning Developments with PyTorch*
 
@@ -25,7 +25,7 @@ answer depends on the backbone architecture**.
 We hold the detector, its head, its training schedule, and its input fixed, and vary only the
 downloaded **initialization** (within a track) and the **architecture family** (across tracks):
 
-> *Under one fixed point-detection harness, how much labeled xView3 data does each class of pretrained
+> *Under one fixed point detector, how much labeled xView3 data does each class of pretrained
 > backbone save for dark-vessel detection; does a SAR-domain checkpoint beat an optical one in the
 > scarce-label regime; and does that finding hold across two architecture families (ViT and CNN)?*
 
@@ -135,7 +135,7 @@ pipeline is still to be built. Current state (see the DEVPLAN cold-start runbook
 - 🟡 **Phase 0 (env/scaffold)** — partial: CI, docs, `.gitignore`, and a minimal `pyproject.toml` exist;
   `Makefile`, `README.md` (this file), the two GPU lockfiles, `configs/`, and `scripts/gpu_sanity.py` are
   still to come.
-- ⬜ **Phases 1, 3–8** (data pipeline, shared harness, arms, grid, final eval, analysis) — not started.
+- ⬜ **Phases 1, 3–8** (data pipeline, shared detector, arms, grid, final eval, analysis) — not started.
 
 ```
 JHU-xView3/

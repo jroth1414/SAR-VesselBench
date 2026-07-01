@@ -22,3 +22,6 @@ venv/
 .DS_Store
 .idea/
 .vscode/
+
+# Office lock/owner files
+~$*
