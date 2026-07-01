@@ -33,7 +33,7 @@ A controlled label-efficiency comparison of **downloaded pretrained backbones** 
 
 5. **One framework: PyTorch Lightning.** All training entrypoints share one `LightningModule` pattern, one `LightningDataModule`, one `Trainer` config. This is part of the fairness guarantee — do not write a bespoke loop for one arm.
 
-6. **Do-not-touch after their sprint** (changing any of these requires a human STOP): `src/eval/scorer.py`, `data/splits.json`, `data/stats.json`, `data/lsssdd_split.json`, `configs/harness.yaml`, the verified-eval lockfile.
+6. **Do-not-touch after their sprint** (changing any of these requires a human STOP): `src/eval/scorer.py`, `data/splits.json`, `data/stats.json`, `data/lsssdd_split.json`, `configs/detector.yaml`, the verified-eval lockfile.
 
 ## The four guard tests (CI enforces these — see `.github/workflows/ci.yml`)
 
@@ -65,7 +65,7 @@ Do not optimize to seem autonomous. Asking is the job.
 - **PR per sprint**, reviewed and merged by the human. Keep diffs small enough to read line-by-line; if a sprint's diff grows past a few hundred lines, split it.
 - **Branch ordering:** no model-code sprint opens until `sprint-2-scorer` is merged; no chip-training sprint until `sprint-1-data` is merged.
 - **Commits:** small, frequent, each referencing the task ID (e.g. `P1.3: scene-level split builder`).
-- **Sub-agents:** parallelize only independent lanes — data, scorer, and the **external** reference models (R2/R3). There is **no pretraining lane** (all four FMs are downloaded); the two LS-SSDD supervised backbones (Arms 4, 8) train inside `sprint-7-grid` under the serial harness owner. Anything touching the shared harness (including `sprint-5-cnn-arms`) is serial under one owner — parallel edits to `lit_modules.py`/`finetune.py` silently diverge and break arm comparability.
+- **Sub-agents:** parallelize only independent lanes — data, scorer, and the **external** reference models (R2/R3). There is **no pretraining lane** (all four FMs are downloaded); the two LS-SSDD supervised backbones (Arms 4, 8) train inside `sprint-7-grid` under the serial detector owner. Anything touching the shared detector (including `sprint-5-cnn-arms`) is serial under one owner — parallel edits to `lit_modules.py`/`finetune.py` silently diverge and break arm comparability.
 
 ## Git authorship — strict
 
