@@ -30,95 +30,57 @@ Johns Hopkins University\\
 \begin{abstract}
 Detecting ``dark'' vessels---ships not broadcasting their Automatic
 Identification System (AIS) signal---in spaceborne synthetic aperture radar
-(SAR) is an operationally important, label-scarce problem. Pretrained backbones
-are a natural remedy, but it is unclear which \emph{pretraining recipe}
-transfers best to this regime, and whether the answer is the same for
-Transformer and convolutional backbones. We propose a controlled
-label-efficiency study on the xView3-SAR benchmark~\cite{paolo2022xview3} that
-holds a single point-native detector fixed and varies only the downloaded
-backbone initialization. The study spans two architecture-matched tracks---a
-ViT-B/16 track ($\sim$86M parameters) and a size-matched ConvNeXt-V2-Base track
-($\sim$89M)---each with four arms: random initialization, optical-domain
-pretraining, SAR-domain pretraining, and supervised out-of-domain SAR
-pretraining. The headline deliverable is a two-track label-efficiency curve that
-(i) quantifies how much labeled data each pretraining recipe saves, (ii) tests
-whether SAR-domain pretraining wins in the scarce-label regime, and (iii) tests
-whether that ordering is architecture-general. Because we compare released
-checkpoints rather than pretraining the foundation models ourselves,
-differences are attributable to the pretraining source rather than to our own
-optimization choices.
+(SAR) is operationally important and label-scarce. Pretrained backbones can
+help, but it is unclear which \emph{pretraining recipe} transfers best, and
+whether the answer is the same for Transformer and convolutional backbones. We
+propose a controlled label-efficiency study on
+xView3-SAR~\cite{paolo2022xview3} that holds one point-native detector fixed and
+varies only the downloaded backbone initialization, across two size-matched
+tracks (ViT-B/16, $\sim$86M; ConvNeXt-V2-Base, $\sim$89M) and four pretraining
+recipes each: random, optical, SAR, and supervised out-of-domain SAR. Because
+every backbone is a released checkpoint, differences are attributable to the
+pretraining source rather than to our own optimization choices.
 \end{abstract}
 
 \section{Introduction}
 \label{sec:intro}
-
-Detecting ships that are not broadcasting their AIS signature---``dark
-vessels''---in spaceborne SAR is a critical maritime-monitoring problem, and one
-where labeled data is scarce: the xView3-SAR
-benchmark~\cite{paolo2022xview3} provides Sentinel-1 imagery, but its
-human-verified dark-vessel labels are few, so supervised-only training tends to
-overfit.
+Detecting ships not broadcasting their AIS signature---``dark vessels''---in
+spaceborne SAR is a critical maritime-monitoring problem with scarce labels:
+xView3-SAR~\cite{paolo2022xview3} provides Sentinel-1 imagery, but its
+human-verified dark-vessel labels are few, so supervised-only training overfits.
 
 Pretrained backbones can help, but it is unclear which \emph{pretraining recipe}
-transfers best to dark-vessel detection: self-supervised pretraining on generic
-optical satellite imagery (fMoW-RGB~\cite{christie2018fmow}, via
-SatDINO~\cite{straka2025satdino}), self-supervised pretraining on large-scale
-SAR (SAR-1M, via SARMAE~\cite{liu2026sarmae}), or supervised detection
-pretraining on labeled but out-of-domain SAR
-(LS-SSDD-v1.0~\cite{zhang2020lsssdd}). It is equally unclear whether the best
-recipe is the same for a Transformer (ViT~\cite{dosovitskiy2021image}) and a
-convolutional (ConvNeXt-V2~\cite{woo2023convnextv2}) backbone.
+transfers best: self-supervision on generic optical satellite imagery
+(fMoW-RGB~\cite{christie2018fmow} via SatDINO~\cite{straka2025satdino}),
+self-supervision on large-scale SAR (SAR-1M via SARMAE~\cite{liu2026sarmae}), or
+supervised detection on labeled out-of-domain SAR
+(LS-SSDD~\cite{zhang2020lsssdd})---and whether the best recipe is the same for a
+ViT~\cite{dosovitskiy2021image} and a ConvNeXt~\cite{woo2023convnextv2}. We
+compare \emph{released} checkpoints rather than pretraining our own so that each
+arm faithfully represents its recipe as published; re-pretraining would confound
+the pretraining source with our own optimization
+choices~\cite{zoph2020rethinking}.
 
-We compare \emph{publicly released} checkpoints rather than pretraining our own,
-for a methodological reason rather than a compute one: our question is which
-pretraining dataset/recipe transfers best, so each arm must faithfully represent
-its recipe \emph{as published}. Re-pretraining these models ourselves would fold
-our own optimization choices into the comparison and confound the exact variable
-we want to isolate. Fixing the detector, the fine-tuning schedule, and the
-evaluation then lets any performance gap be attributed to the pretraining source
-alone. This situates the work in the pre-training-versus-self-training
-literature~\cite{zoph2020rethinking}, specialized to dark-vessel, scarce-label
-SAR detection.
-
-\paragraph{Research questions.} With the detector, fine-tuning schedule, and
-input representation held fixed, we ask:
-\begin{itemize}[nosep,leftmargin=1.4em]
-  \item[\textbf{Q1}] Relative to random initialization, how much labeled xView3
-  data does each pretraining recipe save to reach a target dark-vessel
-  detection F1?
-  \item[\textbf{Q2}] In the scarce-label regime, does SAR-domain pretraining
-  transfer better than optical-domain pretraining?
-  \item[\textbf{Q3}] Is the answer \emph{architecture-general}---does the same
-  ordering hold for both a ViT and a size-matched CNN backbone?
-\end{itemize}
-
-\noindent\textbf{Hypothesis.} Within each architecture, SAR-domain pretraining
-yields the steepest label-efficiency gains and the largest dark-vessel-recall
-advantage at low label budgets (ordering, per track, roughly
-random $<$ optical $\lesssim$ supervised $<$ SAR, converging as labels grow),
-and this ordering is architecture-general.
-
-\paragraph{Contributions.} (1) A controlled, metric-matched protocol that
-isolates the pretraining recipe from architecture and optimizer choices; (2) the
-first two-track (ViT and CNN) label-efficiency comparison of optical- versus
-SAR-domain pretraining for dark-vessel detection; and (3) a point-native
-detector and evaluation aligned to the xView3 metric, released with continuous
-integration checks that enforce the study's comparability invariants.
+With the detector, schedule, and input fixed, we ask:
+\textbf{(Q1)} how much labeled xView3 data does each recipe save relative to
+random initialization to reach a target dark-vessel F1;
+\textbf{(Q2)} does SAR-domain pretraining beat optical in the scarce-label
+regime; and \textbf{(Q3)} is that ordering \emph{architecture-general}, holding
+for both a ViT and a size-matched CNN? We hypothesize that, within each track,
+SAR-domain pretraining yields the steepest low-label gains
+(random $<$ optical $\lesssim$ supervised $<$ SAR), and that this ordering holds
+for both architectures.
 
 \section{Approach}
 \label{sec:approach}
 
-\subsection{Study design: two tracks, eight arms}
-\label{sec:design}
-
-The study has \textbf{two architecture-matched tracks}: a ViT track
-(ViT-B/16, $\sim$86M parameters) and a CNN track (ConvNeXt-V2-Base, $\sim$89M,
-deliberately size-matched). Within each track, all four arms share the same
-backbone, detection head, optimizer, schedule, and seeds; only the downloaded
-initialization differs. \emph{Initialization} is the only variable within a
-track, and \emph{architecture} the only variable across matched roles, so
-comparing arm $k$ to arm $k{+}4$ isolates the architecture family with the
-pretraining role held fixed (Table~\ref{tab:arms}).
+\paragraph{Design.} The study has two architecture-matched tracks---ViT-B/16
+($\sim$86M) and ConvNeXt-V2-Base ($\sim$89M, deliberately size-matched)---each
+with four arms that share the same head, optimizer, schedule, and seeds; only
+the downloaded initialization differs (Table~\ref{tab:arms}). Initialization is
+the only variable within a track and architecture the only variable across
+matched roles, so comparing arm $k$ to arm $k{+}4$ isolates the architecture
+family with the pretraining role held fixed.
 
 \begin{table*}[t]
 \centering
@@ -142,180 +104,91 @@ R2 & ref & YOLO26 & COCO-pretrained & external & no & detector reference \\
 R3 & ref & LocateAnything-3B & zero-shot & $\sim$3B & no & VLM reference \\
 \bottomrule
 \end{tabular}
-\caption{The eight controlled arms (two size-matched tracks) plus three external
-references. Params are backbone parameter counts; the ViT and CNN backbones are
-deliberately size-matched ($\sim$86M vs.\ $\sim$89M) so the cross-track
-comparison is fair. Optical anchors are SatDINO~\cite{straka2025satdino}
-(ViT) and BigEarthNet-S2~\cite{clasen2025reben} (CNN); SAR anchors are
-SARMAE~\cite{liu2026sarmae} (ViT) and BigEarthNet-S1~\cite{clasen2025reben}
-(CNN). References R1--R3 are reported separately and are not on the controlled
-curves.}
+\caption{Eight controlled arms in two size-matched tracks ($\sim$86M vs.\
+$\sim$89M), plus three external references reported off the curves. Optical
+anchors are SatDINO~\cite{straka2025satdino} (ViT) and
+BigEarthNet-S2~\cite{clasen2025reben} (CNN); SAR anchors are
+SARMAE~\cite{liu2026sarmae} (ViT) and BigEarthNet-S1~\cite{clasen2025reben} (CNN).}
 \label{tab:arms}
 \end{table*}
 
-\subsection{Three pretraining regimes (data types)}
-\label{sec:datatypes}
+\paragraph{Pretraining regimes.} The recipes differ in modality, labels, and
+domain: \emph{optical} (SatDINO, DINO~\cite{caron2021emerging}; BigEarthNet-S2)
+is a \emph{different sensing modality} (no speckle, different scattering
+physics); \emph{SAR, self-supervised} (SARMAE, an MAE~\cite{he2022masked};
+BigEarthNet-S1) is the \emph{same modality} but pretrained without detection
+labels on a different scene distribution; and \emph{labeled out-of-domain SAR}
+(LS-SSDD) is the same modality \emph{and} a related supervised task, but a
+different acquisition. Q2 thus contrasts ``same pixels, different task'' against
+``different pixels, same task.''
 
-The arms differ in the \emph{kind} of data their backbone was pretrained on, and
-these differ in modality, labels, and domain:
-\begin{itemize}[nosep,leftmargin=1.2em]
-  \item \textbf{Optical} (SatDINO, DINO self-distillation~\cite{caron2021emerging}, on fMoW-RGB; BigEarthNet-S2): multispectral or
-  RGB reflectance imagery of the land surface. It is visually rich and
-  human-interpretable but is a \emph{different sensing modality} from SAR---no
-  speckle, different geometry and scattering physics.
-  \item \textbf{SAR-domain, self-supervised} (SARMAE, a masked autoencoder~\cite{he2022masked}, on SAR-1M; BigEarthNet-S1): Sentinel-1
-  amplitude imagery---the \emph{same modality} as the target, with the same
-  speckle statistics and geometry, but pretrained \emph{self-supervised}
-  (no detection labels) on a different scene distribution.
-  \item \textbf{Labeled out-of-domain SAR} (LS-SSDD): Sentinel-1 imagery with
-  \emph{ship-detection labels}, i.e.\ the same modality \emph{and} a related
-  supervised task, but a different acquisition/scene distribution than xView3.
-\end{itemize}
-Contrasting these regimes is precisely what separates ``same pixels, different
-task'' from ``different pixels, same task,'' and is the axis Q2 measures.
+\paragraph{Detector.} xView3 labels are points and its metric matches
+predictions by distance, not box IoU, so we use a point-native heatmap head in
+the style of CenterNet / \emph{Objects as Points}~\cite{zhou2019objects}: each
+vessel is a Gaussian blob on a stride-4 map, decoded by peak-finding with
+distance-based non-maximum suppression. Every arm receives the same fixed
+3-channel input $[\mathrm{VH},\mathrm{VV},\mathrm{VH}{-}\mathrm{VV}]$ in dB, so
+input handling is never a confound between arms.
 
-\subsection{Detector}
-\label{sec:detector}
-
-xView3 labels are \emph{points}, and its official metric matches predictions to
-ground truth by \emph{distance}, not box IoU. We therefore use a point-native
-detector: a heatmap head in the style of
-CenterNet / \emph{Objects as Points}~\cite{zhou2019objects}, where each vessel is
-a Gaussian blob on a stride-4 response map, decoded by peak-finding with
-distance-based non-maximum suppression. This mirrors the metric exactly and
-avoids synthesizing bounding boxes the data never had. A single backbone-to-head
-adapter maps either backbone's feature map to the shared head, so the head,
-loss, optimizer, and schedule are identical across both tracks.
-
-\subsection{Input representation}
-\label{sec:input}
-
-Every arm receives the same fixed 3-channel input, $[\mathrm{VH},\mathrm{VV},
-\mathrm{VH}{-}\mathrm{VV}]$ in dB, so the input is physically identical across
-arms and channel handling is never a confound. VH and VV are distinct
-polarimetric measurements and their difference is a physically meaningful third
-channel. Each backbone's stem adapts to this input through the standard
-\texttt{timm} \texttt{in\_chans} path.
-
-\subsection{Fine-tuning and comparability guarantees}
-\label{sec:finetune}
-
-All arms are fine-tuned end-to-end through one PyTorch Lightning code path with
-the same optimizer (AdamW), layer-wise learning-rate decay, augmentation, and
-seeds. We train each arm \textbf{until validation performance stops
-improving}---early stopping on the held-out dev split, halting after a fixed
-patience once dev F1 plateaus---rather than for a fixed number of epochs, so
-every arm is compared at its own best operating point rather than at an
-arbitrary epoch. The decision threshold is selected on the dev split and frozen
-before touching the test or final-evaluation splits.
-
-Because the validity of the comparison rests on the arms being genuinely
-comparable, we enforce it mechanically rather than by convention. Continuous
-integration runs guard tests on every change: a backbone-parity test asserts
-that all four arms within a track instantiate the identical parameter count
-(ViT-B/16 for arms 1--4, ConvNeXt-V2-Base for arms 5--8) and that both tracks'
-head adapters emit the same output geometry; a checkpoint-load test asserts each
-downloaded backbone loads with its pretrained weights (not silently random); and
-a scorer-immutability test freezes the evaluation code. These make ``the only
-thing that changed is the initialization'' a checked invariant, not a claim.
-
-\subsection{Pipeline}
-\label{sec:pipeline}
-
-\begin{figure*}[t]
-\centering
-\begin{tikzpicture}[
-  box/.style={draw, rounded corners, align=center, inner sep=5pt,
-    font=\small, minimum height=13mm, text width=0.27\linewidth},
-  arr/.style={-{Stealth[length=3mm]}, very thick}
-]
-\node[box] (a) {\textbf{1. Pretrained backbone}\\[2pt]
-  {\footnotesize random / optical / SAR / labeled out-of-domain SAR}\\[2pt]
-  {\footnotesize \emph{downloaded, not trained by us}}};
-\node[box, right=0.06\linewidth of a] (b) {\textbf{2. Fine-tune on xView3-SAR}\\[2pt]
-  {\footnotesize fixed point detector; shared schedule, seeds, input}\\[2pt]
-  {\footnotesize early stopping on dev split}};
-\node[box, right=0.06\linewidth of b] (c) {\textbf{3. Evaluate}\\[2pt]
-  {\footnotesize label-efficiency curve at 10/25/50/100\% labels}\\[2pt]
-  {\footnotesize dark-vessel recall, near-shore F1}};
-\draw[arr] (a) -- (b);
-\draw[arr] (b) -- (c);
-\end{tikzpicture}
-\caption{The three stages of the study, repeated identically for every arm.
-Only stage 1 (the downloaded backbone) varies within a track.}
-\label{fig:pipeline}
-\end{figure*}
-
-Every arm follows the same three stages (Figure~\ref{fig:pipeline}): a pretrained
-backbone is downloaded, fine-tuned on xView3-SAR through the fixed detector, and
-evaluated on the label-efficiency curve. Only stage~1 changes across arms within
-a track.
-
-\section{Datasets}
-\label{sec:data}
-
-\paragraph{xView3-SAR.} We use xView3-SAR~\cite{paolo2022xview3} via the SARFish
-mirror (Sentinel-1 GRD, dual-polarization VH/VV). We fine-tune on a subset of
-xView3 training scenes---75--150 scenes, chipped at $800\times800$ with overlap,
-yielding on the order of $10^4$ chips---and sub-sample \emph{at the scene level}
-to 10/25/50/100\% of labels, with nested fractions so the curves are monotone in
-data. The 75--150 scenes we fine-tune on are split 75/15/10 (train/dev/test)
-with no scene in more than one split; \emph{separately and disjointly}, the
-$\sim$50 human-verified validation scenes are held out as a final-evaluation set
-and touched exactly once. Detection positives are vessels of
-HIGH/MEDIUM confidence; a vessel is treated as ``dark'' when its source is
-manual (no AIS correlate).
-
-\paragraph{LS-SSDD-v1.0.} The supervised out-of-domain SAR arms (Arms 4 and 8)
-pretrain on LS-SSDD-v1.0~\cite{zhang2020lsssdd}: native Sentinel-1 imagery cut
-into $\sim$9{,}000 labeled $800\times800$ sub-images. LS-SSDD is used only as a
-pretraining source and is never mixed into the xView3 splits; its boxes are
-reduced to centroids so it can drive the same point-native head.
-
-\section{Evaluation Plan}
-\label{sec:eval}
-
-The headline deliverable is a \textbf{two-track label-efficiency curve}
-(Figure~\ref{fig:curve}): detection F1 versus 10/25/50/100\% of real labels,
-eight lines (solid ViT, dashed CNN; one color per pretraining role). Within a
-track, the low-label gap over the random-init floor quantifies pretraining value
-and the SAR-versus-optical ordering (Q1, Q2); across tracks, matched-role gaps
-test architecture-generality (Q3). We additionally report \emph{dark-vessel
-recall} and \emph{near-shore F1}---the operationally hardest slices, where any
-SAR advantage should concentrate---and situate the eight arms against the
-external references (YOLO26~\cite{jocher2026yolo26}; a zero-shot VLM; a
-contingent ImageNet-ConvNeXt).
+\paragraph{Fine-tuning and comparability.} All arms fine-tune end-to-end through
+one code path with shared AdamW, augmentation, and seeds, and are trained
+\emph{until dev-split F1 stops improving} (early stopping), \emph{not} for a
+fixed epoch budget; the decision threshold is selected on dev and frozen before
+test. Continuous-integration guard tests make comparability a checked invariant
+rather than a claim: a backbone-parity test asserts identical within-track
+parameter counts and matching head-adapter geometry, a checkpoint-load test
+asserts each backbone loads its pretrained weights (not silently random), and a
+scorer-immutability test freezes the evaluation code (Figure~\ref{fig:pipeline}).
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.86\linewidth]{fig_curve.pdf}
-\caption{Illustrative two-track label-efficiency hypothesis (eight arms).
-Solid $=$ ViT, dashed $=$ ConvNeXt-V2; color $=$ pretraining role. We
-hypothesize that SAR-domain pretraining beats optical for both architectures,
-with gaps largest at low label budgets.}
-\label{fig:curve}
+\begin{tikzpicture}[
+  box/.style={draw, rounded corners, align=center, inner sep=3pt,
+    font=\footnotesize, minimum height=11mm, text width=0.27\linewidth},
+  arr/.style={-{Stealth[length=2mm]}, thick}
+]
+\node[box] (a) {\textbf{1.\ Pretrained}\\ backbone\\
+  {\scriptsize random / optical / SAR / labeled SAR}};
+\node[box, right=3mm of a] (b) {\textbf{2.\ Fine-tune}\\ on xView3-SAR\\
+  {\scriptsize fixed detector; early stop on dev}};
+\node[box, right=3mm of b] (c) {\textbf{3.\ Evaluate}\\
+  {\scriptsize label-efficiency; dark-vessel \& near-shore}};
+\draw[arr] (a) -- (b);
+\draw[arr] (b) -- (c);
+\end{tikzpicture}
+\caption{The three stages, run identically for every arm; only stage~1 (the
+downloaded backbone) varies within a track.}
+\label{fig:pipeline}
 \end{figure}
 
-\section{Timeline, Compute, and Feasibility}
-\label{sec:timeline}
+\section{Data and Evaluation}
+\label{sec:data}
+We use xView3-SAR~\cite{paolo2022xview3} via the SARFish mirror (Sentinel-1 GRD,
+dual-polarization VH/VV): 75--150 training scenes chipped at $800\times800$
+($\sim$$10^4$ chips), sub-sampled at the scene level to 10/25/50/100\% of labels
+and split 75/15/10 (train/dev/test); the $\sim$50 human-verified scenes are a
+\emph{disjoint}, once-touched final-evaluation set. Arms~4 and~8 pretrain on
+LS-SSDD-v1.0~\cite{zhang2020lsssdd} ($\sim$9{,}000 labeled $800\times800$
+sub-images), used only as a pretraining source and never mixed into the xView3
+splits. The headline result is a \emph{two-track label-efficiency curve}
+(detection F1 vs.\ 10/25/50/100\% labels; eight lines) plus dark-vessel recall
+and near-shore F1, the operationally hardest slices: the low-label gap over the
+random floor answers Q1--Q2, and matched-role gaps across tracks answer Q3.
+External references (YOLO26~\cite{jocher2026yolo26}, a zero-shot VLM, and a
+contingent ImageNet-ConvNeXt) situate the eight arms without entering the
+controlled comparison.
 
-Two contributors work largely independent lanes (data/scorer; detector/eval)
-with no hard dependency, since all foundation-model backbones are downloaded and
-there is no pretraining handoff to block on. Compute is one 8$\times$V100 (32\,GB)
-node plus a development GPU. Because we pretrain no foundation model, the total
-is modest: each fine-tune is a few GPU-hours, and the full eight-arm grid (both
-tracks, with seed reruns including the low-label cells) plus the two small
-LS-SSDD supervised backbones comes to roughly \textbf{293--360 GPU-hours}, about
-three to four nights on the node---an order of magnitude below self-pretraining a
-SAR foundation model. This lower cost is a side benefit; as motivated in
-\S\ref{sec:intro}, we use downloaded checkpoints for comparability of pretraining
-recipes as published, not to save compute. The
-downloaded-backbone arms run first, since the main technical risk is the
-channel-format gap (whether each pretrained stem accepts the fixed
-$[\mathrm{VH},\mathrm{VV},\mathrm{VH}{-}\mathrm{VV}]$ input); a quick
-load-and-train check de-risks the shared input per architecture before the full
-grid. We target the WACV~2027 Round-2 deadline (paper registration
-August~21, 2026; submission August~28, 2026, AoE).
+\section{Timeline and Feasibility}
+\label{sec:timeline}
+Two contributors work independent lanes (data/scorer; detector/eval) with no
+pretraining handoff to block on. Because all foundation-model backbones are
+downloaded, compute is modest: the full eight-arm grid with seed reruns plus the
+two small LS-SSDD supervised backbones is $\sim$293--360 GPU-hours ($\sim$3--4
+nights on one 8$\times$V100 node)---we download checkpoints for comparability of
+recipes as published, and the low cost is a side benefit. The
+downloaded-backbone arms run first to de-risk the fixed-input channel format. We
+target the WACV~2027 Round-2 deadline (paper registration August~21, 2026;
+submission August~28, 2026, AoE).
 
 {
     \small
