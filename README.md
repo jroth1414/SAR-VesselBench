@@ -131,10 +131,12 @@ pipeline is still to be built. Current state (see the DEVPLAN cold-start runbook
 
 - ✅ **Phase 2 (scorer + decode + thresholds)** — `src/eval/scorer.py` (frozen, per-scene
   distance-matched F1 + slices), `src/eval/decode.py` (peak-finding + distance-NMS), and
-  `src/eval/threshold.py` (dev-selected operating point), with tests.
-- 🟡 **Phase 0 (env/scaffold)** — partial: CI, docs, `.gitignore`, and a minimal `pyproject.toml` exist;
-  `Makefile`, `README.md` (this file), the two GPU lockfiles, `configs/`, and `scripts/gpu_sanity.py` are
-  still to come.
+  `src/eval/threshold.py` (dev-selected operating point), with tests. Tagged `phase-2-done`.
+- ✅ **Phase 0 (env/scaffold)** — CI, docs, `.gitignore`, `.gitattributes` (LF-normalized so the
+  frozen-artifact hash pins hold on every platform), full `pyproject.toml` (`pip install -e .`),
+  `Makefile`, `configs/data.yaml`, `scripts/gpu_sanity.py`, and the two GPU lockfiles under `locks/`
+  (the 5070 Ti lock is a real freeze verified on the box; the V100-node lock is a candidate pin to
+  re-freeze on the node — see its header).
 - ⬜ **Phases 1, 3–8** (data pipeline, shared detector, arms, grid, final eval, analysis) — not started.
 
 ```
@@ -157,11 +159,34 @@ JHU-xView3/
 git clone https://github.com/jroth1414/JHU-xView3
 cd JHU-xView3
 
-# Run the tests (scorer, decode, and the anti-drift guards).
-# A minimal pyproject makes `from src...` imports resolve.
-python -m pip install -U pytest numpy scipy timm
-pytest                      # or: python -m pytest
+# 1) Install torch/torchvision from the index that matches YOUR machine FIRST
+#    (never bare `pip install torch` — see DEVPLAN Appendix C and locks/):
+#      5070 Ti (Blackwell sm_120):  pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+#      V100 node (Volta sm_70):     pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+#    or reproduce a box exactly from its lockfile in locks/.
+
+# 2) Then the package itself (the only sanctioned install):
+pip install -e .[dev]
+
+# 3) Sanity-check the GPU + kernels, then run the tests:
+python scripts/gpu_sanity.py    # or: make env-check
+pytest                          # or: make test
 ```
+
+**GPU sanity outputs (P0.3).** RTX 5070 Ti box, recorded 2026-07-04 (torch 2.11.0+cu128, stable —
+Blackwell no longer needs a nightly):
+
+```
+torch 2.11.0+cu128 | cuda build 12.8
+device: NVIDIA GeForce RTX 5070 Ti | capability sm_120 | 15.9 GiB
+fp16 matmul 4096x4096: ok (mean abs 51.06)
+sdpa backends enabled: {'flash': True, 'mem_efficient': True, 'math': True}
+sdpa: ok | first usable backend: mem_efficient
+gpu_sanity: PASS
+```
+
+V100 node: not yet run — the node lock (`locks/env-v100node.txt`) is a candidate pin; re-freeze and
+paste the sanity output here on first use (its header has the exact recipe).
 
 **Continuous integration.** `.github/workflows/ci.yml` runs, on every push/PR to `dev`/`main`, the
 anti-drift **guard tests** that encode study validity:

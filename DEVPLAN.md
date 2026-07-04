@@ -24,9 +24,9 @@ Development plan for a coding agent (Claude Code or similar). Execute phases in 
 ### Status ledger (ground truth as of this revision)
 | Phase | Sprint branch | State | Evidence | Missing to reach DONE |
 |---|---|---|---|---|
-| 0 Env/scaffold | `sprint-0-env` | **PARTIAL** | have `.github/workflows/ci.yml`, `README.md`, docs, `requirements-ci.txt`, `.gitignore`, minimal `pyproject.toml` (pytest `pythonpath` only) | full `pyproject.toml` (`[build-system]`/`[project]` + `pip install -e .`), `Makefile`, `locks/env-*.txt`, `configs/*`, `scripts/gpu_sanity.py` |
+| 0 Env/scaffold | `sprint-0-env` | **DONE** | full `pyproject.toml` (`pip install -e .`), `Makefile`, `locks/env-5070ti.txt` (real on-box freeze; torch 2.11.0+cu128 stable — Blackwell needs no nightly anymore; `gpu_sanity` PASS pasted in README), `locks/env-v100node.txt` (candidate cu126 pin — re-freeze on the node per its header), `configs/data.yaml`, `scripts/gpu_sanity.py`, `.gitattributes` (LF-normalized checkouts so frozen-artifact sha256 pins hold on Windows) | on-node verification of the V100 lock + its `gpu_sanity` output (needs the physical node — non-blocking human item) |
 | 1 Data/splits | `sprint-1-data` | **NOT STARTED** | — | all `src/data/`, `data/splits.json`, `data/stats.json`, `data/lsssdd_split.json`, P1 tests |
-| 2 Scorer/decode/threshold | `sprint-2-scorer` + `sprint-2b-eval-hardening` | **DONE — scorer re-frozen after eval hardening** | `scorer.py` counts near-shore FPs and exposes per-scene aggregation; `threshold.py` owns dev threshold selection; `decode.py` rejects non-finite heatmaps; Phase-2 tests pass | tag the merge commit `phase-2-done` |
+| 2 Scorer/decode/threshold | `sprint-2-scorer` + `sprint-2b-eval-hardening` | **DONE — scorer re-frozen after eval hardening; tagged `phase-2-done`** | `scorer.py` counts near-shore FPs and exposes per-scene aggregation; `threshold.py` owns dev threshold selection; `decode.py` rejects non-finite heatmaps; Phase-2 tests pass | — |
 | 3 Detector | `sprint-3-detector` | NOT STARTED | — | `src/models/*`, `src/train/*`, `configs/detector.yaml` |
 | 4 FM+floor arms+refs | `sprint-4/5/6` | NOT STARTED | — | — |
 | 5 Supervised+grid | `sprint-7-grid` | NOT STARTED | — | — |
