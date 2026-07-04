@@ -1,28 +1,26 @@
-% WACV 2027 submission — proposal / short paper.
-% Review (double-blind) version is active below; to reveal authors for a
-% camera-ready or course draft, comment the [review,...] line and uncomment
-% \usepackage{wacv}.
+% Professor-facing version of the wacv-proposal branch draft.
 \documentclass[10pt,twocolumn,letterpaper]{article}
 
-\usepackage[review,applications]{wacv}      % REVIEW version (Applications track)
-% \usepackage{wacv}                          % CAMERA-READY (shows authors)
-
+\usepackage[margin=0.72in]{geometry}
+\usepackage{times}
+\usepackage[dvipsnames]{xcolor}
+\usepackage[numbers,sort&compress]{natbib}
 \input{preamble}
+\usepackage[hidelinks]{hyperref}
 
-\definecolor{wacvblue}{rgb}{0.21,0.49,0.74}
-\usepackage[pagebackref,breaklinks,colorlinks,allcolors=wacvblue]{hyperref}
-
-\def\wacvPaperID{*****} % *** Enter the WACV Paper ID here for the review version
-\def\confName{WACV}
-\def\confYear{2027}
+\setlength{\columnsep}{0.25in}
+\setlength{\parindent}{10pt}
+\setlength{\textfloatsep}{8pt plus 2pt minus 2pt}
+\setlength{\floatsep}{8pt plus 2pt minus 2pt}
+\setlength{\intextsep}{8pt plus 2pt minus 2pt}
 
 \title{Label-Efficient Dark-Vessel Detection in SAR:\\
 Does SAR-Domain Pretraining Beat Optical, and Does It Hold Across ViT and CNN?}
 
 \author{John Roth \qquad Kyle Wagner\\
 Johns Hopkins University\\
-{\tt\small \{jroth,kwagner\}@jhu.edu}
-}
+\texttt{\small jroth32@jh.edu \qquad kwagne35@jh.edu}}
+\date{July 2026}
 
 \begin{document}
 \maketitle
