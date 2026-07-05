@@ -126,55 +126,59 @@ def infer_scene(
     device = torch.device(device)
     model = model.to(device).eval()
 
-    with rasterio.open(scene_dir / "VH_dB.tif") as vh_ds, rasterio.open(
-        scene_dir / "VV_dB.tif"
-    ) as vv_ds:
+    from src.data.transforms import normalize
+
+    # Read each polarization ONCE into RAM (~2.6 GB float32 per band for the
+    # largest scenes) and slice windows from memory: per-window reads against
+    # the striped compressed GeoTIFFs are ~100x slower and made the every-5-
+    # epoch dev eval unusable.
+    with rasterio.open(scene_dir / "VH_dB.tif") as vh_ds:
         height, width = vh_ds.height, vh_ds.width
         geo_transform = vh_ds.transform
-        canvas = np.zeros(
-            (height // OUTPUT_STRIDE_PX + 1, width // OUTPUT_STRIDE_PX + 1),
-            dtype=np.float16,
-        )
+        vh_full = vh_ds.read(1)
+    with rasterio.open(scene_dir / "VV_dB.tif") as vv_ds:
+        vv_full = vv_ds.read(1)
 
-        origins = _tile_origins(height, width, tile_px, tile_stride_px)
-        batch_tiles: list[np.ndarray] = []
-        batch_origins: list[tuple[int, int]] = []
+    canvas = np.zeros(
+        (height // OUTPUT_STRIDE_PX + 1, width // OUTPUT_STRIDE_PX + 1),
+        dtype=np.float16,
+    )
 
-        def flush() -> None:
-            if not batch_tiles:
-                return
-            tensor = torch.from_numpy(np.stack(batch_tiles)).to(device)
-            with torch.autocast(device.type, dtype=autocast_dtype, enabled=device.type == "cuda"):
-                heat = torch.sigmoid(model(tensor)).squeeze(1).float().cpu().numpy()
-            for (row0, col0), tile_heat in zip(batch_origins, heat):
-                out_r = row0 // OUTPUT_STRIDE_PX
-                out_c = col0 // OUTPUT_STRIDE_PX
-                window = canvas[
-                    out_r : out_r + tile_heat.shape[0],
-                    out_c : out_c + tile_heat.shape[1],
-                ]
-                np.maximum(window, tile_heat[: window.shape[0], : window.shape[1]], out=window)
-            batch_tiles.clear()
-            batch_origins.clear()
+    origins = _tile_origins(height, width, tile_px, tile_stride_px)
+    batch_tiles: list[np.ndarray] = []
+    batch_origins: list[tuple[int, int]] = []
 
-        from rasterio.windows import Window
+    def flush() -> None:
+        if not batch_tiles:
+            return
+        tensor = torch.from_numpy(np.stack(batch_tiles)).to(device)
+        with torch.autocast(device.type, dtype=autocast_dtype, enabled=device.type == "cuda"):
+            heat = torch.sigmoid(model(tensor)).squeeze(1).float().cpu().numpy()
+        for (row0, col0), tile_heat in zip(batch_origins, heat):
+            out_r = row0 // OUTPUT_STRIDE_PX
+            out_c = col0 // OUTPUT_STRIDE_PX
+            window = canvas[
+                out_r : out_r + tile_heat.shape[0],
+                out_c : out_c + tile_heat.shape[1],
+            ]
+            np.maximum(window, tile_heat[: window.shape[0], : window.shape[1]], out=window)
+        batch_tiles.clear()
+        batch_origins.clear()
 
-        for row0, col0 in origins:
-            window = Window(col0, row0, tile_px, tile_px)
-            vh = vh_ds.read(1, window=window, boundless=True, fill_value=-32768.0)
-            if (vh == -32768.0).mean() > 0.98:
-                continue  # pure nodata tile
-            vv = vv_ds.read(1, window=window, boundless=True, fill_value=-32768.0)
-            tile = np.stack([vh, vv, vh - vv]).astype(np.float32)
-            tile[np.stack([vh, vv, np.zeros_like(vh)]) == -32768.0] = np.nan
-            tile[2][np.isnan(tile[0]) | np.isnan(tile[1])] = np.nan
-            from src.data.transforms import normalize
-
-            batch_tiles.append(normalize(tile, mean, std))
-            batch_origins.append((row0, col0))
-            if len(batch_tiles) >= batch_size:
-                flush()
-        flush()
+    for row0, col0 in origins:
+        vh = vh_full[row0 : row0 + tile_px, col0 : col0 + tile_px]
+        if (vh == -32768.0).mean() > 0.98:
+            continue  # pure nodata tile
+        vv = vv_full[row0 : row0 + tile_px, col0 : col0 + tile_px]
+        tile = np.stack([vh, vv, vh - vv]).astype(np.float32)
+        tile[np.stack([vh, vv, np.zeros_like(vh)]) == -32768.0] = np.nan
+        tile[2][np.isnan(tile[0]) | np.isnan(tile[1])] = np.nan
+        batch_tiles.append(normalize(tile, mean, std))
+        batch_origins.append((row0, col0))
+        if len(batch_tiles) >= batch_size:
+            flush()
+    flush()
+    del vh_full, vv_full
 
     decoded: list[DecodedPoint] = decode_heatmap(
         canvas.astype(np.float32),
