@@ -1,0 +1,49 @@
+# Phase 1 data configuration (DEVPLAN P1.1–P1.5). Consumed by src/data/*.
+# NOT a frozen artifact — but the artifacts it produces (data/splits.json,
+# data/stats.json, data/lsssdd_split.json) freeze at sprint-1 merge.
+
+seed: 0
+
+paths:
+  raw_xview3: data/raw/xview3      # GRD/<scene_id>/{VH_dB,VV_dB,...}.tif + label CSVs
+  raw_lsssdd: data/raw/lsssdd      # LS-SSDD-v1.0 800x800 sub-images (Arms 4, 8 source)
+  chips: data/chips                # 800x800 float16 dB chips + per-chip JSON sidecars
+  manifests: data/manifests        # one parquet per scene/source
+  splits: data/splits.json         # scene_id -> split (frozen after sprint-1)
+  stats: data/stats.json           # train-split-only per-pol mean/std (frozen after sprint-1)
+  lsssdd_split: data/lsssdd_split.json  # LS-SSDD internal train/val (frozen after sprint-1)
+
+download:
+  sarfish_repo: ConnorLuckettDSTG/SARFish
+  sarfish_revision: null           # PIN before the real pull (P1.1) — recorded in SOURCE.note
+  lsssdd_repo: TianwenZhang0825/LS-SSDD-v1.0-OPEN
+  lsssdd_revision: null            # PIN before the real pull (P1.2)
+  size_cap_gb: 400                 # abort if the estimated pull exceeds this (P1.1)
+
+chip:
+  size_px: 800
+  overlap_px: 100                  # stride 700 (xView3); LS-SSDD arrives pre-cut at 800
+  gsd_m: 10.0
+  max_nodata_frac: 0.95            # drop chips with more no-data than this
+
+# Fixed study-wide channel representation — [VH, VV, VH-VV] in dB (P1.3).
+# Never varied per arm; channel adaptation only via timm in_chans (ground rule 12).
+channels: [VH, VV, VH_minus_VV]
+
+splits:
+  train_frac: 0.75                 # of xView3 train scenes, scene-level, seeded
+  dev_frac: 0.15
+  test_frac: 0.10
+  n_region_bins: 6                 # coarse lat/lon stratification (P1.5)
+  shore_km_threshold: 5.0          # "has shoreline" stratum: any label < 5 km from shore
+  # The ~50 human-verified validation scenes form eval_final, excluded from
+  # everything, touched exactly once (ground rule 4).
+
+lsssdd_split:
+  train_frac: 0.9                  # seeded internal split, materialized once (P1.5)
+  val_frac: 0.1
+
+labels:
+  positive_confidences: [HIGH, MEDIUM]  # detection positives when is_vessel
+  ignore_confidence: LOW                # LOW -> ignore regions
+  dark_source: Manual                   # dark-vessel proxy: source == "Manual"
