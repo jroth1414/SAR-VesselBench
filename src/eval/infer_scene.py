@@ -225,11 +225,18 @@ def dev_f1(
     tau: float,
     **infer_kwargs,
 ) -> dict:
-    """Score the model on dev scenes through the FROZEN scorer."""
+    """Dev-scene scoring through the FROZEN scorer, P2.2b-style.
+
+    ``tau`` is the LOW candidate floor for decoding; the operating point is
+    then the F1-maximizing threshold selected on these dev predictions by
+    ``src/eval/threshold.py`` (the single home for threshold selection —
+    P2.2b/P5.4), reported alongside the resulting metrics.
+    """
 
     import pandas as pd
 
     from src.eval.scorer import score_dataset
+    from src.eval.threshold import apply_threshold, select_f1_threshold
 
     stats = json.loads(Path(stats_path).read_text())
     labels = pd.read_csv(labels_csv)
@@ -243,7 +250,8 @@ def dev_f1(
             model, Path(raw_root) / scene_id, stats=stats, tau=tau, **infer_kwargs
         )
 
-    result = score_dataset(gt_by_scene, pred_by_scene)
+    threshold = select_f1_threshold(gt_by_scene, pred_by_scene)
+    result = score_dataset(gt_by_scene, apply_threshold(pred_by_scene, threshold))
     return {
         "f1": result.aggregate.f1,
         "precision": result.aggregate.precision,
@@ -251,5 +259,6 @@ def dev_f1(
         "tp": result.aggregate.tp,
         "fp": result.aggregate.fp,
         "fn": result.aggregate.fn,
-        "n_predictions": sum(len(p) for p in pred_by_scene.values()),
+        "threshold": threshold,
+        "n_candidates": sum(len(p) for p in pred_by_scene.values()),
     }

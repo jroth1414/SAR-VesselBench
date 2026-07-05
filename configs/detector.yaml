@@ -46,7 +46,8 @@ augment:
   intensity_jitter_db: 1.0   # == +-0.1 log10-units (chips are dB = 10*log10)
 
 decode:
-  tau: 0.35                  # starting point; operating threshold is dev-tuned (P2.2b)
+  candidate_floor: 0.05      # low candidate threshold; the OPERATING point is
+                             # dev-selected by src/eval/threshold.py (P2.2b/P5.4)
   d_nms_m: 120
   match_tol_m: 200
   decode_stride_px: 4

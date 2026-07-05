@@ -79,8 +79,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     batch_size = det_cfg["schedule"]["batch_size"]
     limit_train_batches = None
     if args.smoke:
+        # dev-box smoke: smaller batch for the 16 GB card, full epochs — at
+        # ~8 it/s the whole f0.1 dataset is ~3 min/epoch, and the capped-step
+        # variant produced too little signal to decode a single detection.
         batch_size = min(batch_size, 8)
-        limit_train_batches = 300
 
     datamodule = FineTuneDataModule(
         chips_root=data_cfg["paths"]["chips"],
@@ -213,7 +215,7 @@ class DevSceneEval(Callback):
             raw_root=Path(self.data_cfg["paths"]["raw_xview3"]) / "GRD",
             labels_csv=Path(self.data_cfg["paths"]["raw_xview3"]) / "labels" / "train.csv",
             stats_path=self.data_cfg["paths"]["stats"],
-            tau=self.det_cfg["decode"]["tau"],
+            tau=self.det_cfg["decode"]["candidate_floor"],
             d_nms_m=self.det_cfg["decode"]["d_nms_m"],
             tile_px=self.det_cfg["eval"]["tile_px"],
             tile_stride_px=self.det_cfg["eval"]["tile_stride_px"],
