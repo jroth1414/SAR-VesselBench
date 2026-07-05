@@ -63,6 +63,7 @@ jobs:
           for f in tests/test_split_disjoint.py \
                    tests/test_splits_immutable.py \
                    tests/test_lsssdd_split_immutable.py \
+                   tests/test_stats_immutable.py \
                    tests/test_backbone_parity.py \
                    tests/test_fm_checkpoints_load.py \
                    tests/test_scorer_immutable.py; do
