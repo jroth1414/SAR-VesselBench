@@ -9,7 +9,9 @@ from src.data.splits import (
     build_splits,
     compute_channel_stats,
     scene_pool,
+    scene_records_from_labels,
     scene_split_map,
+    select_scenes,
 )
 
 
@@ -129,6 +131,50 @@ def test_compute_channel_stats_matches_known_values(tmp_path):
     assert stats["channels"]["VV"]["std"] == pytest.approx(3.0, abs=0.3)
     assert stats["n_pixels"][0] == 2 * 32 * 32 - 2  # one NaN per chip excluded
     assert stats["scenes"] == sorted({p.name.split("_r")[0] for p in paths})
+
+
+def test_scene_records_from_labels_centroid_and_shoreline():
+    labels_by_scene = {
+        "aaaa000000000000t": [
+            {"detect_lat": 10.0, "detect_lon": 20.0, "distance_from_shore_km": 9999.99},
+            {"detect_lat": 12.0, "detect_lon": 22.0, "distance_from_shore_km": 3.0},
+        ],
+        "bbbb000000000000t": [
+            {"detect_lat": -5.0, "detect_lon": 0.0, "distance_from_shore_km": 100.0},
+        ],
+    }
+    records = scene_records_from_labels(labels_by_scene, shore_km_threshold=5.0)
+
+    first, second = records
+    assert first["scene_id"] == "aaaa000000000000t"
+    assert first["center_lat"] == pytest.approx(11.0)
+    assert first["center_lon"] == pytest.approx(21.0)
+    assert first["has_shoreline"] is True  # 3 km < 5; the 9999.99 sentinel ignored
+    assert second["has_shoreline"] is False
+    assert first["n_labels"] == 2
+
+
+def test_select_scenes_deterministic_exact_count_strata_spread():
+    records = _records(n_train=200, n_eval=0)
+
+    selected = select_scenes(records, n_select=60, seed=0)
+    again = select_scenes(records, n_select=60, seed=0)
+    other_seed = select_scenes(records, n_select=60, seed=1)
+
+    assert len(selected) == 60
+    assert selected == again
+    assert selected != other_seed
+    assert len({record["scene_id"] for record in selected}) == 60
+
+    # Proportionality: shoreline share in the selection tracks the pool share.
+    pool_share = sum(bool(r["has_shoreline"]) for r in records) / len(records)
+    sel_share = sum(bool(r["has_shoreline"]) for r in selected) / len(selected)
+    assert sel_share == pytest.approx(pool_share, abs=0.15)
+
+
+def test_select_scenes_returns_pool_when_n_exceeds():
+    records = _records(n_train=10, n_eval=0)
+    assert len(select_scenes(records, n_select=50, seed=0)) == 10
 
 
 def test_scene_split_map_rejects_duplicate_membership():

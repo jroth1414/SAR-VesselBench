@@ -134,6 +134,108 @@ def _largest_remainder(total: int, fractions: np.ndarray) -> list[int]:
     return counts.tolist()
 
 
+def scene_records_from_labels(
+    labels_by_scene: Mapping[str, Sequence[Mapping[str, object]]],
+    *,
+    shore_km_threshold: float = 5.0,
+) -> list[dict[str, object]]:
+    """Per-scene stratification records derived from the label CSV alone.
+
+    Scene center is approximated by the mean of the scene's label lat/lons
+    (documented proxy — avoids extracting 554 rasters just to read georefs;
+    labels span each scene, so their centroid is a fine input for COARSE
+    region binning). ``has_shoreline`` uses the plan's <5 km rule; the
+    dataset's 9999.99 far-from-shore sentinel is naturally excluded.
+    """
+
+    records = []
+    for scene_id, labels in labels_by_scene.items():
+        lats = [float(l["detect_lat"]) for l in labels if _isnum(l.get("detect_lat"))]
+        lons = [float(l["detect_lon"]) for l in labels if _isnum(l.get("detect_lon"))]
+        if not lats or not lons:
+            raise ValueError(f"{scene_id}: no usable label coordinates")
+        records.append(
+            {
+                "scene_id": str(scene_id),
+                "center_lon": float(np.mean(lons)),
+                "center_lat": float(np.mean(lats)),
+                "has_shoreline": any(
+                    _isnum(l.get("distance_from_shore_km"))
+                    and float(l["distance_from_shore_km"]) < shore_km_threshold
+                    for l in labels
+                ),
+                "n_labels": len(labels),
+            }
+        )
+    return sorted(records, key=lambda r: r["scene_id"])
+
+
+def _isnum(value: object) -> bool:
+    if value is None:
+        return False
+    try:
+        return not np.isnan(float(value))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return False
+
+
+def select_scenes(
+    scene_records: Sequence[Mapping[str, object]],
+    *,
+    n_select: int,
+    seed: int,
+    n_region_bins: int = 6,
+) -> list[dict[str, object]]:
+    """Stratified, seeded selection of the study's train-pool scenes (P1.3/P1.5).
+
+    Proportional allocation over (region-bin, shoreline) strata with largest
+    remainder, seeded shuffle inside each stratum. Deterministic in
+    (records, n_select, seed).
+    """
+
+    pool = sorted(
+        (dict(record) for record in scene_records),
+        key=lambda record: str(record["scene_id"]),
+    )
+    if n_select >= len(pool):
+        return pool
+
+    lonlats = np.array(
+        [[float(r["center_lon"]), float(r["center_lat"])] for r in pool]
+    )
+    bins = region_bins(lonlats, n_bins=n_region_bins, seed=seed)
+    strata: dict[tuple[int, bool], list[dict[str, object]]] = {}
+    for record, region in zip(pool, bins):
+        key = (int(region), bool(record.get("has_shoreline") or False))
+        strata.setdefault(key, []).append(record)
+
+    stratum_keys = sorted(strata)
+    sizes = np.array([len(strata[key]) for key in stratum_keys], dtype=float)
+    quotas = _largest_remainder_quota(sizes / sizes.sum(), n_select, caps=sizes.astype(int))
+
+    rng = np.random.default_rng(seed)
+    selected: list[dict[str, object]] = []
+    for key, quota in zip(stratum_keys, quotas):
+        members = sorted(strata[key], key=lambda record: str(record["scene_id"]))
+        rng.shuffle(members)
+        selected.extend(members[:quota])
+    return sorted(selected, key=lambda record: str(record["scene_id"]))
+
+
+def _largest_remainder_quota(
+    fractions: np.ndarray, total: int, *, caps: np.ndarray
+) -> list[int]:
+    raw = fractions * total
+    quotas = np.minimum(np.floor(raw).astype(int), caps)
+    while quotas.sum() < total:
+        remainders = np.where(quotas < caps, raw - quotas, -np.inf)
+        index = int(np.argmax(remainders))
+        if not np.isfinite(remainders[index]):
+            break
+        quotas[index] += 1
+    return quotas.tolist()
+
+
 def build_lsssdd_split(
     sub_image_names: Iterable[str], *, train_frac: float, seed: int
 ) -> dict[str, list[str]]:
@@ -214,14 +316,45 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="configs/data.yaml")
     parser.add_argument(
+        "--from-labels",
+        default=None,
+        metavar="TRAIN_CSV",
+        help="derive stratification records from the xView3 train label CSV "
+        "(label-centroid scene centers) instead of the chipped scene registry",
+    )
+    parser.add_argument(
+        "--validation-labels",
+        default=None,
+        metavar="VAL_CSV",
+        help="validation label CSV; its scene ids form eval_final (with --from-labels)",
+    )
+    parser.add_argument(
+        "--n-scenes",
+        type=int,
+        default=None,
+        help="stratified-select this many train-pool scenes before splitting "
+        "(the study scene-count decision; recorded in the artifact meta)",
+    )
+    parser.add_argument(
         "--build-stats",
         action="store_true",
         help="also compute data/stats.json over the train-split chips",
     )
     parser.add_argument(
+        "--stats-only",
+        action="store_true",
+        help="only compute data/stats.json from the EXISTING splits.json "
+        "(used after the long chipping job; does not touch splits.json)",
+    )
+    parser.add_argument(
         "--lsssdd-root",
         default=None,
         help="LS-SSDD sub-image root; when given, also writes data/lsssdd_split.json",
+    )
+    parser.add_argument(
+        "--lsssdd-only",
+        action="store_true",
+        help="only build data/lsssdd_split.json; do not touch splits.json or stats",
     )
     parser.add_argument(
         "--allow-overwrite",
@@ -234,28 +367,69 @@ def main(argv: Sequence[str] | None = None) -> int:
     config = yaml.safe_load(Path(args.config).read_text())
     seed = int(config["seed"])
     paths = config["paths"]
-
     splits_path = Path(paths["splits"])
-    if splits_path.exists() and not args.allow_overwrite:
-        raise SystemExit(
-            f"{splits_path} already exists and freezes at sprint-1 merge; "
-            "pass --allow-overwrite only if it is not yet frozen (see DEVPLAN)."
+
+    if not args.stats_only and not args.lsssdd_only:
+        if splits_path.exists() and not args.allow_overwrite:
+            raise SystemExit(
+                f"{splits_path} already exists and freezes at sprint-1 merge; "
+                "pass --allow-overwrite only if it is not yet frozen (see DEVPLAN)."
+            )
+
+        if args.from_labels:
+            labels = pd.read_csv(args.from_labels)
+            records = scene_records_from_labels(
+                {
+                    scene_id: group.to_dict(orient="records")
+                    for scene_id, group in labels.groupby("scene_id")
+                },
+                shore_km_threshold=float(config["splits"]["shore_km_threshold"]),
+            )
+            if args.n_scenes:
+                records = select_scenes(
+                    records,
+                    n_select=args.n_scenes,
+                    seed=seed,
+                    n_region_bins=int(config["splits"]["n_region_bins"]),
+                )
+            if args.validation_labels:
+                val_scenes = sorted(
+                    pd.read_csv(args.validation_labels)["scene_id"].unique()
+                )
+                records = records + [
+                    {"scene_id": scene_id, "center_lon": 0.0, "center_lat": 0.0}
+                    for scene_id in val_scenes
+                ]
+        else:
+            registry = pd.read_parquet(Path(paths["manifests"]) / "scenes.parquet")
+            records = registry.to_dict(orient="records")
+
+        splits = build_splits(
+            records,
+            fractions=config["splits"],
+            seed=seed,
+            n_region_bins=int(config["splits"]["n_region_bins"]),
         )
+        splits_path.parent.mkdir(parents=True, exist_ok=True)
+        meta = {
+            "seed": seed,
+            "fractions": config["splits"],
+            "n_scenes_selected": args.n_scenes,
+            "selection_source": (
+                f"labels:{args.from_labels}" if args.from_labels else "scene registry"
+            ),
+        }
+        # newline="\n" everywhere an artifact is written: these files are
+        # sha256-pinned, and Windows CRLF translation would silently change
+        # the hash relative to the LF-normalized repo copy.
+        splits_path.write_text(
+            json.dumps({"meta": meta, "splits": splits}, indent=1), newline="\n"
+        )
+        print({name: len(ids) for name, ids in splits.items()}, "->", splits_path)
+    else:
+        splits = json.loads(splits_path.read_text())["splits"] if splits_path.exists() else None
 
-    registry = pd.read_parquet(Path(paths["manifests"]) / "scenes.parquet")
-    splits = build_splits(
-        registry.to_dict(orient="records"),
-        fractions=config["splits"],
-        seed=seed,
-        n_region_bins=int(config["splits"]["n_region_bins"]),
-    )
-    splits_path.parent.mkdir(parents=True, exist_ok=True)
-    splits_path.write_text(
-        json.dumps({"meta": {"seed": seed, "fractions": config["splits"]}, "splits": splits}, indent=1)
-    )
-    print({name: len(ids) for name, ids in splits.items()}, "->", splits_path)
-
-    if args.build_stats:
+    if (args.build_stats or args.stats_only) and not args.lsssdd_only:
         chips_root = Path(paths["chips"])
         train_chips = [
             path
@@ -268,7 +442,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         stats_path = Path(paths["stats"])
         if stats_path.exists() and not args.allow_overwrite:
             raise SystemExit(f"{stats_path} already exists (frozen artifact)")
-        stats_path.write_text(json.dumps(stats, indent=1))
+        stats_path.write_text(json.dumps(stats, indent=1), newline="\n")
         print(f"stats over {len(train_chips)} train chips -> {stats_path}")
 
     if args.lsssdd_root:
@@ -283,7 +457,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if lsssdd_path.exists() and not args.allow_overwrite:
             raise SystemExit(f"{lsssdd_path} already exists (frozen artifact)")
         lsssdd_path.write_text(
-            json.dumps({"meta": {"seed": seed}, **lsssdd}, indent=1)
+            json.dumps({"meta": {"seed": seed}, **lsssdd}, indent=1), newline="\n"
         )
         print(
             f"lsssdd split: {len(lsssdd['train'])} train / {len(lsssdd['val'])} val -> {lsssdd_path}"
