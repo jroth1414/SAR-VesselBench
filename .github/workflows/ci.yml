@@ -45,12 +45,16 @@ jobs:
       - name: Install CI dependencies
         # CPU-only, minimal: enough to import the package and run the guard
         # tests against tiny fixtures. NOT the full training environment (no
-        # CUDA-pinned torch — see locks/ for the GPU machines). Install a small
-        # CPU torch wheel EXPLICITLY, before requirements-ci.txt, so timm does
-        # not pull the large default (CUDA) wheel transitively.
+        # CUDA-pinned torch — see locks/ for the GPU machines). Install torch
+        # AND torchvision from the CPU index, together and BEFORE
+        # requirements-ci.txt: timm depends on torchvision, and letting pip
+        # resolve it from PyPI pairs a CUDA-built torchvision with the CPU
+        # torch — its compiled ops then fail to register ("operator
+        # torchvision::nms does not exist") and every timm import dies at
+        # collection.
         run: |
           python -m pip install --upgrade pip
-          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements-ci.txt
 
       - name: Run the anti-drift guard tests (DEVPLAN §1b)
@@ -115,7 +119,7 @@ jobs:
       - name: Install CI dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements-ci.txt
 
       - name: Run full test suite
