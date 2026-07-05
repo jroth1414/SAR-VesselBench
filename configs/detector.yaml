@@ -1,0 +1,62 @@
+# SHARED detector contract (DEVPLAN P3.3-P3.5, hyperparameter table §11).
+# One head, one optimizer, one augmentation policy, one decode config, one
+# schedule for ALL EIGHT ARMS, both tracks. FROZEN at sprint-3 merge
+# (do-not-touch manifest); changing it afterwards requires a human STOP.
+
+input:
+  crop_px: 512               # random crop from the 800px chip
+  channels: [VH, VV, VH_minus_VV]
+
+backbones:
+  vit: {timm_id: vit_base_patch16_224, out_stride: 16}
+  cnn: {timm_id: convnextv2_base, out_stride: 32}
+  # Smaller-variant fallback, triggered ONLY by STOP condition #6 (compute
+  # >2x budget) and applied to a whole track uniformly (P3.1):
+  fallback: {vit: vit_small_patch16_224, cnn: convnextv2_tiny}
+
+head:
+  channels: 256
+  output_stride: 4           # 128x128 map for a 512 input
+  gaussian_sigma_px: 2
+  ignore_radius_px: 3
+
+loss: {alpha: 2, beta: 4}    # penalty-reduced focal (CenterNet)
+
+optimizer:
+  name: adamw
+  lr: 1.0e-4
+  layer_decay: 0.65
+  weight_decay: 0.05
+  grad_clip: 1.0
+
+schedule:
+  epochs: 50
+  warmup_epochs: 5
+  cosine: true
+  batch_size: 16
+  precision: 16-mixed        # fp16 + GradScaler; norms fp32 (Volta-safe)
+
+sampler: {fg_frac: 0.5}
+
+augment:
+  vessel_biased_frac: 0.7
+  vessel_center_radius_px: 128
+  flips: true
+  rot90: true
+  intensity_jitter_db: 1.0   # == +-0.1 log10-units (chips are dB = 10*log10)
+
+decode:
+  tau: 0.35                  # starting point; operating threshold is dev-tuned (P2.2b)
+  d_nms_m: 120
+  match_tol_m: 200
+  decode_stride_px: 4
+  gsd_m: 10
+  output_stride_m: 40        # 4 px * 10 m — the P2.2 unit contract
+
+eval:
+  dev_every_epochs: 5
+  n_dev_scenes: 8            # fixed first-8 (sorted) dev scenes
+  early_stop_patience: 4     # counted in dev evals
+  tile_px: 512
+  tile_stride_px: 384
+  infer_batch: 8
