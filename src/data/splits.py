@@ -352,6 +352,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="LS-SSDD sub-image root; when given, also writes data/lsssdd_split.json",
     )
     parser.add_argument(
+        "--lsssdd-only",
+        action="store_true",
+        help="only build data/lsssdd_split.json; do not touch splits.json or stats",
+    )
+    parser.add_argument(
         "--allow-overwrite",
         action="store_true",
         help="overwrite existing artifacts (they freeze at sprint-1 merge; "
@@ -364,7 +369,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     paths = config["paths"]
     splits_path = Path(paths["splits"])
 
-    if not args.stats_only:
+    if not args.stats_only and not args.lsssdd_only:
         if splits_path.exists() and not args.allow_overwrite:
             raise SystemExit(
                 f"{splits_path} already exists and freezes at sprint-1 merge; "
@@ -422,9 +427,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         print({name: len(ids) for name, ids in splits.items()}, "->", splits_path)
     else:
-        splits = json.loads(splits_path.read_text())["splits"]
+        splits = json.loads(splits_path.read_text())["splits"] if splits_path.exists() else None
 
-    if args.build_stats or args.stats_only:
+    if (args.build_stats or args.stats_only) and not args.lsssdd_only:
         chips_root = Path(paths["chips"])
         train_chips = [
             path
