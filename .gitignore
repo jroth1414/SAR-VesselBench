@@ -1,5 +1,10 @@
 # Never commit data, runs, or heavy artifacts (DEVPLAN ground rule 11 / AGENTS.md).
-data/
+# data/* (not data/) so the three frozen split/stats artifacts CAN be
+# committed once they exist — everything else under data/ stays ignored.
+data/*
+!data/splits.json
+!data/stats.json
+!data/lsssdd_split.json
 runs/
 *.pt
 *.pth

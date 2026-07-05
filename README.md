@@ -137,7 +137,13 @@ pipeline is still to be built. Current state (see the DEVPLAN cold-start runbook
   `Makefile`, `configs/data.yaml`, `scripts/gpu_sanity.py`, and the two GPU lockfiles under `locks/`
   (the 5070 Ti lock is a real freeze verified on the box; the V100-node lock is a candidate pin to
   re-freeze on the node — see its header).
-- ⬜ **Phases 1, 3–8** (data pipeline, shared detector, arms, grid, final eval, analysis) — not started.
+- 🟡 **Phase 1 (data pipeline)** — code + tests done (`src/data/`: registration/download, chipper,
+  centroid conversion, split builder; exercised end-to-end on a 7-scene subset of the locally
+  downloaded full xView3 set). The three frozen artifacts (`data/splits.json`, `data/stats.json`,
+  `data/lsssdd_split.json`) are **not yet built for real**: the xView3 label CSVs (auth-gated at DIU)
+  and the LS-SSDD imagery (radars.ac.cn) are still to be fetched — see the DEVPLAN cold-start
+  runbook, BLOCKER-4/5.
+- ⬜ **Phases 3–8** (shared detector, arms, grid, final eval, analysis) — not started.
 
 ```
 JHU-xView3/
