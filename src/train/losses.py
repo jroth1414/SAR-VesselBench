@@ -29,8 +29,13 @@ def render_target(
     """Render (heatmap, loss_mask) at output resolution.
 
     ``centers``/``ignore_centers`` are (row, col) in OUTPUT-map pixels.
-    The heatmap takes the max over per-vessel Gaussians (CenterNet); the
-    loss mask zeroes an ignore disk around every LOW-confidence label.
+    Centers are quantized to INTEGER pixels before stamping — the CenterNet
+    reference (`ct_int = ct.astype(int)`) — so every object's peak pixel is
+    EXACTLY 1.0 and the focal loss's positive mask (`target >= 1`) is
+    non-empty. Stamping at fractional centers silently yields max(target) < 1
+    and zero positive-loss terms. The heatmap takes the max over per-vessel
+    Gaussians; the loss mask zeroes an ignore disk around every
+    LOW-confidence label.
     """
 
     heatmap = torch.zeros(size, size)
@@ -40,8 +45,10 @@ def render_target(
         ys = torch.arange(size).view(-1, 1)
         xs = torch.arange(size).view(1, -1)
         for row, col in centers:
+            row_int = int(min(max(row, 0), size - 1))
+            col_int = int(min(max(col, 0), size - 1))
             gaussian = torch.exp(
-                -((ys - row) ** 2 + (xs - col) ** 2) / (2.0 * sigma**2)
+                -((ys - row_int) ** 2 + (xs - col_int) ** 2) / (2.0 * sigma**2)
             )
             heatmap = torch.maximum(heatmap, gaussian)
 

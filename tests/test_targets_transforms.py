@@ -22,6 +22,15 @@ def test_render_target_peak_and_ignore_mask():
     assert mask[90, 104] == 1.0
 
 
+def test_render_target_fractional_center_still_peaks_at_one():
+    # CenterNet quantizes centers to integer pixels; a fractional center must
+    # still produce a peak of EXACTLY 1.0 (else the focal positive mask is
+    # empty and no object ever gets a positive loss term).
+    heatmap, _ = render_target(64, [(30.94, 40.37)])
+    assert float(heatmap.max()) == pytest.approx(1.0)
+    assert divmod(int(heatmap.argmax()), 64) == (30, 40)
+
+
 def test_focal_loss_prefers_correct_prediction():
     heatmap, mask = render_target(64, [(20.0, 20.0)])
     good = torch.full((1, 64, 64), -4.0)

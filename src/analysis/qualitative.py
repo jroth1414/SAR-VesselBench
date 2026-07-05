@@ -78,9 +78,13 @@ def render_pred_gallery(
     n_rows: int = 4,
     n_cols: int = 4,
     seed: int = 0,
-    tau: float = 0.35,
+    tau: float = 0.05,
 ) -> Path:
-    """Overlay decoded predictions (crosses) + labels (circles) on dev chips."""
+    """Overlay decoded predictions (crosses) + labels (circles) on dev chips.
+
+    Decodes at the LOW candidate floor (the operating threshold is dev-tuned,
+    P2.2b) and samples center-crops that actually contain >= 1 positive.
+    """
 
     import matplotlib
 
@@ -105,11 +109,18 @@ def render_pred_gallery(
     )
     rng = random.Random(seed)
     labeled = [i for i, fg in enumerate(dataset.foreground) if fg]
-    sample_indices = rng.sample(labeled, min(n_rows * n_cols, len(labeled)))
+    rng.shuffle(labeled)
+    # keep only crops whose center 512 window still contains a positive
+    samples = []
+    for index in labeled:
+        candidate = dataset[index]
+        if candidate["n_positives"] > 0:
+            samples.append(candidate)
+        if len(samples) == n_rows * n_cols:
+            break
 
     fig, axes = plt.subplots(n_rows, n_cols, figsize=(3 * n_cols, 3 * n_rows))
-    for axis, index in zip(np.asarray(axes).ravel(), sample_indices):
-        sample = dataset[index]
+    for axis, sample in zip(np.asarray(axes).ravel(), samples):
         with torch.no_grad(), torch.autocast("cuda", dtype=torch.float16):
             logits = module(sample["image"][None].cuda())
         heat = torch.sigmoid(logits)[0, 0].float().cpu().numpy()
@@ -123,7 +134,7 @@ def render_pred_gallery(
             axis.plot(peak.col, peak.row, "x", color="red", ms=8)
         axis.set_title(f"{len(peaks)} pred", fontsize=6)
         axis.axis("off")
-    for axis in np.asarray(axes).ravel()[len(sample_indices):]:
+    for axis in np.asarray(axes).ravel()[len(samples):]:
         axis.axis("off")
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
