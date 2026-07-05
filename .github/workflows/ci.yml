@@ -59,7 +59,9 @@ jobs:
         # if its file exists yet, so a fresh clone is green-with-skips for the
         # not-yet-written guards (see the cold-start runbook).
         run: |
+          set +e
           ran=0
+          overall=0
           for f in tests/test_split_disjoint.py \
                    tests/test_splits_immutable.py \
                    tests/test_lsssdd_split_immutable.py \
@@ -69,8 +71,18 @@ jobs:
                    tests/test_scorer_immutable.py; do
             if [ -f "$f" ]; then
               echo "== running $f =="
-              pytest -v "$f"
+              out=$(pytest -v "$f" 2>&1); code=$?
+              echo "$out"
               ran=1
+              if [ "$code" -ne 0 ]; then
+                overall=1
+                echo "::error::guard $f exited with code $code"
+                # Surface the failure tail as annotations so the detail is
+                # visible from the checks API without opening the raw log.
+                echo "$out" | tail -n 20 | while IFS= read -r line; do
+                  echo "::error::${f}: ${line}"
+                done
+              fi
             else
               echo "::notice::$f not present yet — skipped (expected early in the project)"
             fi
@@ -78,6 +90,7 @@ jobs:
           if [ "$ran" = "0" ]; then
             echo "::warning::no guard test files present yet"
           fi
+          exit $overall
 
   full-suite:
     name: Full test suite
@@ -109,7 +122,13 @@ jobs:
         # Do not fail the whole CI on missing non-guard tests early in the
         # project; the guard job above is the hard gate for frozen artifacts.
         run: |
-          pytest -v tests/ || {
-            echo "::error::Test suite failed. If this is the guard tests, do NOT merge.";
-            exit 1;
-          }
+          set +e
+          out=$(pytest -v tests/ 2>&1); code=$?
+          echo "$out"
+          if [ "$code" -ne 0 ]; then
+            echo "::error::Test suite failed (exit $code). If this is the guard tests, do NOT merge."
+            echo "$out" | grep -E "FAILED|ERROR|Error" | tail -n 15 | while IFS= read -r line; do
+              echo "::error::${line}"
+            done
+            exit 1
+          fi
