@@ -64,19 +64,29 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="3-epoch dev-box sanity: small batch, capped steps, 1 dev scene",
     )
+    # Check-level overrides (P3.6 early-signal runs on the dev card). The
+    # frozen detector.yaml stays authoritative for the real grid — these
+    # exist so short comparisons can share IDENTICAL reduced settings.
+    parser.add_argument("--exp-suffix", default=None, help="append to the run id (e.g. p36)")
+    parser.add_argument("--batch-size", type=int, default=None)
+    parser.add_argument("--samples-per-epoch", type=int, default=None)
+    parser.add_argument("--dev-every", type=int, default=None)
+    parser.add_argument("--n-dev-scenes", type=int, default=None)
     args = parser.parse_args(argv)
 
     data_cfg = yaml.safe_load(Path(args.data_config).read_text())
     det_cfg = yaml.safe_load(Path(args.detector_config).read_text())
 
     run_id = exp_id(args.init, args.label_frac, args.seed)
+    if args.exp_suffix:
+        run_id = f"{run_id}-{args.exp_suffix}"
     run_dir = Path("runs") / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
 
     L.seed_everything(args.seed, workers=True)
 
     epochs = args.epochs or det_cfg["schedule"]["epochs"]
-    batch_size = det_cfg["schedule"]["batch_size"]
+    batch_size = args.batch_size or det_cfg["schedule"]["batch_size"]
     limit_train_batches = None
     if args.smoke:
         # dev-box smoke: smaller batch for the 16 GB card, full epochs — at
@@ -95,6 +105,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         crop=det_cfg["input"]["crop_px"],
         fg_frac=det_cfg["sampler"]["fg_frac"],
         seed=args.seed,
+        samples_per_epoch=args.samples_per_epoch,
     )
     module = HeatmapLitModule(
         init_name=args.init,
@@ -110,8 +121,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     dev_eval = DevSceneEval(
         data_cfg=data_cfg,
         det_cfg=det_cfg,
-        every_n_epochs=1 if args.smoke else det_cfg["eval"]["dev_every_epochs"],
-        n_scenes=1 if args.smoke else det_cfg["eval"]["n_dev_scenes"],
+        every_n_epochs=args.dev_every
+        or (1 if args.smoke else det_cfg["eval"]["dev_every_epochs"]),
+        n_scenes=args.n_dev_scenes
+        or (1 if args.smoke else det_cfg["eval"]["n_dev_scenes"]),
         final_epoch=epochs,
     )
     callbacks = [
