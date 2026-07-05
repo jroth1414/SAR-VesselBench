@@ -56,3 +56,9 @@ is gitignored, so the committed log lives here.
   512/384 windows from memory — per-window reads against striped compressed
   GeoTIFFs were ~100× slower and made the every-5-epoch dev eval unusable.
   The plan's 512/384 tiling and global-NMS decode are unchanged.
+- **P3.6 early-signal protocol** (dev-card budget, identical across all six
+  runs so the within-track comparisons stay fair): 100% labels, 5 epochs,
+  batch 8, 24,000 sampled chips/epoch, full 8-scene dev eval at the last
+  epoch, seed 0. CLI overrides only — the frozen detector.yaml remains
+  authoritative for the real grid on the node. Run ids carry a `-p36`
+  suffix so they can never be confused with grid cells.
