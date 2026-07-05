@@ -1,0 +1,240 @@
+"""Eight backbone initializations behind one enum (DEVPLAN P3.2).
+
+Within a track all four loaders produce the IDENTICAL architecture; only the
+weights differ. Each loader prints matched/missing/unexpected key counts and
+refuses to load a downloaded checkpoint whose ``LICENSE.note`` is missing
+(the P3.2 license gate).
+
+Key-mapping functions are pure (they map source key names to timm names)
+so the CPU-offline half of ``test_fm_checkpoints_load`` can verify coverage
+against committed key manifests without downloading anything.
+
+Checkpoint facts (verified at download, revisions in data/weights/*/SOURCE.note):
+- SatDINO ``satdino-vit_base-16.pth``: ``ckpt['teacher']`` in timm ViT naming
+  plus one extra ``gsd_register`` (SatDINO's GSD embedding — unused here).
+- SARMAE ``SARMAE_vitb_checkpoint-last``: ``ckpt['model']`` with
+  ``sar_encoder.*`` (MAE encoder + decoder), ``optical_encoder.*`` and
+  ``sar_alignment_ffn.*`` branches; we keep the sar_encoder ENCODER only.
+- BigEarthNet ``model.safetensors``: timm ConvNeXt-V2-B under a
+  ``model.vision_encoder.`` prefix with a 19-class head (dropped). Stems are
+  2-band (S1: VV,VH) / 10-band (S2), adapted to the fixed 3-channel input by
+  Repeat-with-rescaling.
+
+Channel adaptation note (flagged for review, runs/decisions.md): timm's
+``adapt_input_conv`` implements Repeat-with-rescaling only FROM 3-channel
+sources; the BigEarthNet stems need 2->3 and 10->3, so
+``repeat_with_rescaling`` below generalizes the identical tile-and-rescale
+math (cyclic tile to the target count, scale by src/dst to preserve
+activation magnitude). No other patch-embed/stem surgery anywhere
+(ground rule 12).
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Callable, Iterable, Mapping
+
+import torch
+
+from src.models.backbones import ConvNeXtBackbone, ViTBackbone, build_backbone
+
+INIT_FAMILY: dict[str, str] = {
+    "vit_random": "vit",
+    "satdino_b": "vit",
+    "sarmae_b": "vit",
+    "vit_supervised": "vit",
+    "cnn_random": "cnn",
+    "bigearthnet_s2": "cnn",
+    "bigearthnet_s1": "cnn",
+    "cnn_supervised": "cnn",
+}
+INIT_NAMES = tuple(INIT_FAMILY)
+
+DOWNLOADED_WEIGHTS_SUBDIR: dict[str, str] = {
+    "satdino_b": "satdino",
+    "sarmae_b": "sarmae",
+    "bigearthnet_s2": "bigearthnet_s2",
+    "bigearthnet_s1": "bigearthnet_s1",
+}
+
+
+def map_satdino_keys(keys: Iterable[str]) -> dict[str, str]:
+    """SatDINO teacher keys -> timm ViT keys (drop the GSD register)."""
+
+    return {
+        key: key
+        for key in keys
+        if key != "gsd_register" and not key.startswith("head.")
+    }
+
+
+def map_sarmae_keys(keys: Iterable[str]) -> dict[str, str]:
+    """SARMAE model keys -> timm ViT keys: sar_encoder ENCODER only."""
+
+    mapping: dict[str, str] = {}
+    for key in keys:
+        if not key.startswith("sar_encoder."):
+            continue  # optical_encoder.*, sar_alignment_ffn.* — other branches
+        stripped = key.removeprefix("sar_encoder.")
+        if stripped.startswith("decoder_") or stripped == "mask_token":
+            continue  # MAE decoder — not part of the transferred encoder
+        mapping[key] = stripped
+    return mapping
+
+
+def map_bigearthnet_keys(keys: Iterable[str]) -> dict[str, str]:
+    """BigEarthNet classifier keys -> timm ConvNeXt-V2 ``features_only`` keys.
+
+    timm's feature-extraction wrapper flattens the top level of the trunk
+    (``stem.0`` -> ``stem_0``, ``stages.2`` -> ``stages_2``); deeper names
+    are unchanged. The 19-class BigEarthNet head is dropped.
+    """
+
+    import re
+
+    mapping: dict[str, str] = {}
+    for key in keys:
+        if not key.startswith("model.vision_encoder."):
+            continue
+        stripped = key.removeprefix("model.vision_encoder.")
+        if stripped.startswith("head."):
+            continue  # 19-class BigEarthNet head — dropped
+        mapping[key] = re.sub(r"^(stem|stages)\.(\d+)\.", r"\1_\2.", stripped)
+    return mapping
+
+
+def repeat_with_rescaling(weight: torch.Tensor, target_chans: int) -> torch.Tensor:
+    """Adapt a conv stem weight (O, I, kH, kW) to ``target_chans`` inputs.
+
+    The same tile-and-rescale rule timm's ``adapt_input_conv`` applies from
+    3-channel sources, generalized to any source count: tile the source
+    channels cyclically to the target count, then scale by src/dst so the
+    expected activation magnitude is preserved.
+    """
+
+    out_ch, in_ch, k_h, k_w = weight.shape
+    if in_ch == target_chans:
+        return weight
+    repeats = -(-target_chans // in_ch)  # ceil
+    tiled = weight.repeat(1, repeats, 1, 1)[:, :target_chans]
+    return tiled * (in_ch / float(target_chans))
+
+
+def _load_mapped(
+    backbone_module: torch.nn.Module,
+    source_state: Mapping[str, torch.Tensor],
+    key_map: Mapping[str, str],
+    *,
+    name: str,
+    stem_key: str | None = None,
+) -> None:
+    """Load mapped weights, adapt the stem if asked, and report coverage."""
+
+    target = backbone_module.state_dict()
+    mapped: dict[str, torch.Tensor] = {}
+    for src_key, dst_key in key_map.items():
+        tensor = source_state[src_key]
+        if dst_key == stem_key and tensor.shape[1] != target[dst_key].shape[1]:
+            tensor = repeat_with_rescaling(tensor, target[dst_key].shape[1])
+        mapped[dst_key] = tensor
+
+    missing = [key for key in target if key not in mapped]
+    unexpected = [key for key in mapped if key not in target]
+    result = backbone_module.load_state_dict(
+        {key: value for key, value in mapped.items() if key in target},
+        strict=False,
+    )
+    print(
+        f"[{name}] matched={len(mapped) - len(unexpected)} "
+        f"missing={len(missing)} unexpected={len(unexpected)}"
+    )
+    if missing:
+        raise RuntimeError(
+            f"{name}: {len(missing)} backbone keys not covered by the "
+            f"checkpoint (first: {missing[:5]}) — refusing a partial load "
+            "(DEVPLAN §1b guard 3: no silent random weights)"
+        )
+    if result.unexpected_keys:
+        raise RuntimeError(f"{name}: unexpected keys slipped through: {result.unexpected_keys[:5]}")
+
+
+def _require_license(weights_dir: Path, name: str) -> None:
+    note = weights_dir / "LICENSE.note"
+    if not note.exists():
+        raise FileNotFoundError(
+            f"{name}: {note} is missing — the P3.2 license gate refuses to "
+            "load a downloaded backbone without its recorded license"
+        )
+
+
+def build_init(
+    name: str,
+    *,
+    load_weights: bool = True,
+    weights_root: str | Path = "data/weights",
+    supervised_checkpoint: str | Path | None = None,
+) -> ViTBackbone | ConvNeXtBackbone:
+    """Build the backbone for one arm's initialization.
+
+    ``load_weights=False`` returns the bare architecture (used by the parity
+    guard and CI, where no checkpoints exist).
+    """
+
+    if name not in INIT_FAMILY:
+        raise ValueError(f"unknown init {name!r}; use one of {INIT_NAMES}")
+    backbone = build_backbone(INIT_FAMILY[name])
+    if not load_weights or name in ("vit_random", "cnn_random"):
+        return backbone
+
+    weights_root = Path(weights_root)
+    if name in DOWNLOADED_WEIGHTS_SUBDIR:
+        weights_dir = weights_root / DOWNLOADED_WEIGHTS_SUBDIR[name]
+        _require_license(weights_dir, name)
+
+    if name == "satdino_b":
+        ckpt = dict(
+            torch.load(
+                weights_dir / "satdino-vit_base-16.pth",
+                map_location="cpu",
+                weights_only=False,
+            )["teacher"]
+        )
+        # SatDINO pos_embed layout is [cls, patches..., gsd_register] (see
+        # modeling_satdino.py interpolate_pos_encoding); timm expects
+        # [cls, patches...], so drop the trailing register position.
+        ckpt["pos_embed"] = ckpt["pos_embed"][:, :-1]
+        _load_mapped(backbone.model, ckpt, map_satdino_keys(ckpt.keys()), name=name)
+    elif name == "sarmae_b":
+        ckpt = torch.load(
+            weights_dir / "SARMAE_vitb_checkpoint-last",
+            map_location="cpu",
+            weights_only=False,
+        )["model"]
+        _load_mapped(backbone.model, ckpt, map_sarmae_keys(ckpt.keys()), name=name)
+    elif name in ("bigearthnet_s1", "bigearthnet_s2"):
+        from safetensors.torch import load_file
+
+        state = load_file(weights_dir / "model.safetensors")
+        _load_mapped(
+            backbone.model,
+            state,
+            map_bigearthnet_keys(state.keys()),
+            name=name,
+            stem_key="stem_0.weight",
+        )
+    elif name in ("vit_supervised", "cnn_supervised"):
+        if supervised_checkpoint is None:
+            raise FileNotFoundError(
+                f"{name}: pass supervised_checkpoint= (produced by the Phase-5 "
+                "LS-SSDD pretraining; not available before sprint-7-grid)"
+            )
+        state = torch.load(supervised_checkpoint, map_location="cpu", weights_only=False)
+        state = state.get("state_dict", state)
+        backbone_state = {
+            key.removeprefix("backbone."): value
+            for key, value in state.items()
+            if key.startswith("backbone.")
+        }
+        result = backbone.load_state_dict(backbone_state, strict=True)
+        print(f"[{name}] loaded supervised backbone from {supervised_checkpoint}")
+    return backbone

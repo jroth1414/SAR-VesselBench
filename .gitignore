@@ -20,7 +20,7 @@ __pycache__/
 *.egg-info/
 build/
 dist/
-.venv/
+.venv*/
 venv/
 
 # Editors / OS

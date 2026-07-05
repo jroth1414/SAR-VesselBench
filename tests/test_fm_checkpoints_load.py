@@ -1,0 +1,91 @@
+"""Guard test (DEVPLAN §1b guard 3): downloaded backbones load value-sensitively.
+
+Two halves:
+
+(a) CPU-offline STRUCTURAL half (runs in CI, no downloads): committed key
+    manifests (``tests/manifests/*.json``, recorded at download from the
+    pinned revisions) are pushed through the loader key-mapping functions and
+    must cover the timm target architecture's state dict exactly — missing==0
+    proves the mapping yields a full, non-partial load.
+
+(b) GPU-box VALUE-SENSITIVE half (skips when ``data/weights`` is absent):
+    actually loads each checkpoint and asserts a fixed probe of encoder
+    tensors differs from a fresh trunc-normal init by a minimum L2 — the
+    anti-"arm quietly running on random weights" check.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+torch = pytest.importorskip("torch")
+timm = pytest.importorskip("timm")
+
+from src.models.init_loaders import (  # noqa: E402
+    build_init,
+    map_bigearthnet_keys,
+    map_sarmae_keys,
+    map_satdino_keys,
+)
+
+MANIFEST_DIR = Path(__file__).resolve().parent / "manifests"
+WEIGHTS_DIR = Path(__file__).resolve().parents[1] / "data" / "weights"
+
+STRUCTURAL_CASES = (
+    # (manifest, mapper, timm target kwargs, family)
+    ("satdino.json", map_satdino_keys, "vit"),
+    ("sarmae.json", map_sarmae_keys, "vit"),
+    ("bigearthnet_s1.json", map_bigearthnet_keys, "cnn"),
+    ("bigearthnet_s2.json", map_bigearthnet_keys, "cnn"),
+)
+
+
+@pytest.mark.parametrize("manifest_name,mapper,family", STRUCTURAL_CASES)
+def test_structural_key_coverage(manifest_name, mapper, family):
+    """(a) manifest keys, mapped, must cover the target architecture exactly."""
+
+    manifest = json.loads((MANIFEST_DIR / manifest_name).read_text())
+    mapped_targets = set(mapper(manifest["keys"]).values())
+
+    from src.models.backbones import build_backbone
+
+    target_keys = set(build_backbone(family).model.state_dict().keys())
+
+    missing = target_keys - mapped_targets
+    assert not missing, (
+        f"{manifest_name}: {len(missing)} target keys not covered "
+        f"(first: {sorted(missing)[:5]}) — a partial load would leave these "
+        "silently random"
+    )
+    extra = mapped_targets - target_keys
+    assert not extra, f"{manifest_name}: mapped keys not in target: {sorted(extra)[:5]}"
+
+
+DOWNLOADED = ("satdino_b", "sarmae_b", "bigearthnet_s1", "bigearthnet_s2")
+
+
+@pytest.mark.parametrize("name", DOWNLOADED)
+@pytest.mark.skipif(
+    not WEIGHTS_DIR.exists(),
+    reason="data/weights absent — value-sensitive half runs on the GPU boxes",
+)
+def test_value_sensitive_load(name):
+    """(b) loaded encoder tensors must differ from a fresh random init."""
+
+    loaded = build_init(name, weights_root=WEIGHTS_DIR).state_dict()
+    fresh = build_init(name, load_weights=False).state_dict()
+
+    probe = [
+        key
+        for key in loaded
+        if "blocks.0." in key or "stages_0.blocks.0" in key or "stem_0" in key
+    ][:6]
+    assert probe, f"{name}: no probe keys found"
+    l2 = sum(float((loaded[k].float() - fresh[k].float()).norm()) for k in probe)
+    assert l2 > 1.0, (
+        f"{name}: probe L2 vs fresh init is {l2:.3f} — loaded weights look "
+        "random (partial/failed load)"
+    )
