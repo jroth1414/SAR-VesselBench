@@ -4,11 +4,11 @@ Runs recipe-conform grid cells (exact frozen detector.yaml: batch 16, early
 stopping, plan-literal epochs) one at a time, cheapest fractions first so the
 partial label-efficiency curves fill in early. Resumable: a cell whose
 ``final_metrics.json`` exists is skipped, so kill/relaunch is always safe.
-The special ``yolo-train`` item runs the R2 reference training between the
-f10 and f25 waves.
 
-Order: f10 x 6 arms -> yolo-train -> f25 x 6 -> f50 x 6 -> f100 x remaining.
-(Arms 4/8 join in Phase 5 after the LS-SSDD pretrainings.)
+Order: f10 x 6 -> yolo-train -> pretrain-vit -> pretrain-cnn (P5.1)
+-> vitsup/cnnsup f10 catch-up -> f25 x 8 -> f50 x 8 -> f100 x 8.
+Arms 4/8 cells are skipped with a warning if their pretraining checkpoint
+is missing (e.g. its run failed) rather than crashing the queue.
 """
 
 from __future__ import annotations
@@ -23,21 +23,34 @@ SHORT = {
     "vit_random": "vitrand",
     "satdino_b": "satdino",
     "sarmae_b": "sarmae",
+    "vit_supervised": "vitsup",
     "cnn_random": "cnnrand",
     "bigearthnet_s2": "beS2",
     "bigearthnet_s1": "beS1",
+    "cnn_supervised": "cnnsup",
 }
-ARMS = ["vit_random", "satdino_b", "sarmae_b", "cnn_random", "bigearthnet_s2", "bigearthnet_s1"]
+DOWNLOADED_ARMS = [
+    "vit_random", "satdino_b", "sarmae_b",
+    "cnn_random", "bigearthnet_s2", "bigearthnet_s1",
+]
+SUPERVISED_ARMS = ["vit_supervised", "cnn_supervised"]
+SUPERVISED_CKPT = {
+    "vit_supervised": Path("runs/vitsup-lsssdd/checkpoints/best.ckpt"),
+    "cnn_supervised": Path("runs/cnnsup-lsssdd/checkpoints/best.ckpt"),
+}
 
 
 def build_queue() -> list[dict]:
     queue: list[dict] = []
-    for frac in (0.1,):
-        for arm in ARMS:
-            queue.append({"kind": "cell", "init": arm, "frac": frac})
+    for arm in DOWNLOADED_ARMS:
+        queue.append({"kind": "cell", "init": arm, "frac": 0.1})
     queue.append({"kind": "yolo-train"})
+    queue.append({"kind": "pretrain", "backbone": "vit"})
+    queue.append({"kind": "pretrain", "backbone": "cnn"})
+    for arm in SUPERVISED_ARMS:
+        queue.append({"kind": "cell", "init": arm, "frac": 0.1})
     for frac in (0.25, 0.5, 1.0):
-        for arm in ARMS:
+        for arm in DOWNLOADED_ARMS + SUPERVISED_ARMS:
             queue.append({"kind": "cell", "init": arm, "frac": frac})
     return queue
 
@@ -54,21 +67,39 @@ def main() -> int:
             if final.exists():
                 log(f"{exp}: done — skip")
                 continue
+            argv = [
+                sys.executable, "-m", "src.train.finetune",
+                "--init", item["init"],
+                "--label_frac", str(item["frac"]),
+                "--seed", "0",
+                "--workers", "4",
+            ]
+            if item["init"] in SUPERVISED_CKPT:
+                checkpoint = SUPERVISED_CKPT[item["init"]]
+                if not checkpoint.exists():
+                    log(f"{exp}: SKIPPED — pretraining checkpoint missing ({checkpoint})")
+                    continue
+                argv += ["--supervised-checkpoint", str(checkpoint)]
             log(f"{exp}: starting (init {item['init']}, frac {item['frac']})")
-            code = subprocess.run(
-                [
-                    sys.executable, "-m", "src.train.finetune",
-                    "--init", item["init"],
-                    "--label_frac", str(item["frac"]),
-                    "--seed", "0",
-                    "--workers", "4",
-                ]
-            ).returncode
+            code = subprocess.run(argv).returncode
             if code != 0:
                 log(f"{exp}: FAILED with code {code} — continuing with next cell")
                 continue
             payload = json.loads(final.read_text())
             log(f"{exp}: done — best dev F1 {payload.get('best_dev_f1')}, epochs {payload.get('epochs_run')}")
+        elif item["kind"] == "pretrain":
+            exp = "vitsup-lsssdd" if item["backbone"] == "vit" else "cnnsup-lsssdd"
+            if (Path("runs") / exp / "final_metrics.json").exists():
+                log(f"{exp}: done — skip")
+                continue
+            log(f"{exp}: starting (P5.1 LS-SSDD supervised pretraining)")
+            code = subprocess.run(
+                [
+                    sys.executable, "-m", "src.train.pretrain_supervised",
+                    "--backbone", item["backbone"],
+                ]
+            ).returncode
+            log(f"{exp}: finished with code {code}")
         else:
             marker = Path("runs/yolo26-f100/weights/best.pt")
             if marker.exists():
