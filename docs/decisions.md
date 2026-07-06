@@ -20,6 +20,19 @@ is gitignored, so the committed log lives here.
   pretraining source only (never evaluated), and the val side exists only
   for early stopping. (DEVPLAN BLOCKER-5 note; lsssdd_split pin docstring)
 
+## Grid budget (human decision, 2026-07-06)
+
+- **Option B — plan-literal epochs with early stopping** (owner's call, per
+  the professor's guidance: no prescribed stopping epoch; train until the
+  validation signal stops improving). Interpretation: the frozen
+  detector.yaml already encodes this — early stopping on dev F1 (the
+  study's metric) with patience 4 dev evals; `epochs: 50` acts as a safety
+  ceiling, not a stopping point. No amendment, no re-pin. Consequence
+  accepted: grid cost is measured-not-fixed (~500–1,100 GPU-h depending on
+  where stopping fires); the dev card runs recipe-conform cells (batch 16
+  verified at 7 GB) continuously, and the V100 node clears the tail when
+  available.
+
 ## sprint-3 (detector)
 
 - **BigEarthNet stem adaptation 2→3 / 10→3**: timm's `adapt_input_conv`
