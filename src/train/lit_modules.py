@@ -59,6 +59,15 @@ class HeatmapLitModule(L.LightningModule):
         loss = penalty_reduced_focal_loss(
             logits, batch["heatmap"], batch["mask"]
         )
+        if not torch.isfinite(loss):
+            # Fail LOUDLY: a NaN forward is permanent (GradScaler only guards
+            # gradients) and silently burns epochs — the P3.6 bigearthnet_s1
+            # run trained two more epochs on NaN before the dev eval refused
+            # the non-finite heatmap.
+            raise RuntimeError(
+                f"non-finite {stage} loss at epoch {self.current_epoch} — "
+                "fp16 divergence (see DEVPLAN risk register); stop and diagnose"
+            )
         self.log(f"{stage}_loss", loss, prog_bar=stage == "train", sync_dist=stage != "train")
         return loss
 
@@ -72,6 +81,13 @@ class HeatmapLitModule(L.LightningModule):
 
     def configure_optimizers(self):
         param_groups = self._layer_decay_param_groups()
+        # Bake lr_scale into each group's lr: timm only APPLIES lr_scale via
+        # its own schedulers, so with torch's LambdaLR the ladder would sit
+        # inert in the group dicts and every layer would train at base lr
+        # (caught by test_layer_decay). LambdaLR then scales each group's
+        # own initial lr, preserving the ladder across the cosine schedule.
+        for group in param_groups:
+            group["lr"] = self.hparams.lr * group.get("lr_scale", 1.0)
         optimizer = torch.optim.AdamW(param_groups, lr=self.hparams.lr)
 
         warmup = self.hparams.warmup_epochs
@@ -90,15 +106,43 @@ class HeatmapLitModule(L.LightningModule):
         }
 
     def _layer_decay_param_groups(self) -> list[dict]:
-        """timm layer-wise lr decay on the backbone; head at full lr."""
+        """timm layer-wise lr decay on the backbone; head at full lr.
+
+        Asserts the decay actually took: timm's group matcher fails SILENTLY
+        on models whose module names it cannot parse (the P3.6 sweep caught
+        the CNN track training with lr_scale=1.0 everywhere because the
+        features_only wrapper had flattened the names — a cross-track
+        fairness violation). A degenerate grouping now raises instead.
+        """
 
         from timm.optim import param_groups_layer_decay
 
-        backbone_groups = param_groups_layer_decay(
-            self.backbone.model,
-            weight_decay=self.hparams.weight_decay,
-            layer_decay=self.hparams.layer_decay,
-        )
+        if self.family == "cnn":
+            # ConvNeXt official fine-tuning convention: blocks are mapped
+            # into TWELVE layer-ids to mirror ViT-B's depth (ConvNeXt repo
+            # optim_factory.get_num_layer_for_convnext). timm's native
+            # per-block matcher would build a ~38-rung ladder whose earliest
+            # rungs decay to ~1e-7 — effectively frozen — while the ViT track
+            # bottoms out at 0.65^12; equalizing ladder depth keeps the
+            # shared layer_decay=0.65 meaning the same thing in both tracks.
+            backbone_groups = _convnext_layer_decay_groups(
+                self.backbone.model,
+                weight_decay=self.hparams.weight_decay,
+                layer_decay=self.hparams.layer_decay,
+            )
+        else:
+            backbone_groups = param_groups_layer_decay(
+                self.backbone.model,
+                weight_decay=self.hparams.weight_decay,
+                layer_decay=self.hparams.layer_decay,
+            )
+        lr_scales = {round(g.get("lr_scale", 1.0), 6) for g in backbone_groups}
+        if len(lr_scales) < 3:
+            raise RuntimeError(
+                f"layer-wise lr decay degenerated to {sorted(lr_scales)} — "
+                "the group matcher did not recognize the backbone's module "
+                "names; refusing to train with a broken schedule (ground rule 2)"
+            )
         head_decay = [p for p in self.head.parameters() if p.ndim > 1]
         head_no_decay = [p for p in self.head.parameters() if p.ndim <= 1]
         return [
@@ -110,3 +154,57 @@ class HeatmapLitModule(L.LightningModule):
     @property
     def family(self) -> str:
         return INIT_FAMILY[self.hparams.init_name]
+
+
+def _convnext_layer_id(name: str) -> int:
+    """Param name -> layer id per the ConvNeXt official fine-tune recipe.
+
+    ConvNeXt repo ``get_num_layer_for_convnext``: stem -> 0, stage-0 blocks
+    -> 1, stage-1 blocks -> 2, stage-2 block j -> 3 + j//3 (27 blocks spread
+    over ids 3..11), stage-3 blocks -> 12; stage downsamples group with
+    their stage; final norms / head remnants -> the last rung. Mirrors
+    ViT-B's 13-rung ladder so the shared layer_decay means the same thing
+    in both tracks.
+    """
+
+    parts = name.split(".")
+    if name.startswith("stem"):
+        return 0
+    if name.startswith("stages"):
+        stage = int(parts[1])
+        if stage == 0:
+            return 1
+        if stage == 1:
+            return 2
+        if stage == 2:
+            block = int(parts[3]) if parts[2] == "blocks" else 0
+            return 3 + block // 3
+        return 12
+    return 12  # norm_pre / head remnants train with the last rung
+
+
+def _convnext_layer_decay_groups(
+    model, *, weight_decay: float, layer_decay: float
+) -> list[dict]:
+    """Manual layer-decay param groups (timm has no custom layer-map hook).
+
+    Matches timm's group format (params / lr_scale / weight_decay) and its
+    exclude-1d-params-from-decay convention.
+    """
+
+    max_id = 12
+    groups: dict[tuple[int, bool], dict] = {}
+    for name, param in model.named_parameters():
+        if not param.requires_grad:
+            continue
+        lid = _convnext_layer_id(name)
+        decay = param.ndim > 1
+        key = (lid, decay)
+        if key not in groups:
+            groups[key] = {
+                "params": [],
+                "lr_scale": layer_decay ** (max_id - lid),
+                "weight_decay": weight_decay if decay else 0.0,
+            }
+        groups[key]["params"].append(param)
+    return list(groups.values())
