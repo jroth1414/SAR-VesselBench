@@ -59,7 +59,16 @@ class ViTBackbone(nn.Module):
 
 
 class ConvNeXtBackbone(nn.Module):
-    """ConvNeXt-V2-Base exposing the stride-32 stage-3 map (B, 1024, H32, W32)."""
+    """ConvNeXt-V2-Base exposing the stride-32 stage-3 map (B, 1024, H32, W32).
+
+    Deliberately built as the PLAIN timm model (``forward_features``), NOT
+    ``features_only``: the feature-extraction wrapper flattens module names
+    (``stages.0`` -> ``stages_0``), which silently defeats timm's
+    ``group_matcher`` so layer-wise lr decay degenerates to full lr on every
+    layer — the P3.6 sweep caught the CNN track training without the decay
+    the ViT track had (a cross-track fairness violation, and the likely
+    bigearthnet_s1 divergence trigger).
+    """
 
     def __init__(self) -> None:
         super().__init__()
@@ -70,14 +79,17 @@ class ConvNeXtBackbone(nn.Module):
             pretrained=False,
             num_classes=0,
             in_chans=IN_CHANS,
-            features_only=True,
-            out_indices=(3,),
         )
-        self.out_channels = self.model.feature_info.channels()[-1]  # 1024
-        self.out_stride = self.model.feature_info.reduction()[-1]  # 32
+        self.out_channels = self.model.num_features  # 1024
+        self.out_stride = 32
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.model(x)[-1]
+        features = self.model.forward_features(x)
+        if features.ndim != 4:
+            raise RuntimeError(
+                f"expected a NCHW stage-3 map, got shape {tuple(features.shape)}"
+            )
+        return features
 
 
 def build_backbone(family: str) -> ViTBackbone | ConvNeXtBackbone:

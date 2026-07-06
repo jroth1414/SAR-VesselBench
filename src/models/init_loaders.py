@@ -83,23 +83,23 @@ def map_sarmae_keys(keys: Iterable[str]) -> dict[str, str]:
 
 
 def map_bigearthnet_keys(keys: Iterable[str]) -> dict[str, str]:
-    """BigEarthNet classifier keys -> timm ConvNeXt-V2 ``features_only`` keys.
+    """BigEarthNet classifier keys -> plain timm ConvNeXt-V2 keys.
 
-    timm's feature-extraction wrapper flattens the top level of the trunk
-    (``stem.0`` -> ``stem_0``, ``stages.2`` -> ``stages_2``); deeper names
-    are unchanged. The 19-class BigEarthNet head is dropped.
+    Strip the ``model.vision_encoder.`` prefix; names then map 1:1 onto the
+    plain timm model (the backbone is deliberately NOT the features_only
+    wrapper — see ConvNeXtBackbone). Only the 19-class classifier
+    (``head.fc``) is dropped; ``head.norm`` maps through (present in the
+    target's state dict, unused by ``forward_features``).
     """
-
-    import re
 
     mapping: dict[str, str] = {}
     for key in keys:
         if not key.startswith("model.vision_encoder."):
             continue
         stripped = key.removeprefix("model.vision_encoder.")
-        if stripped.startswith("head."):
-            continue  # 19-class BigEarthNet head — dropped
-        mapping[key] = re.sub(r"^(stem|stages)\.(\d+)\.", r"\1_\2.", stripped)
+        if stripped.startswith("head.fc."):
+            continue  # 19-class BigEarthNet classifier — dropped
+        mapping[key] = stripped
     return mapping
 
 
@@ -220,7 +220,7 @@ def build_init(
             state,
             map_bigearthnet_keys(state.keys()),
             name=name,
-            stem_key="stem_0.weight",
+            stem_key="stem.0.weight",
         )
     elif name in ("vit_supervised", "cnn_supervised"):
         if supervised_checkpoint is None:

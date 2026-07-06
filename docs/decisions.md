@@ -62,3 +62,25 @@ is gitignored, so the committed log lives here.
   epoch, seed 0. CLI overrides only — the frozen detector.yaml remains
   authoritative for the real grid on the node. Run ids carry a `-p36`
   suffix so they can never be confused with grid cells.
+- **The P3.6 sweep caught a three-part optimizer bug (2026-07-05/06),
+  all fixed with regression tests (`test_layer_decay`):**
+  (1) timm's layer-decay grouping fails SILENTLY on the `features_only`
+  wrapper's flattened names — the CNN track had lr_scale 1.0 everywhere;
+  the backbone is now the plain timm model (`forward_features`, same
+  stride-32 map, standard names).
+  (2) ConvNeXt's native per-block ladder (~38 rungs → earliest layers at
+  ~1e-7, frozen) is depth-mismatched vs ViT-B's 13 rungs; the CNN now uses
+  the ConvNeXt official fine-tune convention (12 layer-ids mirroring ViT-B)
+  so the shared layer_decay=0.65 means the same thing in both tracks.
+  (3) timm's `lr_scale` is only applied by timm schedulers — with torch's
+  LambdaLR the ladder sat inert and EVERY arm trained at base lr; the scale
+  is now baked into each group's lr at optimizer construction.
+  Consequence: all pre-fix short runs (the smoke, the first P3.6 sweep)
+  trained without any layer decay — internally consistent across arms
+  (identical wrong optimizer) but not the plan's recipe; the P3.6 sweep was
+  rerun under the corrected optimizer. The first sweep's bigearthnet_s1
+  fp16 divergence (NaN forward at epoch 3, decode correctly refused the
+  non-finite heatmap) is expected to be resolved by proper layer decay; a
+  finite-loss abort in the LightningModule now fails loudly instead of
+  burning epochs. A GRN-fp16-overflow hypothesis was tested and DISPROVEN
+  (autocast already runs `norm` in fp32) — no GRN patch is shipped.
