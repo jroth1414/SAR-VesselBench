@@ -69,6 +69,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     # exist so short comparisons can share IDENTICAL reduced settings.
     parser.add_argument("--exp-suffix", default=None, help="append to the run id (e.g. p36)")
     parser.add_argument("--batch-size", type=int, default=None)
+    parser.add_argument(
+        "--micro-batch",
+        type=int,
+        default=None,
+        help="hardware adaptation: split the recipe batch into micro-batches "
+        "with gradient accumulation (recipe batch stays the effective batch; "
+        "needed for ConvNeXt cells on the 16 GB dev card where batch 16 "
+        "overflows VRAM into shared memory)",
+    )
     parser.add_argument("--samples-per-epoch", type=int, default=None)
     parser.add_argument("--dev-every", type=int, default=None)
     parser.add_argument("--n-dev-scenes", type=int, default=None)
@@ -87,6 +96,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     epochs = args.epochs or det_cfg["schedule"]["epochs"]
     batch_size = args.batch_size or det_cfg["schedule"]["batch_size"]
+    accumulate = 1
+    if args.micro_batch and args.micro_batch < batch_size:
+        if batch_size % args.micro_batch:
+            raise SystemExit("--micro-batch must divide the recipe batch size")
+        accumulate = batch_size // args.micro_batch
+        batch_size = args.micro_batch
     limit_train_batches = None
     if args.smoke:
         # dev-box smoke: smaller batch for the 16 GB card, full epochs — at
@@ -142,7 +157,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         EarlyStopping(
             monitor="dev_f1",
             mode="max",
-            patience=det_cfg["eval"]["early_stop_patience"],
+            # PATIENCE IS IN EPOCHS, NOT DEV EVALS: EarlyStopping checks every
+            # epoch and the logged dev_f1 PERSISTS between our every-N-epoch
+            # evals, so stale-value checks count against patience. Multiply by
+            # the eval cadence so "patience 4 dev evals" means 4 REAL evals —
+            # the un-multiplied version stopped every run at epoch ~9 after a
+            # single eval (caught 2026-07-07 when the first grid cells all
+            # reported epochs_run=9).
+            patience=det_cfg["eval"]["early_stop_patience"] * dev_eval.every,
             strict=False,
             check_on_train_epoch_end=True,
         ),
@@ -155,6 +177,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         devices=1,
         precision=det_cfg["schedule"]["precision"],
         gradient_clip_val=det_cfg["optimizer"]["grad_clip"],
+        accumulate_grad_batches=accumulate,
         limit_train_batches=limit_train_batches,
         callbacks=callbacks,
         logger=CSVLogger(save_dir=str(run_dir), name="", version="metrics"),

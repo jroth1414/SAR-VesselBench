@@ -74,6 +74,11 @@ def main() -> int:
                 "--seed", "0",
                 "--workers", "4",
             ]
+            if item["init"].startswith(("cnn", "bigearthnet")):
+                # ConvNeXt at the recipe batch overflows the 16 GB dev card
+                # into shared memory (~20x slowdown); micro-batch 8 with
+                # gradient accumulation keeps the effective batch at 16.
+                argv += ["--micro-batch", "8"]
             if item["init"] in SUPERVISED_CKPT:
                 checkpoint = SUPERVISED_CKPT[item["init"]]
                 if not checkpoint.exists():
