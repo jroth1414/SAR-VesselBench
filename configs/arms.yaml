@@ -1,0 +1,33 @@
+# The run matrix (DEVPLAN Section 12 manifest). Consumed by `make grid` /
+# scripts that enumerate cells; exp ids are ALWAYS {init_short}-f{frac}-s{seed}.
+# NOT a frozen artifact, but ids must match Section 12 verbatim.
+
+arms:
+  # init name        short      track  role
+  vit_random:       {short: vitrand, track: vit, role: floor}
+  satdino_b:        {short: satdino, track: vit, role: optical}
+  sarmae_b:         {short: sarmae,  track: vit, role: sar}
+  vit_supervised:   {short: vitsup,  track: vit, role: supervised}
+  cnn_random:       {short: cnnrand, track: cnn, role: floor}
+  bigearthnet_s2:   {short: beS2,    track: cnn, role: optical}
+  bigearthnet_s1:   {short: beS1,    track: cnn, role: sar}
+  cnn_supervised:   {short: cnnsup,  track: cnn, role: supervised}
+
+label_fracs: [0.1, 0.25, 0.5, 1.0]
+
+seeds:
+  core: [0]                    # 8 arms x 4 fractions = 32 runs
+  reruns: [1, 2]               # on fracs [0.1, 0.25, 1.0] -> 48 runs
+  rerun_fracs: [0.1, 0.25, 1.0]
+
+references:
+  yolo26: {exp_id: yolo26-f100}
+  locateanything:
+    exp_id: locateanything-zs
+    repo: nvidia/LocateAnything-3B          # resolved 2026-07-06 (was UNVERIFIED in §1a)
+    revision: c32291ca5e996f5a7a485845b4f57a233936bba0
+    license: other (custom NVIDIA — record terms at download; R3 stays droppable)
+
+supervised_pretrainings:
+  vitsup-lsssdd: {backbone: vit}
+  cnnsup-lsssdd: {backbone: cnn}

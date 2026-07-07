@@ -20,6 +20,36 @@ is gitignored, so the committed log lives here.
   pretraining source only (never evaluated), and the val side exists only
   for early stopping. (DEVPLAN BLOCKER-5 note; lsssdd_split pin docstring)
 
+## Grid budget (human decision, 2026-07-06)
+
+- **Option B — plan-literal epochs with early stopping** (owner's call, per
+  the professor's guidance: no prescribed stopping epoch; train until the
+  validation signal stops improving). Interpretation: the frozen
+  detector.yaml already encodes this — early stopping on dev F1 (the
+  study's metric) with patience 4 dev evals; `epochs: 50` acts as a safety
+  ceiling, not a stopping point. No amendment, no re-pin. Consequence
+  accepted: grid cost is measured-not-fixed (~500–1,100 GPU-h depending on
+  where stopping fires); the dev card runs recipe-conform cells (batch 16
+  verified at 7 GB) continuously, and the V100 node clears the tail when
+  available.
+
+## Grid execution fixes (2026-07-07)
+
+- **Early-stopping patience is in EPOCHS, not dev evals**: Lightning's
+  EarlyStopping checks every epoch and the logged dev_f1 persists between
+  our every-5-epoch evals, so stale-value checks burned the patience within
+  4 epochs — every first-wave cell stopped at epoch ~9 after ONE real eval.
+  Patience is now `early_stop_patience × dev_every_epochs` (= 20 epochs = 4
+  real evals, the intended option-B semantics). The four affected runs
+  (satdino-f100 probe + three f10 cells) were deleted and rerun.
+- **ConvNeXt cells on the 16 GB dev card use micro-batch 8 with gradient
+  accumulation 2** (effective batch stays the recipe's 16): batch-16
+  ConvNeXt @512 overflows VRAM into Windows shared memory (~20× slowdown,
+  observed live). Hardware adaptation only — the optimizer sees identical
+  effective batches; V100-node runs use the plain recipe. (Focal-loss
+  normalization is per-micro-batch positives — a bounded numerical nuance
+  of accumulation, identical across all CNN arms.)
+
 ## sprint-3 (detector)
 
 - **BigEarthNet stem adaptation 2→3 / 10→3**: timm's `adapt_input_conv`

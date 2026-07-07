@@ -39,7 +39,7 @@ grid:
 
 # Phase 4 — the non-optional external references (R2 yolo26-f100, R3 locateanything-zs).
 references:
-	$(PYTHON) -m src.references.yolo26_ref
+	$(PYTHON) -m src.references.yolo26_ref score
 	$(PYTHON) -m src.references.locateanything_zs
 
 # Phase 6 — the ONCE-ONLY verified-scene eval (ground rule 4). The
