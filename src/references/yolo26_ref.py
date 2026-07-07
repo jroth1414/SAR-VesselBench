@@ -166,6 +166,148 @@ def train(out_root: Path, *, model_name: str, epochs: int, batch: int, imgsz: in
     )
 
 
+def score(
+    *,
+    weights: Path,
+    data_cfg: dict,
+    det_cfg: dict,
+    device: str = "cuda",
+) -> dict:
+    """Dev-threshold-selected scoring through the SACRED scorer (P4.5).
+
+    Tiles each scene 800 px / stride 700 (the chip grid), converts each
+    tile to the same uint8 representation YOLO trained on, takes YOLO box
+    CENTERS as candidate points with their confidences, dedups across tile
+    overlaps with our distance NMS, selects the F1-max threshold on the DEV
+    scenes (P2.2b), applies it frozen to the TEST scenes, and writes
+    ``runs/yolo26-f100/final_metrics.json``.
+    """
+
+    import pandas as pd
+    import rasterio
+    import torch
+    from ultralytics import YOLO
+
+    from src.eval.decode import DecodedPoint, distance_nms
+    from src.eval.infer_scene import GSD_M, ShoreDistance, ground_truth_from_labels
+    from src.eval.scorer import PredictionPoint, score_dataset
+    from src.eval.threshold import apply_threshold, select_f1_threshold
+
+    model = YOLO(str(weights))
+    splits = json.loads(Path(data_cfg["paths"]["splits"]).read_text())["splits"]
+    stats = json.loads(Path(data_cfg["paths"]["stats"]).read_text())
+    vh_s, vv_s = stats["channels"]["VH"], stats["channels"]["VV"]
+    mean = np.array([vh_s["mean"], vv_s["mean"], vh_s["mean"] - vv_s["mean"]], dtype=np.float32)
+    std = np.array(
+        [vh_s["std"], vv_s["std"], float(np.hypot(vh_s["std"], vv_s["std"]))],
+        dtype=np.float32,
+    )
+    labels = pd.read_csv(Path(data_cfg["paths"]["raw_xview3"]) / "labels" / "train.csv")
+    raw_root = Path(data_cfg["paths"]["raw_xview3"]) / "GRD"
+    d_nms_m = det_cfg["decode"]["d_nms_m"]
+
+    def predict_scene(scene_id: str) -> list[PredictionPoint]:
+        scene_dir = raw_root / scene_id
+        with rasterio.open(scene_dir / "VH_dB.tif") as ds:
+            vh_full = ds.read(1)
+            height, width = ds.height, ds.width
+            transform = ds.transform
+        with rasterio.open(scene_dir / "VV_dB.tif") as ds:
+            vv_full = ds.read(1)
+
+        candidates: list[DecodedPoint] = []
+        stride, tile = 700, 800
+        rows = list(range(0, max(height - tile, 1), stride)) + [max(height - tile, 0)]
+        cols = list(range(0, max(width - tile, 1), stride)) + [max(width - tile, 0)]
+        batch_imgs, batch_origins = [], []
+
+        def flush() -> None:
+            if not batch_imgs:
+                return
+            results = model.predict(
+                batch_imgs, imgsz=tile, conf=0.01, verbose=False, device=device
+            )
+            for (row0, col0), result in zip(batch_origins, results):
+                boxes = result.boxes
+                for (cx, cy), conf in zip(
+                    boxes.xywh[:, :2].tolist(), boxes.conf.tolist()
+                ):
+                    candidates.append(
+                        DecodedPoint(
+                            row=(row0 + cy) * GSD_M,
+                            col=(col0 + cx) * GSD_M,
+                            score=float(conf),
+                        )
+                    )
+            batch_imgs.clear()
+            batch_origins.clear()
+
+        for row0 in rows:
+            for col0 in cols:
+                vh = vh_full[row0 : row0 + tile, col0 : col0 + tile]
+                if (vh == -32768.0).mean() > 0.98:
+                    continue
+                vv = vv_full[row0 : row0 + tile, col0 : col0 + tile]
+                chip = np.stack([vh, vv]).astype(np.float32)
+                chip[chip == -32768.0] = np.nan
+                image = _chip_to_uint8(chip, mean, std)
+                batch_imgs.append(image[..., ::-1])  # ultralytics expects BGR
+                batch_origins.append((row0, col0))
+                if len(batch_imgs) >= 8:
+                    flush()
+        flush()
+        del vh_full, vv_full
+
+        kept = distance_nms(candidates, d_nms_m=d_nms_m)
+        shore = ShoreDistance(scene_dir)
+        predictions = []
+        for point in kept:
+            x_geo, y_geo = transform * (point.col / GSD_M, point.row / GSD_M)
+            predictions.append(
+                PredictionPoint(
+                    x_m=point.col,
+                    y_m=point.row,
+                    score=point.score,
+                    distance_from_shore_km=shore.lookup_km(x_geo, y_geo),
+                )
+            )
+        return predictions
+
+    def collect(scene_ids: list[str]):
+        gt, preds = {}, {}
+        for scene_id in scene_ids:
+            print(f"  {scene_id}", flush=True)
+            rows = labels[labels["scene_id"] == scene_id].to_dict(orient="records")
+            gt[scene_id] = ground_truth_from_labels(rows)
+            preds[scene_id] = predict_scene(scene_id)
+        return gt, preds
+
+    print("dev scenes (threshold selection):")
+    dev_gt, dev_pred = collect(sorted(splits["dev"]))
+    threshold = select_f1_threshold(dev_gt, dev_pred)
+    dev_result = score_dataset(dev_gt, apply_threshold(dev_pred, threshold))
+
+    print("test scenes (frozen threshold):")
+    test_gt, test_pred = collect(sorted(splits["test"]))
+    test_result = score_dataset(test_gt, apply_threshold(test_pred, threshold))
+
+    payload = {
+        "exp_id": "yolo26-f100",
+        "threshold": threshold,
+        "dev_f1": dev_result.aggregate.f1,
+        "test_f1": test_result.aggregate.f1,
+        "test_precision": test_result.aggregate.precision,
+        "test_recall": test_result.aggregate.recall,
+        "test_near_shore_f1": test_result.slices["near_shore"].f1,
+    }
+    out = Path("runs/yolo26-f100/final_metrics.json")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(payload, indent=1), newline="\n")
+    print(json.dumps(payload, indent=1))
+    torch.cuda.empty_cache()
+    return payload
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     import yaml
 
@@ -200,7 +342,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             imgsz=args.imgsz,
         )
     else:
-        raise SystemExit("score: implemented after training lands (uses the best.pt)")
+        import yaml as _yaml
+
+        det_cfg = _yaml.safe_load(Path("configs/detector.yaml").read_text())
+        weights = Path("runs/yolo26-f100/weights/best.pt")
+        if not weights.exists():
+            raise SystemExit(f"{weights} missing — train first")
+        score(weights=weights, data_cfg=config, det_cfg=det_cfg)
     return 0
 
 
