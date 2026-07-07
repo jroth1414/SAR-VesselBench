@@ -53,17 +53,17 @@ held fixed.
 
 | Arm | Track | Backbone | Initialization | On curve? | Role |
 |----:|-------|----------|----------------|:---------:|------|
-| 1 | ViT | ViT-B/16 | random init | ✅ | ViT floor |
-| 2 | ViT | ViT-B/16 | **SatDINO** (fMoW-RGB, DINO) | ✅ | optical-domain FM transfer |
-| 3 | ViT | ViT-B/16 | **SARMAE** (SAR-1M, MAE) | ✅ | SAR-domain FM transfer |
-| 4 | ViT | ViT-B/16 | LS-SSDD supervised (we train) | ✅ | labeled SAR-detection transfer |
-| 5 | CNN | ConvNeXt-V2-B | random init | ✅ | CNN floor |
-| 6 | CNN | ConvNeXt-V2-B | **BigEarthNet-S2** (optical RS) | ✅ | optical-RS transfer |
-| 7 | CNN | ConvNeXt-V2-B | **BigEarthNet-S1** (SAR RS) | ✅ | SAR-RS transfer |
-| 8 | CNN | ConvNeXt-V2-B | LS-SSDD supervised (we train) | ✅ | labeled SAR-detection transfer |
-| R1 | ref | ConvNeXt-V2-B | ImageNet (contingent, if time) | ❌ | generic-transfer reference |
-| R2 | ref | YOLO26 | COCO-pretrained | ❌ | detector reference |
-| R3 | ref | LocateAnything-3B | zero-shot | ❌ | VLM reference |
+| 1 | ViT | ViT-B/16 | random init | yes | ViT floor |
+| 2 | ViT | ViT-B/16 | **SatDINO** (fMoW-RGB, DINO) | yes | optical-domain FM transfer |
+| 3 | ViT | ViT-B/16 | **SARMAE** (SAR-1M, MAE) | yes | SAR-domain FM transfer |
+| 4 | ViT | ViT-B/16 | LS-SSDD supervised (we train) | yes | labeled SAR-detection transfer |
+| 5 | CNN | ConvNeXt-V2-B | random init | yes | CNN floor |
+| 6 | CNN | ConvNeXt-V2-B | **BigEarthNet-S2** (optical RS) | yes | optical-RS transfer |
+| 7 | CNN | ConvNeXt-V2-B | **BigEarthNet-S1** (SAR RS) | yes | SAR-RS transfer |
+| 8 | CNN | ConvNeXt-V2-B | LS-SSDD supervised (we train) | yes | labeled SAR-detection transfer |
+| R1 | ref | ConvNeXt-V2-B | ImageNet (contingent, if time) | no | generic-transfer reference |
+| R2 | ref | YOLO26 | COCO-pretrained | no | detector reference |
+| R3 | ref | LocateAnything-3B | zero-shot | no | VLM reference |
 
 **Fairness by construction.** Within each track, all four arms share the same backbone, detection head,
 optimizer, schedule, seeds, and the fixed input. The head/optimizer/schedule are shared across *both*
@@ -126,35 +126,47 @@ dark-vessel recall and near-shore F1 slices.
 
 ## 5. Repository layout & status
 
-This is a **plan-driven** research repo: [`DEVPLAN.md`](DEVPLAN.md) is the source of truth and most of the
-pipeline is still to be built. Current state (see the DEVPLAN cold-start runbook for the live ledger):
+This is a **plan-driven** research repo: [`DEVPLAN.md`](DEVPLAN.md) is the source of truth; its
+cold-start runbook holds the live status ledger. Current state:
 
-- ✅ **Phase 2 (scorer + decode + thresholds)** — `src/eval/scorer.py` (frozen, per-scene
-  distance-matched F1 + slices), `src/eval/decode.py` (peak-finding + distance-NMS), and
-  `src/eval/threshold.py` (dev-selected operating point), with tests. Tagged `phase-2-done`.
-- ✅ **Phase 0 (env/scaffold)** — CI, docs, `.gitignore`, `.gitattributes` (LF-normalized so the
-  frozen-artifact hash pins hold on every platform), full `pyproject.toml` (`pip install -e .`),
-  `Makefile`, `configs/data.yaml`, `scripts/gpu_sanity.py`, and the two GPU lockfiles under `locks/`
-  (the 5070 Ti lock is a real freeze verified on the box; the V100-node lock is a candidate pin to
-  re-freeze on the node — see its header).
-- 🟡 **Phase 1 (data pipeline)** — code + tests done (`src/data/`: registration/download, chipper,
-  centroid conversion, split builder; exercised end-to-end on a 7-scene subset of the locally
-  downloaded full xView3 set). The three frozen artifacts (`data/splits.json`, `data/stats.json`,
-  `data/lsssdd_split.json`) are **not yet built for real**: the xView3 label CSVs (auth-gated at DIU)
-  and the LS-SSDD imagery (radars.ac.cn) are still to be fetched — see the DEVPLAN cold-start
-  runbook, BLOCKER-4/5.
-- ⬜ **Phases 3–8** (shared detector, arms, grid, final eval, analysis) — not started.
+- **DONE — Phases 0-3** (tagged `phase-1-done`, `phase-2-done`, `phase-3-done`): environment +
+  lockfiles, full data pipeline with the three frozen artifacts (`data/splits.json` — 150 study
+  scenes split 111/23/16 plus the 50 verified scenes as `eval_final`; `data/stats.json`;
+  `data/lsssdd_split.json`), the frozen scorer/decode/threshold stack, and the shared detector
+  (both backbone tracks behind one head, eight init loaders, `configs/detector.yaml` frozen).
+  All five freeze guards plus the parity and checkpoint-load guards run in CI.
+- **PASSED — P3.6 early-signal gate**: every downloaded backbone beats its track's random floor
+  at an equal reduced budget, and SAR-domain pretraining leads optical in both tracks
+  (dev F1, 8 scenes: ViT 0.788 floor / 0.835 SatDINO / 0.858 SARMAE; CNN 0.677 floor /
+  0.726 BigEarthNet-S2 / 0.819 BigEarthNet-S1).
+- **RUNNING — Phase 4/5 grid** (option B: plan-literal epochs, early stopping on dev F1 with
+  patience of 4 real dev evals): a resumable queue works through the arms-by-fractions matrix on
+  the dev card; an 8-wide runner + agent handoff kit (`docs/NODE_HANDOFF.md`) is ready for the
+  V100 node. All checkpoints for the study, references, and contingencies are downloaded and
+  revision-pinned under `data/weights/`.
+- **READY — Phase 6 tripwires** (`src/eval/final_eval.py`: `--i-am-sure` + lockfile, hard
+  preconditions) and the references lane (YOLO26 train/score pipeline; LocateAnything-3B
+  zero-shot probe). Remaining to write: the Phase 7 analysis modules (error slices,
+  architecture comparison, the 24-chip gallery) and the optional Phase 8 contingent reference.
 
 ```
 JHU-xView3/
   DEVPLAN.md          # single source of truth: design, phases, gates, risks
   AGENTS.md           # non-negotiables for any coding agent
-  proposal.tex/.pdf   # 1.5-page course proposal
+  docs/               # decisions log, node setup + agent handoff, proposal
   requirements-ci.txt # minimal CPU deps for CI guard tests
-  src/eval/           # scorer.py (frozen), decode.py, threshold.py  ← built
-  tests/              # scorer / decode / guard tests
-  .github/workflows/  # CI: anti-drift guard tests
-  # planned: src/{data,models,train,references,analysis}, configs/, locks/, Makefile, data/, runs/
+  configs/            # data.yaml, detector.yaml (frozen), arms.yaml (run manifest)
+  locks/              # per-machine environment pins (5070 Ti verified; V100 candidate)
+  src/data/           # download/registration, chipper, centroids, splits, datasets
+  src/models/         # backbones, heatmap head + adapters, 8 init loaders
+  src/train/          # shared Lightning module/datamodule, finetune, LS-SSDD pretrain
+  src/eval/           # scorer.py (frozen), decode, threshold, infer_scene, final_eval
+  src/references/     # YOLO26 (R2), LocateAnything zero-shot (R3)
+  src/analysis/       # curves + grid.csv collector, QA galleries
+  scripts/            # gpu_sanity, chipping driver, grid queues (dev card + node), test scoring
+  tests/              # unit tests + the anti-drift guard tests
+  .github/workflows/  # CI: guard tests + full suite
+  data/, runs/        # gitignored (frozen JSON artifacts are the committed exceptions)
 ```
 
 ---
