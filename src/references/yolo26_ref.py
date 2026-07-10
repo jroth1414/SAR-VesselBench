@@ -158,7 +158,9 @@ def train(out_root: Path, *, model_name: str, epochs: int, batch: int, imgsz: in
         epochs=epochs,
         batch=batch,
         imgsz=imgsz,
-        project="runs",
+        # ABSOLUTE path: ultralytics' global settings.json rewrites relative
+        # project dirs under its own runs_dir (cost us a 33 h rerun scare).
+        project=str(Path("runs").resolve()),
         name="yolo26-f100",
         exist_ok=True,
         single_cls=True,
