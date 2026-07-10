@@ -98,12 +98,13 @@ def main() -> int:
                 log(f"{exp}: done — skip")
                 continue
             log(f"{exp}: starting (P5.1 LS-SSDD supervised pretraining)")
-            code = subprocess.run(
-                [
-                    sys.executable, "-m", "src.train.pretrain_supervised",
-                    "--backbone", item["backbone"],
-                ]
-            ).returncode
+            argv = [
+                sys.executable, "-m", "src.train.pretrain_supervised",
+                "--backbone", item["backbone"],
+            ]
+            if item["backbone"] == "cnn":
+                argv += ["--micro-batch", "8"]  # 16 GB dev card; node uses plain recipe
+            code = subprocess.run(argv).returncode
             log(f"{exp}: finished with code {code}")
         else:
             marker = Path("runs/yolo26-f100/weights/best.pt")

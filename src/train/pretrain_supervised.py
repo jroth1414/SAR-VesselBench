@@ -40,6 +40,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--patience-epochs", type=int, default=5)
+    parser.add_argument(
+        "--micro-batch",
+        type=int,
+        default=None,
+        help="hardware adaptation as in finetune.py: micro-batch with gradient "
+        "accumulation, effective batch stays the recipe's (ConvNeXt at batch "
+        "16 overflows the 16 GB dev card into shared memory)",
+    )
     args = parser.parse_args(argv)
 
     data_cfg = yaml.safe_load(Path(args.data_config).read_text())
@@ -50,10 +58,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     run_dir.mkdir(parents=True, exist_ok=True)
     L.seed_everything(args.seed, workers=True)
 
+    batch_size = det_cfg["schedule"]["batch_size"]
+    accumulate = 1
+    if args.micro_batch and args.micro_batch < batch_size:
+        if batch_size % args.micro_batch:
+            raise SystemExit("--micro-batch must divide the recipe batch size")
+        accumulate = batch_size // args.micro_batch
+        batch_size = args.micro_batch
+
     datamodule = SupervisedSARDataModule(
         lsssdd_root=data_cfg["paths"]["raw_lsssdd"],
         split_path=data_cfg["paths"]["lsssdd_split"],
-        batch_size=det_cfg["schedule"]["batch_size"],
+        batch_size=batch_size,
         num_workers=args.workers,
         crop=det_cfg["input"]["crop_px"],
         fg_frac=det_cfg["sampler"]["fg_frac"],
@@ -76,6 +92,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         devices=1,
         precision=det_cfg["schedule"]["precision"],
         gradient_clip_val=det_cfg["optimizer"]["grad_clip"],
+        accumulate_grad_batches=accumulate,
         callbacks=[
             ModelCheckpoint(
                 dirpath=run_dir / "checkpoints",
