@@ -126,10 +126,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         ckpt_path=str(last_ckpt) if last_ckpt.exists() else None,
     )
 
+    best_score = trainer.checkpoint_callback.best_model_score
     final = {
         "exp_id": run_id,
         "epochs_run": trainer.current_epoch,
-        "best_val_loss": float(trainer.checkpoint_callback.best_model_score or float("nan")),
+        # `is not None`, not `or`: a val_loss that underflows to exactly 0.0
+        # is falsy and would misreport as NaN (LS-SSDD is fully memorized —
+        # see the arms-4/8 capacity caveat in docs/decisions.md)
+        "best_val_loss": float(best_score) if best_score is not None else None,
         "best_checkpoint": str(run_dir / "checkpoints" / "best.ckpt"),
     }
     (run_dir / "final_metrics.json").write_text(json.dumps(final, indent=1), newline="\n")
