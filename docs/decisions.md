@@ -33,6 +33,29 @@ is gitignored, so the committed log lives here.
   verified at 7 GB) continuously, and the V100 node clears the tail when
   available.
 
+## Geographic revisit overlap (owner-raised, measured 2026-07-09)
+
+- Scene-level splits do not imply geographic disjointness in xView3:
+  measured over the frozen split, 22/23 dev scenes have a train scene
+  centered within 32 km (Sentinel-1 revisits — same swath, different date),
+  and even the official human-verified validation partition shares
+  geography (42/50 scenes within 50 km of a train scene; max 172 km). This
+  is inherent to the dataset (AOIs over fishing hot-spots) and to the
+  organizers' own temporal train/validation boundary — the official
+  challenge was evaluated under the same overlap.
+- Consequences: (a) absolute F1 on dev/test is an IN-REGION estimate,
+  inflated by background familiarity, and must be labeled as such in the
+  writeup; (b) the controlled comparison is unaffected — identical
+  familiarity for every arm; (c) no re-split: geo-disjoint splits are not
+  achievable within xView3's train partition and would break comparability
+  with official practice. Chip-level leakage remains impossible by
+  construction (scene-level frozen splits + guards).
+- Additional absolute-number context: dev/test positives are
+  MEDIUM-confidence AIS vessels (LOW ignored, no dark vessels — those exist
+  only in eval_final), and dev F1 is reported at the dev-selected threshold
+  (its max by construction). Test F1 at the frozen threshold and the
+  once-only eval_final numbers are the honest reporting tiers.
+
 ## Arms 4/8 capacity caveat (owner-raised, 2026-07-09)
 
 - LS-SSDD cannot "saturate" an 86-89M backbone and is not expected to: ~6,000
