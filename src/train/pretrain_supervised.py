@@ -117,7 +117,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         yaml.safe_dump({"exp_id": run_id, "args": vars(args), "detector": det_cfg}),
         newline="\n",
     )
-    trainer.fit(module, datamodule=datamodule)
+    last_ckpt = run_dir / "checkpoints" / "last.ckpt"
+    trainer.fit(
+        module,
+        datamodule=datamodule,
+        # resume after interruption (reboot/sleep) instead of restarting —
+        # ModelCheckpoint(save_last=True) writes last.ckpt every epoch
+        ckpt_path=str(last_ckpt) if last_ckpt.exists() else None,
+    )
 
     final = {
         "exp_id": run_id,

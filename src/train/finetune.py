@@ -196,7 +196,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     }
     (run_dir / "config.yaml").write_text(yaml.safe_dump(resolved), newline="\n")
 
-    trainer.fit(module, datamodule=datamodule)
+    last_ckpt = run_dir / "checkpoints" / "last.ckpt"
+    trainer.fit(
+        module,
+        datamodule=datamodule,
+        # resume after interruption (reboot/sleep) instead of restarting
+        ckpt_path=str(last_ckpt) if last_ckpt.exists() else None,
+    )
 
     final = {
         "exp_id": run_id,
