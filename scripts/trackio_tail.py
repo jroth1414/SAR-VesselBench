@@ -75,7 +75,19 @@ def import_run(trackio, run_dir: Path, *, live: bool, seen: dict) -> None:
     if config_path.exists():
         config = {"config_file": str(config_path)}
 
-    trackio.init(project=PROJECT, name=exp_id, config=config, resume="allow")
+    # System-metrics tab: only meaningful while LIVE — the sidecar runs on
+    # the same box as the training, so auto GPU/CPU sampling reflects the
+    # training hardware (a live VRAM chart catches overflow slowdowns fast).
+    trackio.init(
+        project=PROJECT,
+        name=exp_id,
+        config=config,
+        resume="allow",
+        auto_log_gpu=live,
+        gpu_log_interval=30,
+        auto_log_cpu=live,
+        cpu_log_interval=30,
+    )
     while True:
         rows, new_count = metric_rows(csv_path, state["rows"])
         for payload in rows:
@@ -103,6 +115,45 @@ def import_run(trackio, run_dir: Path, *, live: bool, seen: dict) -> None:
             break
         time.sleep(30)
     trackio.finish()
+
+
+def publish_summary(trackio) -> None:
+    """Media + Tables tabs: grid.csv as a Table, figures/galleries as Images.
+
+    Republished into the persistent ``grid-summary`` run after every cell
+    completes. Defensive: dashboard sugar must never kill the tailer.
+    """
+
+    try:
+        import subprocess
+        import sys
+
+        train_python = Path(".venv/Scripts/python.exe")
+        if train_python.exists():
+            subprocess.run(
+                [str(train_python), "-m", "src.analysis.curves"],
+                capture_output=True,
+                timeout=600,
+            )
+
+        trackio.init(project=PROJECT, name="grid-summary", resume="allow")
+        grid_csv = RUNS / "summary" / "grid.csv"
+        if grid_csv.exists():
+            trackio.log({"grid": trackio.Table(dataframe=pd.read_csv(grid_csv))})
+        images = {}
+        for key, path in {
+            "label_efficiency": RUNS / "summary" / "label_efficiency.png",
+            "chip_gallery": RUNS / "qa" / "chips.png",
+            "pred_gallery": RUNS / "qa" / "pred_gallery.png",
+        }.items():
+            if path.exists():
+                images[key] = trackio.Image(str(path), caption=key)
+        if images:
+            trackio.log(images)
+        trackio.finish()
+        print("summary republished (Table + Images)")
+    except Exception as error:  # noqa: BLE001 — sugar, not load-bearing
+        print(f"summary publish failed (non-fatal): {error!r}")
 
 
 def active_run() -> Path | None:
@@ -142,6 +193,7 @@ def main() -> int:
             continue
         print(f"tailing {run_dir.name}")
         import_run(trackio, run_dir, live=True, seen=seen)
+        publish_summary(trackio)
 
 
 if __name__ == "__main__":
