@@ -33,6 +33,20 @@ is gitignored, so the committed log lives here.
   verified at 7 GB) continuously, and the V100 node clears the tail when
   available.
 
+## Arms 4/8 capacity caveat (owner-raised, 2026-07-09)
+
+- LS-SSDD cannot "saturate" an 86-89M backbone and is not expected to: ~6,000
+  ship instances over only 15 distinct Sentinel-1 scenes, and the seeded
+  90/10 split is sub-image-level, so val tiles share those same 15
+  backgrounds. Measured: the ViT pretraining's val_loss fell monotonically
+  to ~6e-10 over 50 epochs — near-perfect memorization of a homogeneous
+  source. Arms 4/8 therefore measure SMALL, TASK-MATCHED, SUPERVISED
+  transfer (their designed role), not FM-scale pretraining; a weak or
+  below-floor result is a pre-registered finding (risk register), and the
+  writeup must report source-data scale (9k images vs SARMAE's 1M) in the
+  fairness table and state this caveat explicitly. Do NOT "fix" it by
+  pooling more SAR datasets — that scope was deliberately cut (Appendix D).
+
 ## Grid execution fixes (2026-07-07)
 
 - **Early-stopping patience is in EPOCHS, not dev evals**: Lightning's
