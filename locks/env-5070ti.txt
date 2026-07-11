@@ -11,8 +11,9 @@
 # cu128 wheels support sm_120 - a nightly is no longer required for Blackwell.
 # Verified on this box by scripts/gpu_sanity.py (output in README):
 # fp16 matmul + SDPA PASS on sm_120.
-# Re-frozen 2026-07-11: + decord/lmdb (LocateAnything trust_remote_code processor deps).
--e git+https://github.com/jroth1414/JHU-xView3.git@02145e18d0dcbcbf44d747e32e2ce0d09c9de76c#egg=jhu_xview3
+# Re-frozen 2026-07-11: + decord/lmdb/peft (LocateAnything trust_remote_code deps).
+-e git+https://github.com/jroth1414/JHU-xView3.git@39d99895c927a1dd0d0304c2a4d004f260094888#egg=jhu_xview3
+accelerate==1.14.0
 affine==2.4.0
 aiohappyeyeballs==2.7.1
 aiohttp==3.14.1
@@ -51,6 +52,7 @@ nvidia-ml-py==13.610.43
 opencv-python==4.11.0.86
 packaging==26.2
 pandas==3.0.3
+peft==0.19.1
 pillow==12.2.0
 pluggy==1.6.0
 polars-runtime-32==1.42.1
