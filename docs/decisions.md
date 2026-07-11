@@ -33,6 +33,21 @@ is gitignored, so the committed log lives here.
   verified at 7 GB) continuously, and the V100 node clears the tail when
   available.
 
+## Threshold-transfer fragility (measured 2026-07-11)
+
+- beS1-f10-s0's frozen dev threshold (0.817) collapsed on the test scenes:
+  test F1 0.305 (P 0.96 / R 0.18) at the frozen operating point vs 0.839 at
+  the test-optimal threshold (0.255) — the detector itself matches its dev
+  quality; the confidence SCALE shifted between scene sets. Uniform across
+  all 16 test scenes (global calibration offset, not per-scene failure).
+  Plausibly linked to the earliest-stopping cell (epoch 25, least-settled
+  confidences). The other seven f10 cells transferred within ~0.01-0.07.
+- Protocol unchanged (P2.2b frozen-dev-threshold is the plan's own and the
+  0.305 is the reportable number), but: (a) P7 analysis must include a
+  threshold-sensitivity slice (frozen vs oracle gap per cell); (b) seed
+  reruns test whether beS1's fragility is systematic; (c) the writeup
+  reports both tiers where the gap is material.
+
 ## Geographic revisit overlap (owner-raised, measured 2026-07-09)
 
 - Scene-level splits do not imply geographic disjointness in xView3:
