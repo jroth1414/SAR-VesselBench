@@ -27,21 +27,36 @@ from typing import Sequence
 import numpy as np
 
 PROMPTS = ("ship", "vessel", "boat")
-QUESTION = (
-    "Locate every {prompt} in this satellite radar image. "
-    "Answer with bounding boxes only."
-)
-# Matches [x1, y1, x2, y2] integer groups anywhere in the generation.
-BOX_PATTERN = re.compile(r"\[\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\]")
+# The model card's canonical detection template (README):
+#   prompt = f"Locate all the instances that matches the following description: {cats}."
+QUESTION = "Locate all the instances that matches the following description: {prompt}."
+# The model emits Qwen-style grounding tokens: <box><x1><y1><x2><y2></box>
+# with coordinates normalized to 0-1000 (or <box>None</box> for no hits).
+BOX_GROUP = re.compile(r"<box>((?:<\d+>)+)</box>")
+COORD = re.compile(r"<(\d+)>")
 
 
-def parse_box_centers(text: str, *, scale_x: float = 1.0, scale_y: float = 1.0) -> list[tuple[float, float]]:
-    """Generated text -> (col, row) box centers in image pixels."""
+def parse_box_centers(
+    text: str, *, image_w: float = 800.0, image_h: float = 800.0
+) -> list[tuple[float, float]]:
+    """Generated grounding text -> (col, row) box centers in image pixels.
+
+    Parses the model's literal output — including degenerate whole-image
+    boxes — with no filtering: R3 is a zero-shot reference and is scored
+    as-is through the SACRED scorer.
+    """
 
     centers = []
-    for match in BOX_PATTERN.finditer(text):
-        x1, y1, x2, y2 = (float(g) for g in match.groups())
-        centers.append((((x1 + x2) / 2.0) * scale_x, ((y1 + y2) / 2.0) * scale_y))
+    for match in BOX_GROUP.finditer(text):
+        nums = [int(c) for c in COORD.findall(match.group(1))]
+        for i in range(0, len(nums) - 3, 4):
+            x1, y1, x2, y2 = nums[i : i + 4]
+            centers.append(
+                (
+                    ((x1 + x2) / 2.0) / 1000.0 * image_w,
+                    ((y1 + y2) / 2.0) / 1000.0 * image_h,
+                )
+            )
     return centers
 
 
@@ -135,11 +150,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         output = model.generate(
             pixel_values=inputs["pixel_values"].to(torch.bfloat16),
             input_ids=inputs["input_ids"],
+            attention_mask=inputs.get("attention_mask"),
             image_grid_hws=inputs.get("image_grid_hws"),
+            tokenizer=tokenizer,  # explicit param of the custom generate
             max_new_tokens=1024,
             do_sample=False,
+            use_cache=True,  # the model's custom generate asserts this
         )
-        return tokenizer.decode(output[0], skip_special_tokens=True)
+        # the custom generate returns the DECODED response string directly
+        # (or a tuple when verbose) — not token ids
+        return output if isinstance(output, str) else output[0]
 
     results = {}
     for prompt in PROMPTS:
