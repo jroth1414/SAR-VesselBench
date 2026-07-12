@@ -1,0 +1,27 @@
+{
+ "exp_id": "beS2-f10-s0",
+ "epochs_run": 50,
+ "best_dev_f1": 0.7677806341045416,
+ "last_dev": {
+  "f1": 0.7436823104693142,
+  "precision": 0.8512396694214877,
+  "recall": 0.6602564102564102,
+  "tp": 412,
+  "fp": 72,
+  "fn": 212,
+  "threshold": 0.80078125,
+  "n_candidates": 3173
+ },
+ "train_loss": 0.07065288722515106,
+ "test_f1": 0.6674528301886793,
+ "test_precision": 0.8852971845672576,
+ "test_recall": 0.5356466876971608,
+ "test_tp": 849,
+ "test_fp": 110,
+ "test_fn": 736,
+ "test_threshold_applied": 0.80078125,
+ "test_dark_recall": 0.0,
+ "test_dark_support": 0,
+ "test_near_shore_f1": 0.0,
+ "test_scored_at": "2026-07-10T23:38:06"
+}

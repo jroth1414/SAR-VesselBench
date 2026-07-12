@@ -1,0 +1,27 @@
+{
+ "exp_id": "cnnsup-f10-s0",
+ "epochs_run": 50,
+ "best_dev_f1": 0.7506561679790026,
+ "last_dev": {
+  "f1": 0.7454387489139879,
+  "precision": 0.8140417457305503,
+  "recall": 0.6875,
+  "tp": 429,
+  "fp": 98,
+  "fn": 195,
+  "threshold": 0.74853515625,
+  "n_candidates": 5189
+ },
+ "train_loss": 0.3215881884098053,
+ "test_f1": 0.6644194756554307,
+ "test_precision": 0.8175115207373271,
+ "test_recall": 0.559621451104101,
+ "test_tp": 887,
+ "test_fp": 198,
+ "test_fn": 698,
+ "test_threshold_applied": 0.74853515625,
+ "test_dark_recall": 0.0,
+ "test_dark_support": 0,
+ "test_near_shore_f1": 0.0,
+ "test_scored_at": "2026-07-11T00:08:37"
+}

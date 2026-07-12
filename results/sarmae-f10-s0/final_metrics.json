@@ -1,0 +1,27 @@
+{
+ "exp_id": "sarmae-f10-s0",
+ "epochs_run": 45,
+ "best_dev_f1": 0.8803088803088803,
+ "last_dev": {
+  "f1": 0.8582554517133957,
+  "precision": 0.8348484848484848,
+  "recall": 0.8830128205128205,
+  "tp": 551,
+  "fp": 109,
+  "fn": 73,
+  "threshold": 0.40234375,
+  "n_candidates": 881
+ },
+ "train_loss": 0.11547873169183731,
+ "test_f1": 0.8154197974518131,
+ "test_precision": 0.8455284552845529,
+ "test_recall": 0.7873817034700316,
+ "test_tp": 1248,
+ "test_fp": 228,
+ "test_fn": 337,
+ "test_threshold_applied": 0.40234375,
+ "test_dark_recall": 0.0,
+ "test_dark_support": 0,
+ "test_near_shore_f1": 0.0,
+ "test_scored_at": "2026-07-10T22:55:17"
+}

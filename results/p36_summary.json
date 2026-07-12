@@ -1,0 +1,98 @@
+{
+ "vit_random": {
+  "exp_id": "vitrand-f100-s0-p36",
+  "epochs_run": 5,
+  "best_dev_f1": 0.7882882882882883,
+  "last_dev": {
+   "f1": 0.7882882882882883,
+   "precision": 0.7415254237288136,
+   "recall": 0.8413461538461539,
+   "tp": 525,
+   "fp": 183,
+   "fn": 99,
+   "threshold": 0.630859375,
+   "n_candidates": 51471
+  },
+  "train_loss": 0.09728820621967316
+ },
+ "satdino_b": {
+  "exp_id": "satdino-f100-s0-p36",
+  "epochs_run": 5,
+  "best_dev_f1": 0.8353413654618475,
+  "last_dev": {
+   "f1": 0.8353413654618475,
+   "precision": 0.8373590982286635,
+   "recall": 0.8333333333333334,
+   "tp": 520,
+   "fp": 101,
+   "fn": 104,
+   "threshold": 0.62841796875,
+   "n_candidates": 1191
+  },
+  "train_loss": 0.0246895682066679
+ },
+ "sarmae_b": {
+  "exp_id": "sarmae-f100-s0-p36",
+  "epochs_run": 5,
+  "best_dev_f1": 0.857566765578635,
+  "last_dev": {
+   "f1": 0.857566765578635,
+   "precision": 0.7983425414364641,
+   "recall": 0.9262820512820513,
+   "tp": 578,
+   "fp": 146,
+   "fn": 46,
+   "threshold": 0.533203125,
+   "n_candidates": 1357
+  },
+  "train_loss": 0.03885626420378685
+ },
+ "cnn_random": {
+  "exp_id": "cnnrand-f100-s0-p36",
+  "epochs_run": 5,
+  "best_dev_f1": 0.6769230769230768,
+  "last_dev": {
+   "f1": 0.6769230769230768,
+   "precision": 0.7252747252747253,
+   "recall": 0.6346153846153846,
+   "tp": 396,
+   "fp": 150,
+   "fn": 228,
+   "threshold": 0.556640625,
+   "n_candidates": 110930
+  },
+  "train_loss": 1.0994153022766113
+ },
+ "bigearthnet_s2": {
+  "exp_id": "beS2-f100-s0-p36",
+  "epochs_run": 5,
+  "best_dev_f1": 0.7259953161592506,
+  "last_dev": {
+   "f1": 0.7259953161592506,
+   "precision": 0.7077625570776256,
+   "recall": 0.7451923076923077,
+   "tp": 465,
+   "fp": 192,
+   "fn": 159,
+   "threshold": 0.49951171875,
+   "n_candidates": 58694
+  },
+  "train_loss": 0.24614562094211578
+ },
+ "bigearthnet_s1": {
+  "exp_id": "beS1-f100-s0-p36",
+  "epochs_run": 5,
+  "best_dev_f1": 0.8192567567567568,
+  "last_dev": {
+   "f1": 0.8192567567567568,
+   "precision": 0.8660714285714286,
+   "recall": 0.7772435897435898,
+   "tp": 485,
+   "fp": 75,
+   "fn": 139,
+   "threshold": 0.67529296875,
+   "n_candidates": 3881
+  },
+  "train_loss": 0.04708756133913994
+ }
+}

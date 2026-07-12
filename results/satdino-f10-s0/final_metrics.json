@@ -1,0 +1,27 @@
+{
+ "exp_id": "satdino-f10-s0",
+ "epochs_run": 45,
+ "best_dev_f1": 0.8766233766233766,
+ "last_dev": {
+  "f1": 0.8730800323362975,
+  "precision": 0.8809135399673735,
+  "recall": 0.8653846153846154,
+  "tp": 540,
+  "fp": 73,
+  "fn": 84,
+  "threshold": 0.58349609375,
+  "n_candidates": 875
+ },
+ "train_loss": 0.0007697863620705903,
+ "test_f1": 0.8157628831256314,
+ "test_precision": 0.875,
+ "test_recall": 0.7640378548895899,
+ "test_tp": 1211,
+ "test_fp": 173,
+ "test_fn": 374,
+ "test_threshold_applied": 0.58349609375,
+ "test_dark_recall": 0.0,
+ "test_dark_support": 0,
+ "test_near_shore_f1": 0.12903225806451613,
+ "test_scored_at": "2026-07-10T22:43:39"
+}

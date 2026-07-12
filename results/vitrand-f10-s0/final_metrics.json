@@ -1,0 +1,27 @@
+{
+ "exp_id": "vitrand-f10-s0",
+ "epochs_run": 50,
+ "best_dev_f1": 0.8554125662376987,
+ "last_dev": {
+  "f1": 0.8413059984813971,
+  "precision": 0.7994227994227994,
+  "recall": 0.8878205128205128,
+  "tp": 554,
+  "fp": 139,
+  "fn": 70,
+  "threshold": 0.7373046875,
+  "n_candidates": 2743
+ },
+ "train_loss": 0.0023622410371899605,
+ "test_f1": 0.7880597014925373,
+ "test_precision": 0.8307692307692308,
+ "test_recall": 0.7495268138801262,
+ "test_tp": 1188,
+ "test_fp": 242,
+ "test_fn": 397,
+ "test_threshold_applied": 0.7373046875,
+ "test_dark_recall": 0.0,
+ "test_dark_support": 0,
+ "test_near_shore_f1": 0.0,
+ "test_scored_at": "2026-07-10T22:32:17"
+}

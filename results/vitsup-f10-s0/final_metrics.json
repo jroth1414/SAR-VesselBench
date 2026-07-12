@@ -1,0 +1,27 @@
+{
+ "exp_id": "vitsup-f10-s0",
+ "epochs_run": 50,
+ "best_dev_f1": 0.851764705882353,
+ "last_dev": {
+  "f1": 0.8485329103885805,
+  "precision": 0.8398744113029827,
+  "recall": 0.8573717948717948,
+  "tp": 535,
+  "fp": 102,
+  "fn": 89,
+  "threshold": 0.78662109375,
+  "n_candidates": 2612
+ },
+ "train_loss": 0.0022868395317345858,
+ "test_f1": 0.7805212620027435,
+ "test_precision": 0.8549962434259955,
+ "test_recall": 0.717981072555205,
+ "test_tp": 1138,
+ "test_fp": 193,
+ "test_fn": 447,
+ "test_threshold_applied": 0.78662109375,
+ "test_dark_recall": 0.0,
+ "test_dark_support": 0,
+ "test_near_shore_f1": 0.0,
+ "test_scored_at": "2026-07-10T23:07:15"
+}

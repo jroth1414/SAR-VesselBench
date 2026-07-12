@@ -1,0 +1,24 @@
+{
+ "exp_id": "locateanything-zs",
+ "per_prompt": {
+  "ship": {
+   "f1": 0.0,
+   "precision": 0.0,
+   "recall": 0.0,
+   "threshold": 1.0
+  },
+  "vessel": {
+   "f1": 0.03061224489795918,
+   "precision": 0.0425531914893617,
+   "recall": 0.02390438247011952,
+   "threshold": 1.0
+  },
+  "boat": {
+   "f1": 0.12539184952978058,
+   "precision": 0.29411764705882354,
+   "recall": 0.0796812749003984,
+   "threshold": 0.25
+  }
+ },
+ "best_prompt": "boat"
+}

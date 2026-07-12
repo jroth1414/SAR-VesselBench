@@ -1,0 +1,7 @@
+{
+ "exp_id": "cnnsup-lsssdd",
+ "epochs_run": 47,
+ "best_val_loss": 0.0,
+ "best_checkpoint": "runs\\cnnsup-lsssdd\\checkpoints\\best.ckpt",
+ "note": "val_loss underflowed to exactly 0.0 (LS-SSDD memorized); NaN was a falsy-zero reporting artifact, fixed in pretrain_supervised.py"
+}

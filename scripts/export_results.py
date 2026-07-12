@@ -1,0 +1,54 @@
+"""Export small result artifacts from runs/ into results/ for git sharing.
+
+runs/ stays gitignored (checkpoints, logs, media — ground rule 11); this
+copies ONLY the small, license-clean result data so training/performance
+numbers can be shared with project partners through the repo and synced
+back from the V100 node the same way:
+
+- runs/summary/grid.csv + label_efficiency.png (pure plot)
+- every run's final_metrics.json and per-epoch metrics.csv
+- p36_summary.json (the P3.6 gate record)
+
+Deliberately EXCLUDED: checkpoints, chip/prediction galleries (they contain
+xView3 imagery — add manually if the team decides to), anything large.
+Re-run after each wave; idempotent.
+"""
+
+from __future__ import annotations
+
+import shutil
+from pathlib import Path
+
+RUNS = Path("runs")
+OUT = Path("results")
+
+
+def main() -> int:
+    copied = 0
+    summary_out = OUT / "summary"
+    summary_out.mkdir(parents=True, exist_ok=True)
+    for name in ("grid.csv", "label_efficiency.png"):
+        src = RUNS / "summary" / name
+        if src.exists():
+            shutil.copy2(src, summary_out / name)
+            copied += 1
+    if (RUNS / "p36_summary.json").exists():
+        shutil.copy2(RUNS / "p36_summary.json", OUT / "p36_summary.json")
+        copied += 1
+
+    for final in sorted(RUNS.glob("*/final_metrics.json")):
+        run_dir = OUT / final.parent.name
+        run_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(final, run_dir / "final_metrics.json")
+        copied += 1
+        metrics_csv = final.parent / "metrics" / "metrics.csv"
+        if metrics_csv.exists():
+            shutil.copy2(metrics_csv, run_dir / "metrics.csv")
+            copied += 1
+
+    print(f"exported {copied} files -> {OUT}/")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
