@@ -27,7 +27,48 @@ Run the remaining core-grid cells 8-wide with
 (dependency-aware, resumable; pretrainings first if not already done).
 Afterwards: seed reruns (DEVPLAN §12; ask the human before starting them).
 
-## Zero-upload acquisition path (preferred over any bulk transfer)
+## Box bulk-transfer path (CHOSEN by the owner, 2026-07-13)
+
+The dev box uploaded the transfer set to the team Box folder
+`JHU-xView3/transfer/` as LARGE TARS (Box API chokes on the ~285k raw chip
+files — never upload/download them unbundled). Contents: `chips/<scene>.tar`
+x150, `raw/<scene>.tar` x39 (dev+test only), `runs.tar`, `weights.tar`,
+`labels.tar`, `MANIFEST.txt`, plus `LS-SSDDv1.0.zip` at the folder root.
+
+**Download (rclone, not the web UI):**
+```bash
+curl https://rclone.org/install.sh | sudo bash   # or distro package
+rclone config create box box   # one-time OAuth in a browser; on a headless
+                               # node run `rclone authorize box` on any
+                               # machine with a browser and paste the token
+rclone copy box:JHU-xView3/transfer /data/transfer \
+    --transfers 8 --checkers 8 --progress
+rclone copy box:JHU-xView3/LS-SSDDv1.0.zip /data/transfer/ --progress
+```
+
+**Unbundle into the repo layout** (from the repo root, with `/data/transfer`
+holding the tars; adjust paths to node-local FAST storage — never train off
+network/USB mounts):
+```bash
+mkdir -p data/chips data/raw/xview3/GRD data/raw/lsssdd
+for t in /data/transfer/chips/*.tar;  do tar -xf "$t" -C data/chips; done
+for t in /data/transfer/raw/*.tar;    do tar -xf "$t" -C data/raw/xview3/GRD; done
+tar -xf /data/transfer/runs.tar      -C .            # runs/ (checkpoints + skip markers)
+tar -xf /data/transfer/weights.tar   -C data         # data/weights/
+tar -xf /data/transfer/labels.tar    -C data/raw/xview3
+unzip -q /data/transfer/LS-SSDDv1.0.zip -d data/raw/lsssdd
+```
+
+**Verify before ANY cell runs:**
+1. File counts match `MANIFEST.txt` (spot-check a few scene dirs).
+2. `ls data/chips | wc -l` = 150; `ls data/raw/xview3/GRD | wc -l` = 39.
+3. `pytest tests/ -q` — all green, including every freeze pin (splits,
+   stats, lsssdd, detector, scorer) and the FM value-sensitive loads.
+4. `runs/` already contains finished cells' `final_metrics.json` — the queue
+   will log "done — skip" for each; if it starts re-running a finished cell,
+   STOP and check the untar landed in the repo root.
+
+## Zero-upload acquisition path (alternative, if Box is unavailable)
 
 Everything the node needs is self-service — nothing bulky has to move from
 the dev box at all:
