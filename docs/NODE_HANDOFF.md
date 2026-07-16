@@ -27,6 +27,30 @@ Run the remaining core-grid cells 8-wide with
 (dependency-aware, resumable; pretrainings first if not already done).
 Afterwards: seed reruns (DEVPLAN §12; ask the human before starting them).
 
+## Zero-upload acquisition path (preferred over any bulk transfer)
+
+Everything the node needs is self-service — nothing bulky has to move from
+the dev box at all:
+
+1. Repo: `git clone` (branch dev). Frozen splits/stats/configs ride along.
+2. FM weights: pull from HF at the revisions pinned in each
+   `data/weights/*/SOURCE.note` (all ungated; ~10 GB).
+3. LS-SSDD: radars.ac.cn zip (2.6 GB; also mirrored on the team Box).
+4. xView3 imagery: download ONLY the 150 study-scene archives straight from
+   the DIU distribution with the owner's account (aria2; filter the url list
+   against `docs/node_scene_archives.txt`; ~180 GB at datacenter bandwidth).
+   eval_final archives are deliberately NOT needed on the node.
+5. Re-derive chips on the node: extract, then run
+   `python scripts/chip_study_scenes.py --archive-dir <dir> --labels-csv <train.csv>`.
+   The chipper is deterministic given the frozen `data/splits.json`;
+   `data/stats.json` comes from GIT (frozen) and is NEVER recomputed.
+   stats.json already existing is expected — the driver leaves it untouched.
+6. Mark already-finished cells done so the queue skips them — reconstruct
+   their markers from the results export in git:
+   `for d in results/*/; do exp=$(basename $d); mkdir -p runs/$exp; cp $d/final_metrics.json runs/$exp/ 2>/dev/null; done`
+   (Checkpoints of finished cells stay on the dev box; test-scoring and
+   final eval of those cells run there, where the checkpoints live.)
+
 ## Node bring-up (in order, no skipping)
 
 1. Clone the repo (branch dev) onto NODE-LOCAL disk. Python 3.11 venv,
