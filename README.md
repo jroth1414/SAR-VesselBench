@@ -11,7 +11,9 @@ for detecting **dark vessels** (ships not broadcasting AIS) in Sentinel-1 synthe
 > **Documentation map.** This README is the orientation. The authoritative design and phase plan
 > is [`DEVPLAN.md`](DEVPLAN.md) — start with its **"Current repository state — READ FIRST"** cold-start
 > runbook to see what is built vs. not. [`AGENTS.md`](AGENTS.md) is the short list of non-negotiables
-> for any coding agent. [`proposal.pdf`](proposal.pdf) is the 1.5-page course proposal.
+> for any coding agent. The working proposal ([`docs/proposal.tex`](docs/proposal.tex) and its PDF)
+> and the [`signed course proposal`](docs/proposal_signed.pdf) predate the 2026-07-22 design amendment;
+> those proposal artifacts are retained unchanged as historical records.
 
 ---
 
@@ -19,7 +21,7 @@ for detecting **dark vessels** (ships not broadcasting AIS) in Sentinel-1 synthe
 
 Labeled dark-vessel examples in SAR are scarce and expensive (human-verified). Pretrained backbones
 promise to close that gap, but it is unclear **which kind of pretraining transfers best** to this
-scarce-label regime — generic optical, SAR-specific, or labeled out-of-domain SAR — and **whether the
+scarce-label regime — generic ImageNet, optical remote sensing, or SAR-specific — and **whether the
 answer depends on the backbone architecture**.
 
 We hold the detector, its head, its training schedule, and its input fixed, and vary only the
@@ -33,10 +35,10 @@ downloaded **initialization** (within a track) and the **architecture family** (
 gains and the largest dark-vessel-recall advantage at low label budgets, and this ordering is
 *architecture-general* (holds for both the ViT and the CNN).
 
-We **pretrain no foundation model** — all foundation backbones are downloaded. The only training we run
-is a cheap supervised-detection backbone per architecture on LS-SSDD. This deliberately removes the
-project's two largest risks (self-pretraining compute and novel pretraining code) and keeps the focus
-on a clean, metric-matched comparison.
+We **pretrain no backbone** — all six non-random core initializations are downloaded. The controlled
+matrix is 8 arms × 4 label fractions at one fixed run seed (`0`) = 32 core xView3 fine-tunes; R2 and R3
+bring the total to **34 reported experiments**. There is no active LS-SSDD stage and no seed-rerun
+matrix. This removes self-pretraining compute and novel pretraining code from the study.
 
 ---
 
@@ -56,19 +58,23 @@ held fixed.
 | 1 | ViT | ViT-B/16 | random init | yes | ViT floor |
 | 2 | ViT | ViT-B/16 | **SatDINO** (fMoW-RGB, DINO) | yes | optical-domain FM transfer |
 | 3 | ViT | ViT-B/16 | **SARMAE** (SAR-1M, MAE) | yes | SAR-domain FM transfer |
-| 4 | ViT | ViT-B/16 | LS-SSDD supervised (we train) | yes | labeled SAR-detection transfer |
+| 4 | ViT | ViT-B/16 | **ImageNet-1K AugReg** (`timm/vit_base_patch16_224.augreg_in1k`) | yes | generic ImageNet transfer |
 | 5 | CNN | ConvNeXt-V2-B | random init | yes | CNN floor |
 | 6 | CNN | ConvNeXt-V2-B | **BigEarthNet-S2** (optical RS) | yes | optical-RS transfer |
 | 7 | CNN | ConvNeXt-V2-B | **BigEarthNet-S1** (SAR RS) | yes | SAR-RS transfer |
-| 8 | CNN | ConvNeXt-V2-B | LS-SSDD supervised (we train) | yes | labeled SAR-detection transfer |
-| R1 | ref | ConvNeXt-V2-B | ImageNet (contingent, if time) | no | generic-transfer reference |
+| 8 | CNN | ConvNeXt-V2-B | **ImageNet-1K FCMAE→supervised** (`timm/convnextv2_base.fcmae_ft_in1k`) | yes | generic ImageNet transfer |
 | R2 | ref | YOLO26 | COCO-pretrained | no | detector reference |
 | R3 | ref | LocateAnything-3B | zero-shot | no | VLM reference |
 
 **Fairness by construction.** Within each track, all four arms share the same backbone, detection head,
-optimizer, schedule, seeds, and the fixed input. The head/optimizer/schedule are shared across *both*
+optimizer, schedule, run seed `0`, and the fixed input. The head/optimizer/schedule are shared across *both*
 tracks too — only the backbone (and a small per-family head adapter) differs. Guard tests in CI enforce
 the invariants that keep the arms comparable (see §6).
+
+**ImageNet matched-role caveat.** Arms 4 and 8 match on generic source dataset and final ImageNet-1K
+classification supervision, but not on full training history: Arm 4 is supervised AugReg, whereas
+Arm 8 is FCMAE-pretrained and then supervised-fine-tuned. Cross-track comparisons must state this
+limitation; this pair is not a matched MAE/FCMAE experiment.
 
 **Headline deliverable:** a **two-track label-efficiency curve** — detection F1 vs. 10 / 25 / 50 / 100%
 of real labels, eight lines (solid ViT, dashed CNN; one color per pretraining role) — plus the hardest
@@ -91,6 +97,8 @@ slices: **dark-vessel recall** and **near-shore F1**, where any SAR advantage sh
 | **SARMAE** ViT-B/16 (SAR-1M) | weights `Wenquandan777/SARMAE` (code `MiliLab/SARMAE`) | SAR, masked autoencoder w/ speckle-aware enhancement | CC BY-NC 4.0 (gated) |
 | **BigEarthNet ConvNeXt-V2-B (S2)** | `BIFOLD-BigEarthNetv2-0/convnextv2_base-s2-v0.2.0` | optical (Sentinel-2), supervised land-cover | see repo |
 | **BigEarthNet ConvNeXt-V2-B (S1)** | `BIFOLD-BigEarthNetv2-0/convnextv2_base-s1-v0.2.0` | SAR (Sentinel-1), supervised land-cover | see repo |
+| **ImageNet ViT-B/16** | `timm/vit_base_patch16_224.augreg_in1k` | ImageNet-1K, supervised AugReg | see upstream model card |
+| **ImageNet ConvNeXt-V2-B** | `timm/convnextv2_base.fcmae_ft_in1k` | ImageNet-1K, FCMAE then supervised fine-tuning | see upstream model card |
 
 **Detector.** A point-native heatmap head (CenterNet / *Objects as Points* style, with the TRANSAR SAR
 precedent): each vessel is a Gaussian blob on a **stride-4** response map, decoded by peak-finding with
@@ -99,8 +107,7 @@ official metric exactly, avoiding synthetic bounding boxes the data never had. O
 code path is shared across all arms.
 
 **Reference arms** (reported separately, *not* on the controlled curves): YOLO26 (COCO init, Ultralytics),
-LocateAnything-3B (zero-shot VLM), and a contingent ImageNet-ConvNeXt (RS-vs-generic-pretraining reference,
-only if the eight core arms finish early).
+and LocateAnything-3B (zero-shot VLM). ImageNet is now a matched core role, so the old R1 is removed.
 
 ---
 
@@ -110,8 +117,10 @@ only if the eight core arms finish early).
   (VH, VV). Training scenes are split **75 / 15 / 10** at the **scene level** (no chip-level leakage). The
   ~50 human-verified validation scenes form `eval_final` and are **touched exactly once**, at final eval.
   *SLC products are never fetched* (multi-TB, unneeded).
-- **LS-SSDD-v1.0** (`TianwenZhang0825/LS-SSDD-v1.0-OPEN`) — native Sentinel-1, cut into 800×800 sub-images;
-  the labeled supervised-transfer source for **Arms 4 and 8** only (never mixed into the xView3 splits).
+- **LS-SSDD-v1.0 (retired)** was used by the superseded design for Arms 4/8 and is **not an active
+  training source**. Its frozen `data/lsssdd_split.json` remains committed, immutable, and clearly
+  retired for provenance; the historical proposal artifacts and Git history preserve the old design.
+
 
 **Input representation (study-wide, all arms):** a fixed 3-channel tensor **[VH, VV, VH−VV]** in dB, so the
 input is physically identical across arms and channel handling is never a confound. Each backbone's stem
@@ -132,22 +141,28 @@ cold-start runbook holds the live status ledger. Current state:
 - **DONE — Phases 0-3** (tagged `phase-1-done`, `phase-2-done`, `phase-3-done`): environment +
   lockfiles, full data pipeline with the three frozen artifacts (`data/splits.json` — 150 study
   scenes split 111/23/16 plus the 50 verified scenes as `eval_final`; `data/stats.json`;
-  `data/lsssdd_split.json`), the frozen scorer/decode/threshold stack, and the shared detector
+  retired historical `data/lsssdd_split.json`), the frozen scorer/decode/threshold stack, and the shared detector
   (both backbone tracks behind one head, eight init loaders, `configs/detector.yaml` frozen).
   All five freeze guards plus the parity and checkpoint-load guards run in CI.
 - **PASSED — P3.6 early-signal gate**: every downloaded backbone beats its track's random floor
   at an equal reduced budget, and SAR-domain pretraining leads optical in both tracks
   (dev F1, 8 scenes: ViT 0.788 floor / 0.835 SatDINO / 0.858 SARMAE; CNN 0.677 floor /
   0.726 BigEarthNet-S2 / 0.819 BigEarthNet-S1).
-- **RUNNING — Phase 4/5 grid** (option B: plan-literal epochs, early stopping on dev F1 with
-  patience of 4 real dev evals): a resumable queue works through the arms-by-fractions matrix on
-  the dev card; an 8-wide runner + agent handoff kit (`docs/NODE_HANDOFF.md`) is ready for the
-  V100 node. All checkpoints for the study, references, and contingencies are downloaded and
-  revision-pinned under `data/weights/`.
+- **AMENDED — 2026-07-22**: Arms 4/8 changed from random→LS-SSDD to the two downloaded ImageNet-1K
+  checkpoints above; the old `vitsup-f10-s0` and `cnnsup-f10-s0` cells are superseded and excluded.
+  Seed reruns and R1 are removed. The target is 32 seed-0 core cells plus R2/R3 = 34 experiments.
+- **PARTIAL — core grid**: the six unaffected seed-0 f10 cells (arms 1,2,3,5,6,7) remain valid.
+  The replacement ImageNet loaders, exact-byte pins, and the complete 88-test pre-launch suite
+  (including all six value-sensitive checkpoint guards) passed on 2026-07-22. The revised Arms 4/8
+  f10 cells are ready under the same frozen detector recipe. R2/R3 records exist.
+- **P100 GATE PASSED — 2026-07-22**: this server's 8× Tesla P100 PCIe 12 GB pool (Pascal sm_60)
+  passed the hardware, environment, and per-family memory gates with the active
+  `locks/env-p100node.txt`. Real cells use micro-batch 8 plus accumulation 2 for effective batch 16.
+  The V100 lock and all V100-based memory/runtime assumptions are historical only.
 - **READY — Phase 6 tripwires** (`src/eval/final_eval.py`: `--i-am-sure` + lockfile, hard
-  preconditions) and the references lane (YOLO26 train/score pipeline; LocateAnything-3B
-  zero-shot probe). Remaining to write: the Phase 7 analysis modules (error slices,
-  architecture comparison, the 24-chip gallery) and the optional Phase 8 contingent reference.
+  preconditions). The 50 raw eval-scene rasters are not present on this server, and final evaluation
+  remains untouched. Remaining to write: the Phase 7 analysis modules (error slices,
+  architecture comparison, the 24-chip gallery).
 
 ```
 JHU-xView3/
@@ -156,10 +171,10 @@ JHU-xView3/
   docs/               # decisions log, node setup + agent handoff, proposal
   requirements-ci.txt # minimal CPU deps for CI guard tests
   configs/            # data.yaml, detector.yaml (frozen), arms.yaml (run manifest)
-  locks/              # per-machine environment pins (5070 Ti verified; V100 candidate)
+  locks/              # verified 5070 Ti + P100 pins; historical V100 candidate
   src/data/           # download/registration, chipper, centroids, splits, datasets
   src/models/         # backbones, heatmap head + adapters, 8 init loaders
-  src/train/          # shared Lightning module/datamodule, finetune, LS-SSDD pretrain
+  src/train/          # shared Lightning module/datamodule + fine-tune; retired LS tooling remains
   src/eval/           # scorer.py (frozen), decode, threshold, infer_scene, final_eval
   src/references/     # YOLO26 (R2), LocateAnything zero-shot (R3)
   src/analysis/       # curves + grid.csv collector, QA galleries
@@ -178,10 +193,11 @@ git clone https://github.com/jroth1414/JHU-xView3
 cd JHU-xView3
 
 # 1) Install torch/torchvision from the index that matches YOUR machine FIRST
-#    (never bare `pip install torch` — see DEVPLAN Appendix C and locks/):
+#    (never bare `pip install torch`; validate the build against the actual GPU):
 #      5070 Ti (Blackwell sm_120):  pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
-#      V100 node (Volta sm_70):     pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
-#    or reproduce a box exactly from its lockfile in locks/.
+#      P100 server (Pascal sm_60):  pip install -r locks/env-p100node.txt \
+#                                    --extra-index-url https://download.pytorch.org/whl/cu126
+#    Reproduce a box from a lock only after its hardware gate passes.
 
 # 2) Then the package itself (the only sanctioned install):
 pip install -e .[dev]
@@ -203,8 +219,14 @@ sdpa: ok | first usable backend: mem_efficient
 gpu_sanity: PASS
 ```
 
-V100 node: not yet run — the node lock (`locks/env-v100node.txt`) is a candidate pin; re-freeze and
-paste the sanity output here on first use (its header has the exact recipe).
+P100 server: eight Tesla P100 PCIe cards with 12 GB each (Pascal sm_60). The verified
+`locks/env-p100node.txt` uses torch 2.11.0+cu126 and includes sm_60 kernels; `gpu_sanity.py` passed.
+Both families passed fp16-autocast backward/AdamW steps at micro-batch 8 (ViT 3.80 GiB peak allocated,
+ConvNeXt-V2 10.19 GiB), so accumulation 2 preserves effective batch 16. The old
+`locks/env-v100node.txt` remains historical V100/sm_70 provenance only.
+Reserve GPUs through `gpu`, then use only the attached container-local indices printed by
+`nvidia-smi -L` (normally `0..N-1`) for `CUDA_VISIBLE_DEVICES` or runner `--gpus`. Do not pass
+physical host IDs from `gpu info`.
 
 **Continuous integration.** `.github/workflows/ci.yml` runs, on every push/PR to `dev`/`main`, the
 anti-drift **guard tests** that encode study validity:
@@ -214,12 +236,14 @@ anti-drift **guard tests** that encode study validity:
 - `test_fm_checkpoints_load` — every downloaded backbone loads value-sensitively (not silently random).
 - `test_scorer_immutable` — the frozen scorer's hash is unchanged.
 
-Guards run only once their target files exist, so a fresh clone is green-with-skips for the not-yet-written
-ones. The real training environment is **not** CI — see `locks/` (to be created) and DEVPLAN Appendix C for
-the two GPU machines (an 8×V100 node, Volta/sm_70, fp16-only; and an RTX 5070 Ti, Blackwell/sm_120).
+CI runs the CPU/offline structural guard halves; value-sensitive checkpoint loading runs on a verified
+GPU box with the pinned local weights. The real training environment is **not** CI. Both the 5070 Ti
+and P100 environments have verified, machine-specific locks.
 
-**Compute budget:** ~293–360 GPU-hours total (foundation models are downloaded, so there is no
-from-scratch pretraining) — roughly two to three nights on the 8×V100 node.
+**Experiment budget:** 32 core seed-0 fine-tunes plus R2/R3 = **34 experiments**. No LS-SSDD backbone
+training, R1, or seed reruns remain. A P100 GPU-hour estimate is intentionally deferred until the two
+revised f10 cells provide measured throughput; the V100 estimate is retired. Results are point
+estimates; do not report seed-derived error bars.
 
 ---
 
@@ -228,12 +252,16 @@ from-scratch pretraining) — roughly two to three nights on the 8×V100 node.
 - **SARMAE** weights are **CC BY-NC 4.0** (non-commercial) and gated; **BigEarthNet** weight licenses must
   be verified at download. This project's use is academic/non-commercial; any released code or checkpoints
   are scoped accordingly. See the DEVPLAN risk register.
+- The two ImageNet checkpoints require pinned upstream revisions, hashes, and license notes before their
+  f10 runs; a model alias without recorded provenance is not sufficient.
 - Datasets and downloaded weights are pinned by revision for reproducibility; large data, checkpoints, and
   `runs/` are never committed (see `.gitignore`).
 
 ## 8. Key references
 
 xView3-SAR (Paolo et al., NeurIPS 2022) · SatDINO (Straka & Gruber, 2025) · SARMAE (Liu et al., CVPR 2026) ·
-ConvNeXt V2 (Woo et al., CVPR 2023) · reBEN / BigEarthNet v2.0 (Clasen et al., IGARSS 2025) ·
-LS-SSDD-v1.0 (Zhang et al., 2020) · Rethinking Pre-training and Self-training (Zoph et al., NeurIPS 2020) ·
-Ultralytics YOLO26 (2026). Full citations in [`proposal.tex`](proposal.tex).
+ViT AugReg (Steiner et al., 2021) · ImageNet (Deng et al., 2009) · ConvNeXt V2 (Woo et al., CVPR 2023) ·
+reBEN / BigEarthNet v2.0 (Clasen et al., IGARSS 2025) · Rethinking Pre-training and Self-training
+(Zoph et al., NeurIPS 2020) ·
+Ultralytics YOLO26 (2026). The proposal bibliography is historical; current checkpoint provenance is
+canonical in [`DEVPLAN.md`](DEVPLAN.md) §1a.

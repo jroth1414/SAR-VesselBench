@@ -166,3 +166,48 @@ is gitignored, so the committed log lives here.
   finite-loss abort in the LightningModule now fails loudly instead of
   burning epochs. A GRN-fp16-overflow hypothesis was tested and DISPROVEN
   (autocast already runs `norm` in fp32) — no GRN patch is shipped.
+
+## Arms 4/8 and seed-count amendment (human decision, 2026-07-22)
+
+- **The original Arms 4/8 are superseded, not silently rewritten.** The
+  random-init→LS-SSDD→xView3 design was actually run at f10/seed 0 as
+  `vitsup-f10-s0` and `cnnsup-f10-s0`. Those outcomes and checkpoints remain
+  historical diagnostics, but are excluded from the revised study tables and
+  curves. Their LS-SSDD source training drove validation loss essentially to
+  zero on a 9,000-tile, 15-scene corpus whose seeded train/validation tiles
+  share scene backgrounds (see the pre-existing capacity caveat above). The
+  owner therefore judged this stage to be source-corpus memorization rather
+  than a defensible generic representation baseline. No LS-SSDD pretraining
+  job remains in the active matrix.
+- **Revised Arm 4 (run prefix `vitin1k`; init `vit_imagenet`)** is the
+  headless encoder from `timm/vit_base_patch16_224.augreg_in1k`: supervised
+  ImageNet-1K AugReg training from random initialization. The pinned HF
+  distribution is `timm/vit_base_patch16_224.augreg_in1k`, revision
+  `458542882691a06a8b667c6fb5fe5c9573093a81`, file `model.safetensors`,
+  SHA-256
+  `678a1ce471be7da9822fe2508497a5bcf6da4c6802053151b232ba88a42c21a2`
+  (Apache-2.0).
+- **Revised Arm 8 (run prefix `cnnin1k`; init `cnn_imagenet`)** is the
+  headless encoder from `timm/convnextv2_base.fcmae_ft_in1k`: ImageNet-1K
+  FCMAE self-supervision followed by supervised ImageNet-1K classification
+  fine-tuning. The pinned HF distribution is
+  `timm/convnextv2_base.fcmae_ft_in1k`, revision
+  `7b29800e499fdc06de5b612970f3384dc8d29ca5`, file
+  `model.safetensors`, SHA-256
+  `ec152f1e375edc2b3dfac7a81155a449b4c5cbb7c5cf0b9494838f6c87518d73`
+  (CC BY-NC 4.0).
+- **Interpretation is bounded:** both replacements use the same generic
+  source dataset (ImageNet-1K) and end at the same supervised ImageNet-1K
+  classification objective, but their training histories are not matched:
+  ViT uses supervised AugReg from scratch, whereas ConvNeXt-V2 uses
+  FCMAE→supervised fine-tuning. They are the within-track generic-ImageNet
+  controls; comparisons of their absolute cross-track scores cannot isolate
+  architecture from pretraining history. Backbone architecture, fixed
+  `[VH, VV, VH−VV]` input, detector, schedule, splits, and sacred scorer are
+  unchanged.
+- **One seed only.** The active study reports seed-0 point estimates; the
+  former seed-1/2 rerun tranche is removed. Curves are descriptive and must
+  not claim seed variance or statistical uncertainty. The active run count is
+  32 core cells (8 arms × 4 label fractions × 1 seed) plus R2 YOLO26 and R3
+  LocateAnything, for **34 total runs**. The former optional ImageNet R1 is
+  absorbed into the two core ImageNet roles and is no longer a separate run.
