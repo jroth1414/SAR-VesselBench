@@ -29,9 +29,9 @@ is gitignored, so the committed log lives here.
   study's metric) with patience 4 dev evals; `epochs: 50` acts as a safety
   ceiling, not a stopping point. No amendment, no re-pin. Consequence
   accepted: grid cost is measured-not-fixed (~500–1,100 GPU-h depending on
-  where stopping fires); the dev card runs recipe-conform cells (batch 16
-  verified at 7 GB) continuously, and the V100 node clears the tail when
-  available.
+  where stopping fires). The later P100 throughput gate rejected that node for
+  the active grid, and the owner assigned the remaining unchanged one-GPU jobs
+  to the validated RTX 5070 Ti. The historical V100 forecast is retired.
 
 ## Threshold-transfer fragility (measured 2026-07-11)
 
@@ -44,9 +44,10 @@ is gitignored, so the committed log lives here.
   confidences). The other seven f10 cells transferred within ~0.01-0.07.
 - Protocol unchanged (P2.2b frozen-dev-threshold is the plan's own and the
   0.305 is the reportable number), but: (a) P7 analysis must include a
-  threshold-sensitivity slice (frozen vs oracle gap per cell); (b) seed
-  reruns test whether beS1's fragility is systematic; (c) the writeup
-  reports both tiers where the gap is material.
+  threshold-sensitivity slice (frozen vs oracle gap per cell); (b) compare
+  calibration behavior across fractions and arms; and (c) report both tiers
+  where the gap is material. With seed 0 only, do not claim that this
+  fragility is systematic or estimate its seed variance.
 
 ## Geographic revisit overlap (owner-raised, measured 2026-07-09)
 
@@ -212,7 +213,7 @@ is gitignored, so the committed log lives here.
   LocateAnything, for **34 total runs**. The former optional ImageNet R1 is
   absorbed into the two core ImageNet roles and is no longer a separate run.
 
-## P100 f10 throughput tripwire (human decision pending, 2026-07-22)
+## P100 f10 throughput tripwire and resolution (human decision, 2026-07-22)
 
 - All five free physical P100s (host IDs 3–7) were locked to the container;
   the two revised f10 cells launched concurrently on container-local CUDA
@@ -234,8 +235,11 @@ is gitignored, so the committed log lives here.
   clear, and no checkpoint or `final_metrics.json` exists. The structured
   measurement is
   `results/throughput/p100_f10_probe_2026-07-22.json`.
-- **STOP:** do not resume these P100 cells or alter the one-GPU frozen Trainer
-  path (for example, DDP) until the owner chooses a scheduling/design response.
-  Any distributed alternative must preserve global effective batch 16 and be
-  revalidated as a comparability change; moving the unchanged single-GPU jobs
-  to faster hardware avoids that method change.
+- **RESOLVED by hardware move:** the owner selected the already-validated RTX
+  5070 Ti for the 26 remaining core cells. The same one-GPU Trainer path is
+  retained; DDP, global effective batch, detector, optimizer, schedule, splits,
+  seed, and scorer are unchanged. Completed 5070 timings project roughly
+  19–22 continuous compute days after the ignored data, prior run records, and
+  both amended ImageNet checkpoint directories are transferred and verified.
+  The P100 probes remain stopped provenance and must not be resumed without a
+  new human decision.

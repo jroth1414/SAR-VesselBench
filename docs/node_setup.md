@@ -1,13 +1,14 @@
-# P100-node setup and revised-grid handoff
+# Historical P100-node setup — throughput path retired
 
 Current hardware is eight Tesla P100-PCIE-12GB GPUs (Pascal `sm_60`), not
 the eight 32 GB V100s assumed by the historical handoff. GPU access is leased;
 availability is dynamic. Order matters.
 
-> **STOP — throughput decision required (2026-07-22).** The exact f10
-> commands below were measured and interrupted in epoch 0: projected
-> 50-epoch training-only wall time was 20.50 h for ViT and 97.36 h for CNN.
-> Do not reserve GPUs or rerun training until DEVPLAN BLOCKER-7 is resolved.
+> **RESOLVED BY HARDWARE MOVE (2026-07-22).** The exact f10 commands below
+> were measured and interrupted in epoch 0: projected 50-epoch training-only
+> wall time was 20.50 h for ViT and 97.36 h for CNN. The owner moved all
+> remaining unchanged one-GPU jobs to the RTX 5070 Ti. Do not reserve P100s or
+> rerun the probe commands; use the README's 5070 Ti resume checklist.
 
 ## 1. Repo and environment compatibility gate
 
@@ -88,10 +89,10 @@ steps at micro-batch 8. Peak allocated/reserved memory was 3.796/4.078 GiB
 for ViT and 10.193/10.523 GiB for ConvNeXt-V2. Real cells use micro-batch 8
 plus accumulation 2, preserving effective batch 16.
 
-## 5. Measured f10 commands — blocked pending owner decision
+## 5. Measured f10 commands — historical, do not rerun
 
-These exact commands produced the throughput record; do not rerun them while
-BLOCKER-7 is open:
+These exact commands produced the throughput record. The path is retired and
+the commands must not be rerun:
 
 ```bash
 CUDA_VISIBLE_DEVICES="${CUDA_GPUS[0]}" \

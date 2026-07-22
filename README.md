@@ -1,6 +1,6 @@
 # xView3 — Label-Efficient Dark-Vessel Detection in SAR
 
-**Does SAR-domain pretraining beat optical — and does it hold across ViT and CNN?**
+**Does SAR-domain pretraining beat optical and ImageNet transfer — and does it hold across ViT and CNN?**
 
 A controlled study of how much labeled data different classes of *pretrained backbone* save
 for detecting **dark vessels** (ships not broadcasting AIS) in Sentinel-1 synthetic-aperture-radar
@@ -11,9 +11,12 @@ for detecting **dark vessels** (ships not broadcasting AIS) in Sentinel-1 synthe
 > **Documentation map.** This README is the orientation. The authoritative design and phase plan
 > is [`DEVPLAN.md`](DEVPLAN.md) — start with its **"Current repository state — READ FIRST"** cold-start
 > runbook to see what is built vs. not. [`AGENTS.md`](AGENTS.md) is the short list of non-negotiables
-> for any coding agent. The working proposal ([`docs/proposal.tex`](docs/proposal.tex) and its PDF)
-> and the [`signed course proposal`](docs/proposal_signed.pdf) predate the 2026-07-22 design amendment;
-> those proposal artifacts are retained unchanged as historical records.
+> for any coding agent. The amended working proposal is available as
+> [`docs/proposal.tex`](docs/proposal.tex) and [`docs/proposal.pdf`](docs/proposal.pdf). The
+> [`signed course proposal`](docs/proposal_signed.pdf) remains an unchanged historical record.
+> The results-neutral final-paper abstract draft is
+> [`docs/final_paper_abstract.tex`](docs/final_paper_abstract.tex), with a rendered
+> [`PDF`](docs/final_paper_abstract.pdf).
 
 ---
 
@@ -28,8 +31,9 @@ We hold the detector, its head, its training schedule, and its input fixed, and 
 downloaded **initialization** (within a track) and the **architecture family** (across tracks):
 
 > *Under one fixed point detector, how much labeled xView3 data does each class of pretrained
-> backbone save for dark-vessel detection; does a SAR-domain checkpoint beat an optical one in the
-> scarce-label regime; and does that finding hold across two architecture families (ViT and CNN)?*
+> backbone save for dark-vessel detection; does a SAR-domain checkpoint beat optical remote-sensing
+> and generic ImageNet transfer in the scarce-label regime; and does that finding hold across two
+> architecture families (ViT and CNN)?*
 
 **Hypothesis:** within each architecture, SAR-domain pretraining gives the steepest label-efficiency
 gains and the largest dark-vessel-recall advantage at low label budgets, and this ordering is
@@ -113,13 +117,16 @@ and LocateAnything-3B (zero-shot VLM). ImageNet is now a matched core role, so t
 
 ## 4. Datasets
 
-- **xView3-SAR** (via the **SARFish** mirror, `ConnorLuckettDSTG/SARFish`) — Sentinel-1 **GRD**, dual-pol
-  (VH, VV). Training scenes are split **75 / 15 / 10** at the **scene level** (no chip-level leakage). The
-  ~50 human-verified validation scenes form `eval_final` and are **touched exactly once**, at final eval.
+- **xView3-SAR** — locally acquired DIU-format Sentinel-1 **GRD** archives, dual-pol (VH, VV),
+  registered into `data/raw/xview3`. The SARFish Hugging Face mirror contains raw SAFE products,
+  not the canonical xView3 GeoTIFF/label payload used here. Training scenes are split
+  **75 / 15 / 10** at the **scene level** (no chip-level leakage). Exactly 50 human-verified scenes
+  form `eval_final` and are **touched once**, after the grid and thresholds are frozen.
   *SLC products are never fetched* (multi-TB, unneeded).
+
 - **LS-SSDD-v1.0 (retired)** was used by the superseded design for Arms 4/8 and is **not an active
   training source**. Its frozen `data/lsssdd_split.json` remains committed, immutable, and clearly
-  retired for provenance; the historical proposal artifacts and Git history preserve the old design.
+  retired for provenance; the signed historical proposal and Git history preserve the old design.
 
 
 **Input representation (study-wide, all arms):** a fixed 3-channel tensor **[VH, VV, VH−VV]** in dB, so the
@@ -144,31 +151,31 @@ cold-start runbook holds the live status ledger. Current state:
   retired historical `data/lsssdd_split.json`), the frozen scorer/decode/threshold stack, and the shared detector
   (both backbone tracks behind one head, eight init loaders, `configs/detector.yaml` frozen).
   All five freeze guards plus the parity and checkpoint-load guards run in CI.
-- **PASSED — P3.6 early-signal gate**: every downloaded backbone beats its track's random floor
-  at an equal reduced budget, and SAR-domain pretraining leads optical in both tracks
-  (dev F1, 8 scenes: ViT 0.788 floor / 0.835 SatDINO / 0.858 SARMAE; CNN 0.677 floor /
-  0.726 BigEarthNet-S2 / 0.819 BigEarthNet-S1).
+- **PASSED — historical P3.6 early-signal gate**: the four remote-sensing pretrained arms tested
+  at an equal reduced budget beat their track floors, and SAR led optical on the eight-scene dev
+  gate (ViT 0.788 floor / 0.835 SatDINO / 0.858 SARMAE; CNN 0.677 floor /
+  0.726 BigEarthNet-S2 / 0.819 BigEarthNet-S1). This was a pipeline/signal check, not a final
+  result; the completed mature grid and once-only verified evaluation determine paper claims.
 - **AMENDED — 2026-07-22**: Arms 4/8 changed from random→LS-SSDD to the two downloaded ImageNet-1K
   checkpoints above; the old `vitsup-f10-s0` and `cnnsup-f10-s0` cells are superseded and excluded.
   Seed reruns and R1 are removed. The target is 32 seed-0 core cells plus R2/R3 = 34 experiments.
 - **PARTIAL — core grid**: the six unaffected seed-0 f10 cells (arms 1,2,3,5,6,7) remain valid.
   The replacement ImageNet loaders, exact-byte pins, and the complete 88-test pre-launch suite
   (including all six value-sensitive checkpoint guards) passed on 2026-07-22. R2/R3 records exist.
-- **BLOCKED — P100 throughput, 2026-07-22**: hardware, environment, and memory gates passed, but
-  real frozen-recipe f10 probes measured 0.95 steps/s (ViT) and 0.20 steps/s (CNN), projecting
-  20.50 and 97.36 training hours at 50 epochs before scene evals—5.9×/15.0× slower than comparable
-  completed runs. Both were interrupted during epoch 0 with no completion marker. See
-  `results/throughput/p100_f10_probe_2026-07-22.json`; a human execution decision is required.
+- **EXECUTION DECISION — RTX 5070 Ti**: measured P100 throughput failed the >2× compute tripwire,
+  so those probes were stopped and archived. The owner selected unchanged one-GPU execution on the
+  5070 Ti—no DDP and no recipe change. There are 26 core cells left; completed-run timings project
+  roughly 19–22 continuous compute days after data, weights, and prior run records are restored.
 - **READY — Phase 6 tripwires** (`src/eval/final_eval.py`: `--i-am-sure` + lockfile, hard
-  preconditions). The 50 raw eval-scene rasters are not present on this server, and final evaluation
-  remains untouched. Remaining to write: the Phase 7 analysis modules (error slices,
-  architecture comparison, the 24-chip gallery).
+  preconditions). The 50 raw eval-scene rasters are not in the current transfer payload, and final
+  evaluation remains untouched. Phase 7 analysis is also pending; do not promote P3.6 or partial f10
+  observations to final-paper findings.
 
 ```
 JHU-xView3/
   DEVPLAN.md          # single source of truth: design, phases, gates, risks
   AGENTS.md           # non-negotiables for any coding agent
-  docs/               # decisions log, node setup + agent handoff, proposal
+  docs/               # decisions, node handoff, amended proposal + final-paper abstract
   requirements-ci.txt # minimal CPU deps for CI guard tests
   configs/            # data.yaml, detector.yaml (frozen), arms.yaml (run manifest)
   locks/              # verified 5070 Ti + P100 pins; historical V100 candidate
@@ -188,24 +195,71 @@ JHU-xView3/
 
 ## 6. Getting started
 
+The amendment is currently on `sprint-7b-imagenet-arms` pending review into `dev`:
+
 ```bash
 git clone https://github.com/jroth1414/JHU-xView3
 cd JHU-xView3
+git fetch origin
+git switch --track origin/sprint-7b-imagenet-arms
 
 # 1) Install torch/torchvision from the index that matches YOUR machine FIRST
 #    (never bare `pip install torch`; validate the build against the actual GPU):
 #      5070 Ti (Blackwell sm_120):  pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
 #      P100 server (Pascal sm_60):  pip install -r locks/env-p100node.txt \
 #                                    --extra-index-url https://download.pytorch.org/whl/cu126
-#    Reproduce a box from a lock only after its hardware gate passes.
+#
+#    locks/env-5070ti.txt is environment provenance, not an install command:
+#    its editable VCS line points to an older repository SHA.
 
-# 2) Then the package itself (the only sanctioned install):
+# 2) Install the checked-out package (the only sanctioned package install):
 pip install -e .[dev]
 
 # 3) Sanity-check the GPU + kernels, then run the tests:
 python scripts/gpu_sanity.py    # or: make env-check
-pytest                          # or: make test
+pytest tests/ -q                # or: make test
 ```
+
+### Resume the remaining matrix on one RTX 5070 Ti
+
+Git does not transfer ignored data, weights, checkpoints, or `runs/`. Restore the 150 chip-scene
+directories, 39 dev/test raster scenes, labels, and `runs.tar` from the transfer payload before
+launching. Restoring the existing run records is what lets the queue validate and skip the six
+completed f10 cells.
+
+The existing `weights.tar` predates the ImageNet amendment. Transfer these two current directories
+separately, including `config.json`, `SOURCE.note`, and `LICENSE.note`:
+
+- `data/weights/imagenet_vit_augreg_in1k/`
+- `data/weights/imagenet_cnn_fcmae_ft_in1k/`
+
+From the 5070 Ti checkout, verify the restored payload and exact checkpoint bytes:
+
+```bash
+test "$(find data/chips -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq 150
+test "$(find data/raw/xview3/GRD -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq 39
+sha256sum data/weights/imagenet_vit_augreg_in1k/model.safetensors
+sha256sum data/weights/imagenet_cnn_fcmae_ft_in1k/model.safetensors
+pytest tests/ -q
+```
+
+Expected hashes, in the order above:
+
+```text
+678a1ce471be7da9822fe2508497a5bcf6da4c6802053151b232ba88a42c21a2
+ec152f1e375edc2b3dfac7a81155a449b4c5cbb7c5cf0b9494838f6c87518d73
+```
+
+After every gate passes, start the resumable one-GPU queue from the repository root:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python scripts/run_grid_queue.py
+```
+
+The queue validates completion markers, fills fractions cheapest-first, uses recipe batch 16 for ViT,
+and automatically uses CNN micro-batch 8 with accumulation 2 to preserve effective batch 16. A failed
+cell stops the queue. The 50 verified `eval_final` scenes are not part of this transfer or queue and
+must not be evaluated until the full grid and thresholds are frozen.
 
 **GPU sanity outputs (P0.3).** RTX 5070 Ti box, recorded 2026-07-04 (torch 2.11.0+cu128, stable —
 Blackwell no longer needs a nightly):
@@ -240,11 +294,12 @@ CI runs the CPU/offline structural guard halves; value-sensitive checkpoint load
 GPU box with the pinned local weights. The real training environment is **not** CI. Both the 5070 Ti
 and P100 environments have verified, machine-specific locks.
 
-**Experiment budget:** 32 core seed-0 fine-tunes plus R2/R3 = **34 experiments**. No LS-SSDD backbone
-training, R1, or seed reruns remain. The P100 f10 probes projected 20.50 hours for ViT and
-97.36 hours for CNN at 50 epochs before dev eval, tripping the >2× compute guard; remaining core
-execution is blocked on a human hardware/scheduling decision. Results are point estimates; do not
-report seed-derived error bars.
+**Experiment budget:** 32 core seed-0 fine-tunes plus R2/R3 = **34 experiments**. No LS-SSDD
+backbone training, R1, or seed reruns remain. Six valid f10 cells and both references are complete,
+leaving 26 core cells. The P100 route was rejected at its measured throughput gate; unchanged
+single-GPU execution is assigned to the 5070 Ti, with a completed-run projection of roughly
+19–22 continuous compute days after transfer/setup. Results are seed-0 point estimates; do not
+report seed-derived uncertainty or error bars.
 
 ---
 
@@ -253,8 +308,9 @@ report seed-derived error bars.
 - **SARMAE** weights are **CC BY-NC 4.0** (non-commercial) and gated; **BigEarthNet** weight licenses must
   be verified at download. This project's use is academic/non-commercial; any released code or checkpoints
   are scoped accordingly. See the DEVPLAN risk register.
-- The two ImageNet checkpoints require pinned upstream revisions, hashes, and license notes before their
-  f10 runs; a model alias without recorded provenance is not sufficient.
+- The two ImageNet checkpoints have pinned upstream revisions, exact SHA-256 hashes, and local source/license
+  notes. Arm 4 is Apache-2.0; Arm 8 is CC BY-NC 4.0. Verify the exact bytes before transfer or
+  training—a model alias without recorded provenance is not sufficient.
 - Datasets and downloaded weights are pinned by revision for reproducibility; large data, checkpoints, and
   `runs/` are never committed (see `.gitignore`).
 
@@ -264,5 +320,5 @@ xView3-SAR (Paolo et al., NeurIPS 2022) · SatDINO (Straka & Gruber, 2025) · SA
 ViT AugReg (Steiner et al., 2021) · ImageNet (Deng et al., 2009) · ConvNeXt V2 (Woo et al., CVPR 2023) ·
 reBEN / BigEarthNet v2.0 (Clasen et al., IGARSS 2025) · Rethinking Pre-training and Self-training
 (Zoph et al., NeurIPS 2020) ·
-Ultralytics YOLO26 (2026). The proposal bibliography is historical; current checkpoint provenance is
-canonical in [`DEVPLAN.md`](DEVPLAN.md) §1a.
+Ultralytics YOLO26 (2026). The amended proposal bibliography covers the active study design; exact
+checkpoint variants, revisions, hashes, and licenses remain canonical in [`DEVPLAN.md`](DEVPLAN.md) §1a.

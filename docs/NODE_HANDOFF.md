@@ -1,4 +1,4 @@
-# Handoff to the P100-node agent
+# Historical P100-node handoff — active grid moved to RTX 5070 Ti
 
 This server has eight Tesla P100-PCIE-12GB GPUs (Pascal `sm_60`), managed by
 the `gpu` lease command. For the throughput probe, all five then-free P100s
@@ -9,15 +9,15 @@ The earlier version of this
 handoff assumed eight 32 GB V100s
 (`sm_70`); those hardware, environment, batch-fit, and runtime claims are
 **superseded**. The repo of record is
-`github.com/jroth1414/JHU-xView3`, integration branch **`dev`**. Read
+`github.com/jroth1414/JHU-xView3`, integration branch **`dev`**. Until the amendment merges, use remote branch **`sprint-7b-imagenet-arms`**. Read
 `AGENTS.md`, the DEVPLAN cold-start runbook, and the 2026-07-22 amendment in
 `docs/decisions.md` before acting. Frozen study artifacts remain binding.
 
-> **THROUGHPUT STOP (2026-07-22):** the real f10 probes below were run and
+> **RESOLVED BY HARDWARE MOVE (2026-07-22):** the real f10 probes below were
 > interrupted during epoch 0 after projecting 20.50 h (ViT) and 97.36 h
-> (CNN) at 50 epochs before dev eval. Do not rerun the commands or start the
-> remaining queue until the owner resolves DEVPLAN BLOCKER-7. The commands are
-> retained only as the exact measured protocol.
+> (CNN) at 50 epochs before dev eval. The owner assigned all 26 remaining
+> recipe-identical one-GPU cells to the RTX 5070 Ti. Do not reserve P100s or
+> rerun these commands; they are retained only as measured provenance.
 
 ## Current study and data state
 
@@ -41,12 +41,12 @@ handoff assumed eight 32 GB V100s
   scene directories, 39 dev/test raster scenes, labels, weights, and runs.
   The 50 eval-final rasters are absent by design and remain untouched.
 
-## Your job
+## Current execution path
 
-First pass the P100 environment, weight, and micro-batch gates below. Then run
-only the remaining seed-0 core cells on GPUs explicitly leased to this job.
-The runner has no implicit all-GPU default and no pretraining dependency.
-Never pass an unreserved device ID. Do not launch seed 1/2 runs.
+Do not run the remaining grid on this P100 node. Transfer the ignored payload,
+prior run records, and both revised ImageNet checkpoint directories to the RTX
+5070 Ti, then follow **Resume the remaining matrix on one RTX 5070 Ti** in the
+README. The P100 commands below remain for auditability only.
 
 ## Historical transfer record (superseded acquisition instructions)
 
@@ -74,7 +74,7 @@ The corresponding `LICENSE.note` and `SOURCE.note` files are mandatory.
 The old `data/weights/imagenet_cnn/convnextv2_base_fcmae_ft_in22k_in1k.pt`
 belongs to superseded optional R1 and is **not** Arm 8.
 
-## Verified P100 execution and reservation state
+## Historical verified P100 execution and reservation state
 
 1. Work from the current `dev` branch and a clean, reviewed commit. Use the
    verified P100 environment recorded in `locks/env-p100node.txt`; its PyTorch
@@ -119,7 +119,7 @@ belongs to superseded optional R1 and is **not** Arm 8.
    2, preserving effective batch 16. The environment and batch-fit checks are
    therefore complete; repeat the smoke only if the environment or recipe
    changes.
-5. **Measured f10 probe commands — do not rerun while BLOCKER-7 is open.**
+5. **Measured f10 probe commands — retired; do not rerun.**
    These exact commands produced the throughput record; `0` and `1` are
    container-local CUDA indices:
 
