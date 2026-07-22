@@ -4,8 +4,7 @@
 
 PYTHON ?= python
 
-.PHONY: env-check test data qa pretrain-sup-vit pretrain-sup-cnn grid \
-        references final-eval ref-optional
+.PHONY: env-check test data qa grid references final-eval
 
 # Phase 0 — device + kernel sanity on the current machine (P0.3).
 env-check:
@@ -26,16 +25,9 @@ data:
 qa:
 	$(PYTHON) -m src.analysis.qualitative --qa
 
-# Phase 5 — the only two backbone trainings we run (LS-SSDD supervised).
-pretrain-sup-vit:
-	$(PYTHON) -m src.train.pretrain_supervised --backbone vit
-
-pretrain-sup-cnn:
-	$(PYTHON) -m src.train.pretrain_supervised --backbone cnn
-
 # Phase 4/5 — the label-fraction grid (arms x fractions x seeds; Section 12).
 grid:
-	$(PYTHON) -m src.train.finetune --grid configs/arms.yaml
+	$(PYTHON) scripts/run_grid_queue.py
 
 # Phase 4 — the non-optional external references (R2 yolo26-f100, R3 locateanything-zs).
 references:
@@ -49,8 +41,3 @@ ifndef CONFIRM
 	$(error final-eval touches the once-only verified scenes; run "make final-eval CONFIRM=1" when you mean it)
 endif
 	$(PYTHON) -m src.eval.final_eval --i-am-sure
-
-# Phase 8 — contingent ImageNet-ConvNeXt reference R1 (optional, only if the
-# eight core arms landed early).
-ref-optional:
-	$(PYTHON) -m src.references.imagenet_cnn_ref

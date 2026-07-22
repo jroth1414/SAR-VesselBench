@@ -1,12 +1,12 @@
-"""Device + kernel sanity for the two GPU boxes (DEVPLAN P0.3).
+"""Device + kernel sanity for project GPU hosts (DEVPLAN P0.3).
 
 Prints device name and compute capability, runs a 4096x4096 fp16 matmul and an
 ``F.scaled_dot_product_attention`` call, asserts neither produced NaN, and
 reports which SDPA backend was chosen. Run on both machines and paste both
 outputs into the README.
 
-Volta note (Appendix C): on the V100 node this must pick a non-Flash SDPA
-backend (mem-efficient or math) — FlashAttention never supported sm_70.
+Legacy-GPU note (Appendix C): P100/``sm_60`` must pick a non-Flash SDPA
+backend and use fp16; FlashAttention and bf16 are unsupported.
 """
 
 from __future__ import annotations

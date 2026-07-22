@@ -9,8 +9,8 @@ confidence), and per-prompt results go through the SACRED scorer with a
 P2.2b-style threshold sweep. Reported separately; DROPPABLE (license:
 custom NVIDIA research license — recorded in data/weights/locateanything).
 
-MUST run on the 5070 Ti (bf16 checkpoint; the fp16-only V100s overflow —
-Appendix C.5), so run it BEFORE the data drive moves to the node.
+MUST run on the 5070 Ti (bf16 checkpoint; the fp16-only 12 GB P100s are not
+a supported path — Appendix C.5), and is already complete.
 Coordinate parsing is regex-based over the generated text (the model's own
 README parses its output the same way); ``--smoke N`` probes N chips and
 prints raw generations for eyeball verification before the full run.

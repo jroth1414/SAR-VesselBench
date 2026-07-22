@@ -1,6 +1,7 @@
 # CI-only dependencies (CPU, minimal).
 # This is deliberately NOT the training environment. The GPU machines use
-# locks/env-5070ti.txt (sm_120 nightly) and locks/env-v100node.txt (sm_70 cu12x).
+# locks/env-5070ti.txt (sm_120) and locks/env-p100node.txt (sm_60).
+# locks/env-v100node.txt is historical provenance only.
 # CI only needs enough to import the package and run the guard tests against
 # tiny in-repo fixtures — no CUDA, no large data, no model downloads.
 #

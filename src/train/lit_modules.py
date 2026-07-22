@@ -33,7 +33,6 @@ class HeatmapLitModule(L.LightningModule):
         head_channels: int = 256,
         load_weights: bool = True,
         weights_root: str | Path = "data/weights",
-        supervised_checkpoint: str | Path | None = None,
     ) -> None:
         super().__init__()
         self.save_hyperparameters()
@@ -41,7 +40,6 @@ class HeatmapLitModule(L.LightningModule):
             init_name,
             load_weights=load_weights,
             weights_root=weights_root,
-            supervised_checkpoint=supervised_checkpoint,
         )
         self.head = HeatmapHead(
             self.backbone.out_channels,
@@ -75,8 +73,8 @@ class HeatmapLitModule(L.LightningModule):
         return self._step(batch, "train")
 
     def validation_step(self, batch: dict, batch_idx: int) -> torch.Tensor:
-        # Used only by the LS-SSDD pretraining (P5.1); the fine-tune arms
-        # evaluate via whole-scene dev inference instead.
+        # Retained for legacy LS-SSDD tooling; core fine-tune arms evaluate
+        # via whole-scene dev inference instead.
         return self._step(batch, "val")
 
     def configure_optimizers(self):

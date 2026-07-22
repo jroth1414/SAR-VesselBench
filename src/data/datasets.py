@@ -1,15 +1,15 @@
-"""Training datasets (DEVPLAN P3.4/P3.5): xView3 fine-tune + LS-SSDD supervised.
+"""Training datasets (DEVPLAN P3.4/P3.5): active xView3 + legacy LS-SSDD.
 
-Both emit the same sample dict — the fixed 3-channel [VH, VV, VH-VV] input in
-normalized dB plus the stride-4 Gaussian target and its ignore mask — so the
-two supervised pretrainings and all eight fine-tune arms share one code path.
+``FineTuneDataset`` is shared by all eight current arms. The historical
+``SupervisedSARDataset`` emits the same sample contract and is retained only
+to reproduce superseded LS-SSDD experiments; no current arm consumes it.
 
 Fairness guards baked in:
 - Scene membership is asserted at construction (ground rule 3): a dataset
   refuses chips whose scene is not in its split, and refuses eval_final.
 - Label fractions NEST (10% of scenes is a subset of 25%, etc.): the seeded
   permutation uses the frozen data-config seed, NOT the per-run seed, so the
-  same scene subsets are reused by every arm, both tracks, and all reruns.
+  same scene subsets are reused by every arm and both tracks.
 
 Normalization note (documented): the frozen ``data/stats.json`` holds
 per-polarization (VH, VV) stats. The third channel (VH-VV) is normalized with
@@ -17,7 +17,7 @@ the derived mean (muVH - muVV) and std sqrt(sVH^2 + sVV^2); the independence
 approximation only scales one channel by a constant shared by every arm, so
 it can not become a between-arm confound.
 
-LS-SSDD note (documented): sub-images are single-channel 8-bit JPGs. The
+Legacy LS-SSDD note: sub-images are single-channel 8-bit JPGs. The
 gray value stands in for both polarizations (VH = VV = x, so VH-VV = 0), and
 per-dataset mean/std (computed once over the frozen internal train split and
 cached to ``data/lsssdd_stats.json``) normalizes it to the same N(0,1) scale
