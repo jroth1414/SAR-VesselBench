@@ -1,0 +1,47 @@
+% Results-neutral draft for the final paper.
+% Do not add outcome claims until the 32-cell grid, frozen-threshold scoring,
+% and once-only 50-scene verified evaluation are complete. The submission
+% version should report measured low-label ordering, label savings, and
+% architecture generality without seed-variance claims.
+\documentclass[10pt]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[letterpaper,margin=1in]{geometry}
+\usepackage{microtype}
+\usepackage[hidelinks]{hyperref}
+
+\pagestyle{empty}
+
+\title{Label-Efficient Dark-Vessel Detection in SAR:\\
+Does SAR-Domain Pretraining Beat Optical and ImageNet Transfer Across ViT and CNN?}
+\author{John Roth \and Kyle Wagner\\
+Johns Hopkins University}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Detecting dark vessels---ships without an Automatic Identification System
+correlate---in spaceborne synthetic aperture radar (SAR) is operationally
+important, but human-verified examples are scarce. We investigate whether
+pretraining domain improves label efficiency on xView3-SAR and whether any
+benefit generalizes across architecture families. Our controlled design uses
+two size-matched tracks: ViT-B/16 (approximately 86M parameters) and
+ConvNeXt-V2-Base (approximately 89M). Within each track, we compare random
+initialization with downloaded encoders trained on generic ImageNet, optical
+remote-sensing imagery, or SAR imagery. All eight arms share a fixed
+three-channel $[\mathrm{VH},\mathrm{VV},\mathrm{VH}{-}\mathrm{VV}]$ input,
+point-native heatmap detector, optimizer, schedule, scene-level splits, and
+seed, and are fine-tuned at nested 10\%, 25\%, 50\%, and 100\% training-scene
+fractions. We measure distance-matched vessel-detection F1 on held-out scenes
+and, on a disjoint once-touched set of 50 human-verified scenes, dark-vessel
+recall and near-shore F1. All values are reported as seed-0 point estimates;
+external YOLO and zero-shot vision-language references remain separate from
+the controlled curves. By separating initialization comparisons within an
+architecture from matched-role comparisons across architectures, the study
+provides a reproducible test of when pretrained representations reduce
+labeling demand for maritime SAR detection.
+\end{abstract}
+
+\end{document}
