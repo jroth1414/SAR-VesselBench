@@ -211,3 +211,31 @@ is gitignored, so the committed log lives here.
   32 core cells (8 arms × 4 label fractions × 1 seed) plus R2 YOLO26 and R3
   LocateAnything, for **34 total runs**. The former optional ImageNet R1 is
   absorbed into the two core ImageNet roles and is no longer a separate run.
+
+## P100 f10 throughput tripwire (human decision pending, 2026-07-22)
+
+- All five free physical P100s (host IDs 3–7) were locked to the container;
+  the two revised f10 cells launched concurrently on container-local CUDA
+  devices 0 and 1 with the frozen effective batch 16 (micro-batch 8,
+  accumulation 2). Both exact checkpoints loaded fully and losses stayed
+  finite.
+- Stabilized epoch-0 throughput was **0.95 steps/s for ViT** and **0.20
+  steps/s for ConvNeXt-V2**, with 1,402 training batches per f10 epoch. Before
+  whole-scene dev evaluation, that projects to 20.50 and 97.36 training hours
+  respectively at the 50-epoch ceiling (10.25 and 48.68 hours even at 25
+  epochs).
+- Comparable completed f10 runs on the development GPU took 3.06–3.49 hours
+  for ViT and 6.43–6.48 hours for 50-epoch CNN cells. The P100 projections are
+  therefore about **5.9× and 15.0× slower**, beyond DEVPLAN's mandatory >2×
+  compute/time tripwire.
+- Both trainers were interrupted gracefully during epoch 0. Their partial
+  configuration/metric probes were moved under
+  `runs/probes/2026-07-22-p100-throughput/`; the active run-ID paths are
+  clear, and no checkpoint or `final_metrics.json` exists. The structured
+  measurement is
+  `results/throughput/p100_f10_probe_2026-07-22.json`.
+- **STOP:** do not resume these P100 cells or alter the one-GPU frozen Trainer
+  path (for example, DDP) until the owner chooses a scheduling/design response.
+  Any distributed alternative must preserve global effective batch 16 and be
+  revalidated as a comparability change; moving the unchanged single-GPU jobs
+  to faster hardware avoids that method change.

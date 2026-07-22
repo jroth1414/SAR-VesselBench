@@ -4,6 +4,11 @@ Current hardware is eight Tesla P100-PCIE-12GB GPUs (Pascal `sm_60`), not
 the eight 32 GB V100s assumed by the historical handoff. GPU access is leased;
 availability is dynamic. Order matters.
 
+> **STOP — throughput decision required (2026-07-22).** The exact f10
+> commands below were measured and interrupted in epoch 0: projected
+> 50-epoch training-only wall time was 20.50 h for ViT and 97.36 h for CNN.
+> Do not reserve GPUs or rerun training until DEVPLAN BLOCKER-7 is resolved.
+
 ## 1. Repo and environment compatibility gate
 
 Work from the reviewed commit. `locks/env-p100node.txt` is the verified P100
@@ -55,7 +60,7 @@ preserve them, but never treat them as revised Arm-4/8 results.
 
 ```bash
 gpu info
-gpu get --lock 5  # maximum currently free; adjust COUNT if availability changes
+gpu get --lock 5  # only after BLOCKER-7 resolves; recheck available COUNT
 gpu info
 nvidia-smi -L
 ```
@@ -83,9 +88,10 @@ steps at micro-batch 8. Peak allocated/reserved memory was 3.796/4.078 GiB
 for ViT and 10.193/10.523 GiB for ConvNeXt-V2. Real cells use micro-batch 8
 plus accumulation 2, preserving effective batch 16.
 
-## 5. Run the two revised f10 cells
+## 5. Measured f10 commands — blocked pending owner decision
 
-With two reserved GPUs, launch the new f10/seed-0 cells in parallel:
+These exact commands produced the throughput record; do not rerun them while
+BLOCKER-7 is open:
 
 ```bash
 CUDA_VISIBLE_DEVICES="${CUDA_GPUS[0]}" \
@@ -101,16 +107,18 @@ PID_CNN=$!
 wait "$PID_VIT" "$PID_CNN"
 ```
 
-The reportable IDs must be `vitin1k-f10-s0` and `cnnin1k-f10-s0`.
-After they finish, use `scripts/score_test_split.py` without changing the
-frozen dev-selected threshold protocol.
+The future reportable IDs remain `vitin1k-f10-s0` and
+`cnnin1k-f10-s0`. The probes produced no checkpoint or completion marker;
+do not score them. After approved full runs finish, use
+`scripts/score_test_split.py` without changing the frozen threshold protocol.
 
 ## 6. Remaining matrix
 
 The active design has one seed: 32 core cells plus R2 YOLO26 and R3
 LocateAnything = **34 total runs**. There are no LS-SSDD pretraining jobs,
-seed reruns, or separate ImageNet R1. To continue the remaining seed-0 core
-cells, use only the IDs currently reserved:
+seed reruns, or separate ImageNet R1. The command below is blocked until the
+owner resolves BLOCKER-7; after approval, use only container-local IDs
+explicitly reserved for the approved execution path:
 
 ```bash
 python scripts/run_grid_node.py \

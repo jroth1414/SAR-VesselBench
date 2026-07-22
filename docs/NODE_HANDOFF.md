@@ -1,16 +1,23 @@
 # Handoff to the P100-node agent
 
 This server has eight Tesla P100-PCIE-12GB GPUs (Pascal `sm_60`), managed by
-the `gpu` lease command. All five currently free P100s (host IDs 3--7) are
-locked for this work, and this container exposes them as local CUDA devices
-0--4. CUDA devices are renumbered from zero inside the container; host IDs
-must never be passed as container CUDA indices. The earlier version of this
+the `gpu` lease command. For the throughput probe, all five then-free P100s
+(host IDs 3--7) were locked and exposed as local CUDA devices 0--4. The locks
+were returned after the mandatory stop. CUDA devices are renumbered from zero
+inside the container; host IDs must never be passed as container CUDA indices.
+The earlier version of this
 handoff assumed eight 32 GB V100s
 (`sm_70`); those hardware, environment, batch-fit, and runtime claims are
 **superseded**. The repo of record is
 `github.com/jroth1414/JHU-xView3`, integration branch **`dev`**. Read
 `AGENTS.md`, the DEVPLAN cold-start runbook, and the 2026-07-22 amendment in
 `docs/decisions.md` before acting. Frozen study artifacts remain binding.
+
+> **THROUGHPUT STOP (2026-07-22):** the real f10 probes below were run and
+> interrupted during epoch 0 after projecting 20.50 h (ViT) and 97.36 h
+> (CNN) at 50 epochs before dev eval. Do not rerun the commands or start the
+> remaining queue until the owner resolves DEVPLAN BLOCKER-7. The commands are
+> retained only as the exact measured protocol.
 
 ## Current study and data state
 
@@ -85,10 +92,10 @@ belongs to superseded optional R1 and is **not** Arm 8.
 
    `gpu info` reports physical/host IDs. `nvidia-smi -L` inside the attached
    container reports the only indices training commands may use, renumbered
-   contiguously from zero. The locked physical devices are host IDs 3--7, but
-   do **not** put `3 4 5 6 7` into `CUDA_VISIBLE_DEVICES`; this five-card
-   attachment is local indices 0--4. Never use a device merely because it
-   appears free in a host-level listing.
+   contiguously from zero. During the probe, locked host IDs 3--7 appeared as
+   local indices 0--4; those locks are now returned. Do **not** put physical
+   IDs `3 4 5 6 7` into `CUDA_VISIBLE_DEVICES`. Never use a device merely
+   because it appears free in a host-level listing.
 
    ```bash
    CUDA_VISIBLE_DEVICES=0 python scripts/gpu_sanity.py
@@ -112,8 +119,9 @@ belongs to superseded optional R1 and is **not** Arm 8.
    2, preserving effective batch 16. The environment and batch-fit checks are
    therefore complete; repeat the smoke only if the environment or recipe
    changes.
-5. Run and score `vitin1k-f10-s0` and `cnnin1k-f10-s0` first. Run these exact
-   commands in two terminals; `0` and `1` are container-local CUDA indices:
+5. **Measured f10 probe commands — do not rerun while BLOCKER-7 is open.**
+   These exact commands produced the throughput record; `0` and `1` are
+   container-local CUDA indices:
 
    ```bash
    CUDA_VISIBLE_DEVICES=0 python -m src.train.finetune \
@@ -125,9 +133,9 @@ belongs to superseded optional R1 and is **not** Arm 8.
 
    Do not substitute the historical `vitsup-f10-s0` / `cnnsup-f10-s0`
    markers.
-6. Only after those two revised f10 cells complete, launch the resumable core
-   queue using every container-local device actually attached. For the
-   current five-card attachment, use:
+6. **BLOCKED.** Only after the owner resolves BLOCKER-7 and the two revised
+   f10 cells complete may the resumable core queue launch. Use every
+   container-local device attached under the approved execution path:
 
    ```bash
    python scripts/run_grid_node.py --gpus 0 1 2 3 4 --micro-batch 8

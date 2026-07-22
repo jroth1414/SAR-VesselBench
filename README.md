@@ -153,12 +153,12 @@ cold-start runbook holds the live status ledger. Current state:
   Seed reruns and R1 are removed. The target is 32 seed-0 core cells plus R2/R3 = 34 experiments.
 - **PARTIAL — core grid**: the six unaffected seed-0 f10 cells (arms 1,2,3,5,6,7) remain valid.
   The replacement ImageNet loaders, exact-byte pins, and the complete 88-test pre-launch suite
-  (including all six value-sensitive checkpoint guards) passed on 2026-07-22. The revised Arms 4/8
-  f10 cells are ready under the same frozen detector recipe. R2/R3 records exist.
-- **P100 GATE PASSED — 2026-07-22**: this server's 8× Tesla P100 PCIe 12 GB pool (Pascal sm_60)
-  passed the hardware, environment, and per-family memory gates with the active
-  `locks/env-p100node.txt`. Real cells use micro-batch 8 plus accumulation 2 for effective batch 16.
-  The V100 lock and all V100-based memory/runtime assumptions are historical only.
+  (including all six value-sensitive checkpoint guards) passed on 2026-07-22. R2/R3 records exist.
+- **BLOCKED — P100 throughput, 2026-07-22**: hardware, environment, and memory gates passed, but
+  real frozen-recipe f10 probes measured 0.95 steps/s (ViT) and 0.20 steps/s (CNN), projecting
+  20.50 and 97.36 training hours at 50 epochs before scene evals—5.9×/15.0× slower than comparable
+  completed runs. Both were interrupted during epoch 0 with no completion marker. See
+  `results/throughput/p100_f10_probe_2026-07-22.json`; a human execution decision is required.
 - **READY — Phase 6 tripwires** (`src/eval/final_eval.py`: `--i-am-sure` + lockfile, hard
   preconditions). The 50 raw eval-scene rasters are not present on this server, and final evaluation
   remains untouched. Remaining to write: the Phase 7 analysis modules (error slices,
@@ -241,9 +241,10 @@ GPU box with the pinned local weights. The real training environment is **not** 
 and P100 environments have verified, machine-specific locks.
 
 **Experiment budget:** 32 core seed-0 fine-tunes plus R2/R3 = **34 experiments**. No LS-SSDD backbone
-training, R1, or seed reruns remain. A P100 GPU-hour estimate is intentionally deferred until the two
-revised f10 cells provide measured throughput; the V100 estimate is retired. Results are point
-estimates; do not report seed-derived error bars.
+training, R1, or seed reruns remain. The P100 f10 probes projected 20.50 hours for ViT and
+97.36 hours for CNN at 50 epochs before dev eval, tripping the >2× compute guard; remaining core
+execution is blocked on a human hardware/scheduling decision. Results are point estimates; do not
+report seed-derived error bars.
 
 ---
 
