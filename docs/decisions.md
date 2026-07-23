@@ -243,3 +243,37 @@ is gitignored, so the committed log lives here.
   both amended ImageNet checkpoint directories are transferred and verified.
   The P100 probes remain stopped provenance and must not be resumed without a
   new human decision.
+
+## fp16 focal-loss overflow fix (human decision, 2026-07-23)
+
+- **cnnin1k-f10-s0 died deterministically at epoch 18** (twice, same batch —
+  optimizer step ~641/701) via the finite-loss abort, after a healthy and
+  leading trajectory (dev F1 0.862/0.873/0.869 at epochs 4/9/14). Both partial
+  runs and their checkpoints are archived under
+  `runs/probes/2026-07-23-5070-gpu-contention-crash/`. (The first archived
+  attempt there also records an unrelated 3-way GPU-contention OOM crash and a
+  harness-kill: this cell took three environmental strikes before the real
+  numeric defect surfaced.)
+- **Root cause is in the loss, not the backbone**: under fp16 autocast the
+  focal loss's `clamp(eps, 1 - eps)` upper bound is a NO-OP — `1 - 1e-6`
+  rounds to exactly 1.0 in half precision (largest representable half below
+  1.0 is `1 - 2^-11`), and fp16 `sigmoid(x) == 1.0` exactly for `x >~ 9`. A
+  Gaussian-shoulder pixel adjacent to a confidently detected vessel is a
+  penalty-reduced NEGATIVE with `target < 1`; when the sharpening detector
+  drives its logit past ~9, `log(1 - prob) = log(0) = -inf`. The strongest
+  CNN arm crossed first — this is a capability-triggered failure, not noise.
+- **Evidence**: static — fp16 numerics shown above are exact; dynamic — a
+  1,402-batch sweep with the archived epoch-9 checkpoint measured max logit
+  5.15 (no saturation yet) and fp16-vs-fp32 loss agreement to ~1e-5 on every
+  batch, i.e. the fix is numerically inert away from the saturation cliff.
+- **Fix (owner-approved)**: `penalty_reduced_focal_loss` casts its inputs to
+  fp32 at entry (losses.py), restoring the clamp and bounding the worst-case
+  per-pixel penalty at `-log(1e-6)`. This implements the plan's own
+  precision rule ("logit/softmax math in fp32" — DEVPLAN node adaptation
+  rule 2), applied identically to every arm. Regression:
+  `tests/test_focal_loss_fp16.py`.
+- **Scope (owner decision)**: rerun `cnnin1k-f10-s0` only. The seven
+  completed f10 cells stand — their training never entered the saturation
+  regime (their losses were finite throughout, and the parity sweep bounds
+  the counterfactual difference at input-rounding scale, well under run-level
+  cuDNN nondeterminism). Do not silently rerun completed cells for this.
