@@ -1,0 +1,27 @@
+{
+ "exp_id": "cnnin1k-f10-s0",
+ "epochs_run": 50,
+ "best_dev_f1": 0.8965517241379309,
+ "last_dev": {
+  "f1": 0.8965517241379309,
+  "precision": 0.8773006134969326,
+  "recall": 0.9166666666666666,
+  "tp": 572,
+  "fp": 80,
+  "fn": 52,
+  "threshold": 0.13037109375,
+  "n_candidates": 762
+ },
+ "train_loss": 0.0022778853308409452,
+ "test_f1": 0.8208290510448785,
+ "test_precision": 0.8980509745127436,
+ "test_recall": 0.7558359621451104,
+ "test_tp": 1198,
+ "test_fp": 136,
+ "test_fn": 387,
+ "test_threshold_applied": 0.13037109375,
+ "test_dark_recall": 0.0,
+ "test_dark_support": 0,
+ "test_near_shore_f1": 0.0,
+ "test_scored_at": "2026-07-24T02:26:18"
+}
