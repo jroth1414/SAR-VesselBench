@@ -277,3 +277,29 @@ is gitignored, so the committed log lives here.
   regime (their losses were finite throughout, and the parity sweep bounds
   the counterfactual difference at input-rounding scale, well under run-level
   cuDNN nondeterminism). Do not silently rerun completed cells for this.
+
+## Preliminary f10 analysis package (2026-07-25)
+
+- All eight active seed-0 f10 result exports are now available. The reportable
+  best-dev / frozen-threshold test F1 pairs are ViT random `0.8554/0.7881`,
+  SatDINO `0.8766/0.8158`, SARMAE `0.8803/0.8154`, ImageNet ViT
+  `0.8940/0.8073`, CNN random `0.7530/0.6559`, BigEarthNet-S2
+  `0.7678/0.6675`, BigEarthNet-S1 `0.8337/0.3047`, and ImageNet CNN
+  `0.8966/0.8208`.
+- Thresholds remain dev-selected and frozen for test. BigEarthNet-S1 is the
+  only threshold-transfer flag: its dev threshold `0.8169` produces a
+  `0.5291` dev-to-test F1 gap. This is reported as a calibration/threshold
+  transfer warning; the protocol-compliant test score is not replaced by a
+  test-tuned operating point.
+- The analysis package supplied seven weights-only checkpoints. Strict
+  architecture reconstruction and inference produced operating-threshold
+  overlays on the same four curated dev chips for every available checkpoint.
+  ImageNet CNN has quantitative results but no gallery because its completed
+  checkpoint was absent from the package.
+- The active table, preliminary one-fraction plot, threshold-transfer plot,
+  slice/delta tables, ground-truth SAR gallery, and seven prediction galleries
+  are committed under `results/summary/`. The source archive, checkpoints,
+  SAR chips, and local inference dependencies remain unversioned.
+- These are preliminary diagnostics only. Formal Phase 7 still waits for the
+  Phase 6 final-evaluation outputs, and no claim about dark-vessel recall is
+  available because the train-derived dev/test splits have zero dark support.

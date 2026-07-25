@@ -6,6 +6,8 @@ data/*
 !data/stats.json
 !data/lsssdd_split.json
 runs/
+outputs/
+data_analysis_package.zip
 *.pt
 *.pth
 *.ckpt

@@ -159,17 +159,19 @@ cold-start runbook holds the live status ledger. Current state:
 - **AMENDED — 2026-07-22**: Arms 4/8 changed from random→LS-SSDD to the two downloaded ImageNet-1K
   checkpoints above; the old `vitsup-f10-s0` and `cnnsup-f10-s0` cells are superseded and excluded.
   Seed reruns and R1 are removed. The target is 32 seed-0 core cells plus R2/R3 = 34 experiments.
-- **PARTIAL — core grid**: the six unaffected seed-0 f10 cells (arms 1,2,3,5,6,7) remain valid.
-  The replacement ImageNet loaders, exact-byte pins, and the complete 88-test pre-launch suite
-  (including all six value-sensitive checkpoint guards) passed on 2026-07-22. R2/R3 records exist.
+- **PARTIAL — core grid**: all eight seed-0 f10 cells are complete and exported. The active
+  preliminary table, threshold-transfer diagnostic, and SAR prediction galleries are under
+  [`results/summary/`](results/summary/). The replacement ImageNet loaders, exact-byte pins, and
+  the complete 88-test pre-launch suite (including all six value-sensitive checkpoint guards)
+  passed on 2026-07-22. R2/R3 records exist.
 - **EXECUTION DECISION — RTX 5070 Ti**: measured P100 throughput failed the >2× compute tripwire,
   so those probes were stopped and archived. The owner selected unchanged one-GPU execution on the
-  5070 Ti—no DDP and no recipe change. There are 26 core cells left; completed-run timings project
+  5070 Ti—no DDP and no recipe change. There are 24 core cells left; completed-run timings project
   roughly 19–22 continuous compute days after data, weights, and prior run records are restored.
 - **READY — Phase 6 tripwires** (`src/eval/final_eval.py`: `--i-am-sure` + lockfile, hard
   preconditions). The 50 raw eval-scene rasters are not in the current transfer payload, and final
-  evaluation remains untouched. Phase 7 analysis is also pending; do not promote P3.6 or partial f10
-  observations to final-paper findings.
+  evaluation remains untouched. Formal Phase 7 still waits on final evaluation; the committed f10
+  diagnostics are preliminary and must not be promoted to final-paper findings.
 
 ```
 JHU-xView3/
