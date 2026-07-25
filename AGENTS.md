@@ -10,7 +10,7 @@ Instructions for any coding agent (Claude Code, Codex, Cursor, sub-agents) worki
 
 ## What this project is (one paragraph)
 
-A controlled label-efficiency comparison of **downloaded pretrained backbones** for dark-vessel detection in Sentinel-1 SAR (xView3), in **two architecture-matched tracks**: a **ViT track** (arms 1–4, ViT-B/16, ~86M) and a **CNN track** (arms 5–8, ConvNeXt-V2-Base, ~89M, size-matched). Within each track the four arms — random floor, optical pretraining, SAR pretraining, labeled SAR transfer — are fine-tuned identically; **initialization is the only variable *within* a track, architecture the only variable *across* matched roles** (floor 1/5, optical 2/6, SAR 3/7, supervised 4/8). We pretrain no foundation model (this removes compute and novel-code risk); the only training is two cheap LS-SSDD supervised backbones (Arms 4, 8). The deliverable is a **two-track label-efficiency curve**; the optical-vs-SAR contrast and its architecture-generality are the headline. There is **no challenge/leaderboard arm** (removed). Validity depends on the arms being truly comparable, so most rules below exist to protect that comparability.
+A controlled label-efficiency comparison of **downloaded pretrained backbones** for dark-vessel detection in Sentinel-1 SAR (xView3), in **two architecture-matched tracks**: a **ViT track** (arms 1–4, ViT-B/16, ~86M) and a **CNN track** (arms 5–8, ConvNeXt-V2-Base, ~89M, size-matched). Within each track the four arms — random floor, optical remote-sensing pretraining, SAR pretraining, and generic ImageNet pretraining — are fine-tuned identically; **initialization is the only variable *within* a track, architecture the only variable *across* matched roles** (floor 1/5, optical 2/6, SAR 3/7, ImageNet 4/8). Every non-random core initialization is a downloaded checkpoint; there is **no active LS-SSDD pretraining**. The study uses one fixed run seed (`0`): 32 core fine-tunes (8 arms × 4 label fractions) plus R2/R3, for **34 reported experiments**. The deliverable is a **two-track label-efficiency curve**; the optical-vs-SAR contrast and its architecture-generality are the headline. There is **no challenge/leaderboard arm** (removed). Validity depends on the arms being truly comparable, so most rules below exist to protect that comparability.
 
 ## The prime directive
 
@@ -21,11 +21,15 @@ A controlled label-efficiency comparison of **downloaded pretrained backbones** 
 1. **Do not invent methods.** Use the cited reference implementations in DEVPLAN §1a (that table is the canonical source for every id):
    - Arm-3 weights (ViT SAR FM) → **SARMAE**: HF **weights** `Wenquandan777/SARMAE`, file `SARMAE_vitb_checkpoint-last` (code `github.com/MiliLab/SARMAE`; Liu et al. CVPR 2026). Downloaded ViT-B, encoder only, CC BY-NC 4.0 (gated). We do NOT pretrain it.
    - Arm-2 weights (ViT optical FM) → **SatDINO** ViT-B/16 fMoW-RGB (`strakajk/satdino-vit_base-16`, `trust_remote_code=True`; Apache-2.0). DINO, not MAE — differs from SARMAE in method as well as domain (documented caveat).
+   - Arm-4 weights (ViT ImageNet) → `timm/vit_base_patch16_224.augreg_in1k`: supervised AugReg training on ImageNet-1K; drop the classification head and transfer the encoder.
    - Arms 6,7 weights (CNN RS) → **BigEarthNet ConvNeXt-V2-B** (`BIFOLD-BigEarthNetv2-0/convnextv2_base-{s2,s1}-v0.2.0`, reBEN): load via `configilm` `BigEarthNetv2_0_ImageClassifier.from_pretrained`, drop the classification head; S2=optical, S1=SAR.
+   - Arm-8 weights (CNN ImageNet) → `timm/convnextv2_base.fcmae_ft_in1k`: FCMAE pretraining followed by supervised ImageNet-1K classification fine-tuning; drop the classification head and transfer the encoder.
    - Backbones + any channel change → `timm` `vit_base_patch16_224` (ViT) and `timm` `convnextv2_base` (CNN), both `in_chans=3` on the fixed `[VH, VV, VH−VV]` input (Repeat-with-rescaling). Never hand-roll patch-embed surgery.
    - Head/decode → CenterNet / TRANSAR (heatmap, peak + distance-NMS).
 
-2. **Initialization is the only variable *within* a track; architecture is the only variable *across* matched roles.** Within each track (ViT arms 1–4, CNN arms 5–8): same backbone, head, optimizer/schedule/seeds, same fixed 3-channel input `[VH, VV, VH−VV]`. The head/optimizer/schedule are shared across both tracks too — only the backbone (and its head adapter) differs. Never tune something per-arm. (There is no challenge arm.)
+   Arms 4 and 8 are matched on generic source dataset and final classification supervision, **not on full training history**: Arm 4 is supervised AugReg, while Arm 8 is FCMAE then supervised fine-tuning. Treat this as a documented cross-track limitation; never describe them as a matched MAE/FCMAE pair.
+
+2. **Initialization is the only variable *within* a track; architecture is the only variable *across* matched roles.** Within each track (ViT arms 1–4, CNN arms 5–8): same backbone, head, optimizer/schedule, fixed run seed `0`, and fixed 3-channel input `[VH, VV, VH−VV]`. The head/optimizer/schedule are shared across both tracks too — only the backbone (and its head adapter) differs. Never tune something per-arm. (There is no challenge arm.)
 
 3. **The scorer is sacred.** `src/eval/scorer.py` was written in sprint-2 and intentionally re-frozen in `sprint-2b-eval-hardening` after the near-shore FP fix. Never modify it after that lock without a human STOP and re-pin. Every reported number flows through it.
 
@@ -33,7 +37,7 @@ A controlled label-efficiency comparison of **downloaded pretrained backbones** 
 
 5. **One framework: PyTorch Lightning.** All training entrypoints share one `LightningModule` pattern, one `LightningDataModule`, one `Trainer` config. This is part of the fairness guarantee — do not write a bespoke loop for one arm.
 
-6. **Do-not-touch after their sprint** (changing any of these requires a human STOP): `src/eval/scorer.py`, `data/splits.json`, `data/stats.json`, `data/lsssdd_split.json`, `configs/detector.yaml`, the verified-eval lockfile.
+6. **Do-not-touch after their sprint** (changing any of these requires a human STOP): `src/eval/scorer.py`, `data/splits.json`, `data/stats.json`, `data/lsssdd_split.json`, `configs/detector.yaml`, the verified-eval lockfile. `data/lsssdd_split.json` is now a **retired historical artifact** retained for provenance; retiring LS-SSDD from the active study does not authorize deleting or editing its frozen split.
 
 ## The four guard tests (CI enforces these — see `.github/workflows/ci.yml`)
 
@@ -41,7 +45,7 @@ A PR **cannot merge** if any of these fail (once its target file exists). They a
 
 - `test_split_disjoint` — no scene in two splits (anti-leakage).
 - `test_backbone_parity` — within each track all four arms share an identical param count (ViT-B/16 for arms 1–4, ConvNeXt-V2-B for arms 5–8), **and** both tracks' adapters emit the same stride-4 / 128×128 / C output (anti-architecture-drift + anti-adapter-geometry-drift).
-- `test_fm_checkpoints_load` — all four downloaded backbones load **value-sensitively** (not just by key name): SatDINO + SARMAE (ViT-B; SatDINO via `trust_remote_code`) and BigEarthNet-S1 + BigEarthNet-S2 (ConvNeXt-V2-B, via `configilm`/reBEN). Asserts loaded encoder tensors differ from a fresh random init (anti-silent-random-weights). CI runs the CPU-offline structural half; the value-sensitive load runs on the GPU boxes.
+- `test_fm_checkpoints_load` — all six downloaded pretrained core backbones load **value-sensitively** (not just by key name): SatDINO, SARMAE, and ImageNet AugReg (ViT-B), plus BigEarthNet-S1, BigEarthNet-S2, and ImageNet FCMAE→IN1K (ConvNeXt-V2-B). Asserts loaded encoder tensors differ from a fresh random init (anti-silent-random-weights). CI runs the CPU-offline structural half; the value-sensitive load runs on the GPU boxes.
 - `test_scorer_immutable` — `scorer.py` hash matches the sprint-2b pinned value (anti-scorer-drift). *(The scorer was intentionally re-pinned after the near-shore FP fix; see the DEVPLAN cold-start runbook.)*
 
 If you believe a guard test must change, that is itself a STOP — surface it, don't edit the test to pass.
@@ -52,7 +56,7 @@ Stopping is cheap and expected. It is not a failure. Halt and ask when:
 
 1. A cited reference is unavailable/ambiguous, or two conflict.
 2. An acceptance criterion fails and the fix isn't obvious in one attempt.
-3. A result violates a sanity check (non-monotone label-efficiency curve beyond seed noise; an arm scoring implausibly high → suspect leakage).
+3. A result violates a sanity check (non-monotone label-efficiency curve beyond the declared tolerance; an arm scoring implausibly high → suspect leakage). With one seed, do not claim empirical seed-noise estimates or error bars.
 4. A change would touch a do-not-touch artifact after it's locked.
 5. You're tempted to deviate from a cited method "because it seems better."
 6. A step's measured compute/time exceeds its budget by more than ~2×.
@@ -65,7 +69,7 @@ Do not optimize to seem autonomous. Asking is the job.
 - **PR per sprint**, reviewed and merged by the human. Keep diffs small enough to read line-by-line; if a sprint's diff grows past a few hundred lines, split it.
 - **Branch ordering:** no model-code sprint opens until `sprint-2-scorer` is merged; no chip-training sprint until `sprint-1-data` is merged.
 - **Commits:** small, frequent, each referencing the task ID (e.g. `P1.3: scene-level split builder`).
-- **Sub-agents:** parallelize only independent lanes — data, scorer, and the **external** reference models (R2/R3). There is **no pretraining lane** (all four FMs are downloaded); the two LS-SSDD supervised backbones (Arms 4, 8) train inside `sprint-7-grid` under the serial detector owner. Anything touching the shared detector (including `sprint-5-cnn-arms`) is serial under one owner — parallel edits to `lit_modules.py`/`finetune.py` silently diverge and break arm comparability.
+- **Sub-agents:** parallelize only independent lanes — data, scorer, and the **external** reference models (R2/R3). There is **no pretraining lane**: all six pretrained core checkpoints are downloaded, and LS-SSDD is retired from the active study. Anything touching the shared detector (including `sprint-5-cnn-arms`) is serial under one owner — parallel edits to `lit_modules.py`/`finetune.py` silently diverge and break arm comparability.
 
 ## Git authorship — strict
 
@@ -75,6 +79,8 @@ Do not optimize to seem autonomous. Asking is the job.
 
 ## Environment notes
 
-- Two GPU machines, different builds: RTX 5070 Ti (Blackwell sm_120, PyTorch nightly / cu12x) and an 8×V100 node (Volta sm_70, cu12x, **fp16 only — no bf16, no FlashAttention, no bitsandbytes**). See `locks/` for the two lockfiles and DEVPLAN Appendix C for the Volta constraints.
+- Two GPU machines, different builds: an RTX 5070 Ti (Blackwell sm_120, verified cu128) and this server's **8× Tesla P100 PCIe 12 GB** pool (Pascal sm_60, verified by `locks/env-p100node.txt`: torch 2.11.0+cu126). The old `locks/env-v100node.txt` is historical V100/sm_70 provenance only; never use it as the P100 environment.
+- On P100, use fp16, no FlashAttention/bf16, and **micro-batch 8 with accumulation 2** to preserve effective batch 16. Reserve/lock cards through `gpu`. Host IDs reported by `gpu info` are not CUDA indices after attachment: use only the container-local indices reported by `nvidia-smi -L` (normally `0..N-1`) for `CUDA_VISIBLE_DEVICES` and runner `--gpus`.
+- The P100 hardware/environment/memory gate and targeted value-sensitive load checks for all six downloaded checkpoints passed on 2026-07-22. The complete pre-launch test suite must still pass immediately before training.
 - CI is CPU-only and uses `requirements-ci.txt` — a minimal set, *not* the training environment. CI runs guard tests on tiny fixtures with **no GPU and no model downloads** — so `test_fm_checkpoints_load`'s value-sensitive weight load runs on the GPU boxes, and CI runs only its CPU-offline structural (key-manifest) half. CI triggers on `dev` (the active branch), not only `main`.
 - Working scratch goes outside version control; never commit data, checkpoints, or `runs/`.

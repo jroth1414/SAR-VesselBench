@@ -6,17 +6,17 @@ seed: 0
 
 paths:
   raw_xview3: data/raw/xview3      # GRD/<scene_id>/{VH_dB,VV_dB,...}.tif + label CSVs
-  raw_lsssdd: data/raw/lsssdd      # LS-SSDD-v1.0 800x800 sub-images (Arms 4, 8 source)
+  raw_lsssdd: data/raw/lsssdd      # retired payload; no current arm consumes it
   chips: data/chips                # 800x800 float16 dB chips + per-chip JSON sidecars
   manifests: data/manifests        # one parquet per scene/source
   splits: data/splits.json         # scene_id -> split (frozen after sprint-1)
   stats: data/stats.json           # train-split-only per-pol mean/std (frozen after sprint-1)
-  lsssdd_split: data/lsssdd_split.json  # LS-SSDD internal train/val (frozen after sprint-1)
+  lsssdd_split: data/lsssdd_split.json  # frozen historical split; never edit/delete
 
 download:
   sarfish_repo: ConnorLuckettDSTG/SARFish
   sarfish_revision: null           # PIN before the real pull (P1.1) — recorded in SOURCE.note
-  lsssdd_repo: TianwenZhang0825/LS-SSDD-v1.0-OPEN
+  lsssdd_repo: TianwenZhang0825/LS-SSDD-v1.0-OPEN  # historical acquisition only
   lsssdd_revision: null            # PIN before the real pull (P1.2)
   size_cap_gb: 400                 # abort if the estimated pull exceeds this (P1.1)
 

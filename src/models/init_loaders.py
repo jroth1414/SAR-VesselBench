@@ -19,6 +19,10 @@ Checkpoint facts (verified at download, revisions in data/weights/*/SOURCE.note)
   ``model.vision_encoder.`` prefix with a 19-class head (dropped). Stems are
   2-band (S1: VV,VH) / 10-band (S2), adapted to the fixed 3-channel input by
   Repeat-with-rescaling.
+- ImageNet ViT ``timm/vit_base_patch16_224.augreg_in1k`` and ImageNet CNN
+  ``timm/convnextv2_base.fcmae_ft_in1k``: canonical timm safetensors; only
+  the classification heads are dropped. The former is supervised AugReg;
+  the latter is FCMAE followed by supervised ImageNet-1K fine-tuning.
 
 Channel adaptation note (flagged for review, runs/decisions.md): timm's
 ``adapt_input_conv`` implements Repeat-with-rescaling only FROM 3-channel
@@ -31,8 +35,10 @@ activation magnitude). No other patch-embed/stem surgery anywhere
 
 from __future__ import annotations
 
+import hashlib
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable, Mapping
+from typing import Callable, Final, Iterable, Mapping
 
 import torch
 
@@ -42,19 +48,53 @@ INIT_FAMILY: dict[str, str] = {
     "vit_random": "vit",
     "satdino_b": "vit",
     "sarmae_b": "vit",
-    "vit_supervised": "vit",
+    "vit_imagenet": "vit",
     "cnn_random": "cnn",
     "bigearthnet_s2": "cnn",
     "bigearthnet_s1": "cnn",
-    "cnn_supervised": "cnn",
+    "cnn_imagenet": "cnn",
 }
 INIT_NAMES = tuple(INIT_FAMILY)
+
+
+@dataclass(frozen=True)
+class PinnedImageNetCheckpoint:
+    """Exact local artifact identity for a core ImageNet initialization."""
+
+    weights_subdir: str
+    filename: str
+    source: str
+    sha256: str
+
+
+IMAGENET_CHECKPOINTS: Final[dict[str, PinnedImageNetCheckpoint]] = {
+    "vit_imagenet": PinnedImageNetCheckpoint(
+        weights_subdir="imagenet_vit_augreg_in1k",
+        filename="model.safetensors",
+        source=(
+            "timm/vit_base_patch16_224.augreg_in1k"
+            "@458542882691a06a8b667c6fb5fe5c9573093a81"
+        ),
+        sha256="678a1ce471be7da9822fe2508497a5bcf6da4c6802053151b232ba88a42c21a2",
+    ),
+    "cnn_imagenet": PinnedImageNetCheckpoint(
+        weights_subdir="imagenet_cnn_fcmae_ft_in1k",
+        filename="model.safetensors",
+        source=(
+            "timm/convnextv2_base.fcmae_ft_in1k"
+            "@7b29800e499fdc06de5b612970f3384dc8d29ca5"
+        ),
+        sha256="ec152f1e375edc2b3dfac7a81155a449b4c5cbb7c5cf0b9494838f6c87518d73",
+    ),
+}
 
 DOWNLOADED_WEIGHTS_SUBDIR: dict[str, str] = {
     "satdino_b": "satdino",
     "sarmae_b": "sarmae",
     "bigearthnet_s2": "bigearthnet_s2",
     "bigearthnet_s1": "bigearthnet_s1",
+    "vit_imagenet": IMAGENET_CHECKPOINTS["vit_imagenet"].weights_subdir,
+    "cnn_imagenet": IMAGENET_CHECKPOINTS["cnn_imagenet"].weights_subdir,
 }
 
 
@@ -101,6 +141,25 @@ def map_bigearthnet_keys(keys: Iterable[str]) -> dict[str, str]:
             continue  # 19-class BigEarthNet classifier — dropped
         mapping[key] = stripped
     return mapping
+
+
+def map_imagenet_vit_keys(keys: Iterable[str]) -> dict[str, str]:
+    """AugReg ImageNet-1K timm ViT keys -> headless timm ViT keys."""
+
+    return {key: key for key in keys if not key.startswith("head.")}
+
+
+def map_imagenet_cnn_keys(keys: Iterable[str]) -> dict[str, str]:
+    """FCMAE->IN1K ConvNeXt-V2 keys -> canonical `num_classes=0` target.
+
+    The class-logit projection (`head.fc`) is dropped. Canonical timm
+    ConvNeXt with `num_classes=0` retains `head.norm` in its state dict,
+    so those two normalization tensors map through for full target coverage;
+    they are unused because :class:`ConvNeXtBackbone` calls
+    `forward_features` rather than `forward_head`.
+    """
+
+    return {key: key for key in keys if not key.startswith("head.fc.")}
 
 
 def repeat_with_rescaling(weight: torch.Tensor, target_chans: int) -> torch.Tensor:
@@ -167,12 +226,39 @@ def _require_license(weights_dir: Path, name: str) -> None:
         )
 
 
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(8 * 1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _require_pinned_imagenet_checkpoint(name: str, weights_dir: Path) -> Path:
+    """Return the exact pinned ImageNet artifact or fail before deserialization."""
+
+    metadata = IMAGENET_CHECKPOINTS[name]
+    checkpoint_path = weights_dir / metadata.filename
+    if not checkpoint_path.is_file():
+        raise FileNotFoundError(
+            f"{name}: pinned checkpoint is missing: {checkpoint_path} "
+            f"(expected {metadata.source})"
+        )
+    actual_sha256 = _sha256_file(checkpoint_path)
+    if actual_sha256 != metadata.sha256:
+        raise RuntimeError(
+            f"{name}: SHA-256 mismatch for {checkpoint_path}; expected "
+            f"{metadata.sha256} ({metadata.source}), got {actual_sha256} — "
+            "refusing an unpinned or substituted checkpoint"
+        )
+    return checkpoint_path
+
+
 def build_init(
     name: str,
     *,
     load_weights: bool = True,
     weights_root: str | Path = "data/weights",
-    supervised_checkpoint: str | Path | None = None,
 ) -> ViTBackbone | ConvNeXtBackbone:
     """Build the backbone for one arm's initialization.
 
@@ -222,19 +308,13 @@ def build_init(
             name=name,
             stem_key="stem.0.weight",
         )
-    elif name in ("vit_supervised", "cnn_supervised"):
-        if supervised_checkpoint is None:
-            raise FileNotFoundError(
-                f"{name}: pass supervised_checkpoint= (produced by the Phase-5 "
-                "LS-SSDD pretraining; not available before sprint-7-grid)"
-            )
-        state = torch.load(supervised_checkpoint, map_location="cpu", weights_only=False)
-        state = state.get("state_dict", state)
-        backbone_state = {
-            key.removeprefix("backbone."): value
-            for key, value in state.items()
-            if key.startswith("backbone.")
-        }
-        result = backbone.load_state_dict(backbone_state, strict=True)
-        print(f"[{name}] loaded supervised backbone from {supervised_checkpoint}")
+    elif name in ("vit_imagenet", "cnn_imagenet"):
+        from safetensors.torch import load_file
+
+        checkpoint_path = _require_pinned_imagenet_checkpoint(name, weights_dir)
+        state = load_file(checkpoint_path)
+        mapper = (
+            map_imagenet_vit_keys if name == "vit_imagenet" else map_imagenet_cnn_keys
+        )
+        _load_mapped(backbone.model, state, mapper(state.keys()), name=name)
     return backbone

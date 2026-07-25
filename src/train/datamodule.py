@@ -1,10 +1,11 @@
 """One LightningDataModule shared by every arm (DEVPLAN ground rule 9).
 
-Wraps ``FineTuneDataset`` (xView3 fine-tunes, all 8 arms) or
-``SupervisedSARDataset`` (the two LS-SSDD pretrainings) behind one loader
-configuration, so batching, worker seeding, and sampling are identical by
-construction. Dev/test evaluation does NOT flow through here — it is
-whole-scene tiled inference (src/eval/infer_scene.py).
+``FineTuneDataModule`` is the active xView3 path for all eight arms, keeping
+batching, worker seeding, and sampling identical by construction. The
+``SupervisedSARDataModule`` remains only to reproduce the superseded LS-SSDD
+design; no current manifest cell imports it. Dev/test evaluation does NOT flow
+through either loader — it is whole-scene tiled inference
+(src/eval/infer_scene.py).
 """
 
 from __future__ import annotations
@@ -71,7 +72,7 @@ class FineTuneDataModule(L.LightningDataModule):
 
 
 class SupervisedSARDataModule(L.LightningDataModule):
-    """LS-SSDD loaders for the Arm-4/Arm-8 supervised pretrainings (P5.1)."""
+    """Legacy LS-SSDD loader retained for superseded-design provenance."""
 
     def __init__(
         self,

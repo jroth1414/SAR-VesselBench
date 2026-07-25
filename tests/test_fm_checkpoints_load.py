@@ -25,9 +25,13 @@ torch = pytest.importorskip("torch")
 timm = pytest.importorskip("timm")
 
 from src.models.init_loaders import (  # noqa: E402
+    IMAGENET_CHECKPOINTS,
+    _require_pinned_imagenet_checkpoint,
     build_init,
     map_bigearthnet_keys,
     map_sarmae_keys,
+    map_imagenet_cnn_keys,
+    map_imagenet_vit_keys,
     map_satdino_keys,
 )
 
@@ -40,7 +44,27 @@ STRUCTURAL_CASES = (
     ("sarmae.json", map_sarmae_keys, "vit"),
     ("bigearthnet_s1.json", map_bigearthnet_keys, "cnn"),
     ("bigearthnet_s2.json", map_bigearthnet_keys, "cnn"),
+    ("imagenet_vit.json", map_imagenet_vit_keys, "vit"),
+    ("imagenet_cnn.json", map_imagenet_cnn_keys, "cnn"),
 )
+
+IMAGENET_CASES = (
+    (
+        "vit_imagenet",
+        "imagenet_vit.json",
+        map_imagenet_vit_keys,
+        {"head.weight", "head.bias"},
+    ),
+    (
+        "cnn_imagenet",
+        "imagenet_cnn.json",
+        map_imagenet_cnn_keys,
+        {"head.fc.weight", "head.fc.bias"},
+    ),
+)
+
+VALUE_PROBE_SEED = 0x5EED
+VALUE_PROBE_MIN_L2 = 1.0
 
 
 @pytest.mark.parametrize("manifest_name,mapper,family", STRUCTURAL_CASES)
@@ -64,7 +88,50 @@ def test_structural_key_coverage(manifest_name, mapper, family):
     assert not extra, f"{manifest_name}: mapped keys not in target: {sorted(extra)[:5]}"
 
 
-DOWNLOADED = ("satdino_b", "sarmae_b", "bigearthnet_s1", "bigearthnet_s2")
+@pytest.mark.parametrize("name,manifest_name,mapper,expected_excluded", IMAGENET_CASES)
+def test_imagenet_manifest_metadata_and_head_exclusions(
+    name, manifest_name, mapper, expected_excluded
+):
+    """Manifest identity and exclusions must match the loader's pinned metadata."""
+
+    manifest = json.loads((MANIFEST_DIR / manifest_name).read_text())
+    pinned = IMAGENET_CHECKPOINTS[name]
+    assert manifest["source"] == pinned.source
+    assert manifest["file"] == pinned.filename
+    assert manifest["sha256"] == pinned.sha256
+
+    mapping = mapper(manifest["keys"])
+    excluded = set(manifest["keys"]) - set(mapping)
+    assert excluded == expected_excluded
+    mapped_targets = set(mapping.values())
+    assert not ({"head.weight", "head.bias"} & mapped_targets)
+    assert not any(key.startswith("head.fc.") for key in mapped_targets)
+    if name == "cnn_imagenet":
+        # Canonical timm num_classes=0 retains this norm, but our backbone
+        # calls forward_features and never consumes the classifier head.
+        assert {"head.norm.weight", "head.norm.bias"} <= mapped_targets
+
+
+@pytest.mark.parametrize("name", tuple(IMAGENET_CHECKPOINTS))
+def test_imagenet_hash_guard_rejects_substitution(name, tmp_path):
+    """A same-named but non-pinned local artifact must fail before loading."""
+
+    pinned = IMAGENET_CHECKPOINTS[name]
+    weights_dir = tmp_path / pinned.weights_subdir
+    weights_dir.mkdir()
+    (weights_dir / pinned.filename).write_bytes(b"not the pinned checkpoint")
+    with pytest.raises(RuntimeError, match="SHA-256 mismatch"):
+        _require_pinned_imagenet_checkpoint(name, weights_dir)
+
+
+DOWNLOADED = (
+    "satdino_b",
+    "sarmae_b",
+    "bigearthnet_s1",
+    "bigearthnet_s2",
+    "vit_imagenet",
+    "cnn_imagenet",
+)
 
 
 @pytest.mark.parametrize("name", DOWNLOADED)
@@ -75,8 +142,14 @@ DOWNLOADED = ("satdino_b", "sarmae_b", "bigearthnet_s1", "bigearthnet_s2")
 def test_value_sensitive_load(name):
     """(b) loaded encoder tensors must differ from a fresh random init."""
 
-    loaded = build_init(name, weights_root=WEIGHTS_DIR).state_dict()
-    fresh = build_init(name, load_weights=False).state_dict()
+    # Reset to the identical initialization before both constructions. Without
+    # this, random-vs-random easily clears the L2 threshold and makes the guard
+    # a false positive even if no checkpoint tensor was loaded.
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(VALUE_PROBE_SEED)
+        loaded = build_init(name, weights_root=WEIGHTS_DIR).state_dict()
+        torch.manual_seed(VALUE_PROBE_SEED)
+        fresh = build_init(name, load_weights=False).state_dict()
 
     probe = [
         key
@@ -85,7 +158,7 @@ def test_value_sensitive_load(name):
     ][:6]
     assert probe, f"{name}: no probe keys found"
     l2 = sum(float((loaded[k].float() - fresh[k].float()).norm()) for k in probe)
-    assert l2 > 1.0, (
+    assert l2 > VALUE_PROBE_MIN_L2, (
         f"{name}: probe L2 vs fresh init is {l2:.3f} — loaded weights look "
         "random (partial/failed load)"
     )

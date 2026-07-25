@@ -1,16 +1,12 @@
-"""LS-SSDD supervised pretraining — Arms 4 and 8's source (DEVPLAN P5.1).
+"""Historical LS-SSDD pretraining entrypoint (superseded 2026-07-22).
 
-Pretrains a backbone + heatmap head on LS-SSDD-v1.0 ONLY (centroids as
-targets, P1.4), with the SAME loss / sampler / augmentation as the fine-tune
-pipeline via the shared LightningModule. Run twice: ``--backbone vit`` ->
-``runs/vitsup-lsssdd`` (Arm 4's init) and ``--backbone cnn`` ->
-``runs/cnnsup-lsssdd`` (Arm 8's init). Both consume the identical frozen
-``data/lsssdd_split.json``; the val part (900 sub-images) drives val_loss
-early stopping (no prescribed stopping epoch — stop when validation turns;
-50-epoch safety ceiling).
+This reproduces the retired random-init -> LS-SSDD backbone runs
+``vitsup-lsssdd`` and ``cnnsup-lsssdd``. Their checkpoints no longer feed
+any arm, queue, manifest, or result export; current Arms 4 and 8 load the
+pinned ImageNet checkpoints documented in DEVPLAN instead.
 
-The resulting ``checkpoints/best.ckpt`` feeds ``init_loaders`` via
-``finetune.py --supervised-checkpoint`` (keys under ``backbone.``).
+The code remains only as provenance for the archived outcomes. Do not invoke
+it for the current study or regenerate the frozen ``data/lsssdd_split.json``.
 """
 
 from __future__ import annotations

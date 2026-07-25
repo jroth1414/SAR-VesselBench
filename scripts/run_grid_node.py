@@ -1,16 +1,16 @@
-"""Parallel grid queue for the 8x V100 node (one cell per GPU).
+"""Parallel grid queue for a multi-GPU node (one cell per GPU).
 
 Same cell list and skip-if-finished semantics as the dev-card queue
 (scripts/run_grid_queue.py), but cells are dispatched to a pool of GPUs —
-one training process per V100 via CUDA_VISIBLE_DEVICES (the plan's "one
-config per card per night", DEVPLAN §12). Dependencies are honored: the two
-LS-SSDD pretrainings run before any vit_supervised / cnn_supervised cell;
-everything else is independent and fills GPUs greedily, most expensive
-fractions first so stragglers finish together.
+one training process per selected device via CUDA_VISIBLE_DEVICES. All cells
+are independent and fill GPUs greedily, most expensive fractions first so
+stragglers finish together.
 
-V100 notes (Appendix C): plain recipe batch 16 (32 GB — no micro-batching),
-fp16 + GradScaler, no bf16/FlashAttention. Run from the repo root:
-    python scripts/run_grid_node.py --gpus 0 1 2 3 4 5 6 7
+On 12 GB P100s, pass ``--micro-batch 8`` to preserve the frozen effective
+batch of 16 through gradient accumulation. Select only GPUs reserved for this
+job; there is intentionally no implicit all-GPU default. GPU IDs are
+container-local (from ``nvidia-smi -L``), not physical lease IDs. Example:
+    python scripts/run_grid_node.py --gpus 0 1 2 3 4 --micro-batch 8
 Resumable: kill and relaunch freely.
 """
 
@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import math
 import os
 import subprocess
 import sys
@@ -29,22 +30,21 @@ SHORT = {
     "vit_random": "vitrand",
     "satdino_b": "satdino",
     "sarmae_b": "sarmae",
-    "vit_supervised": "vitsup",
+    "vit_imagenet": "vitin1k",
     "cnn_random": "cnnrand",
     "bigearthnet_s2": "beS2",
     "bigearthnet_s1": "beS1",
-    "cnn_supervised": "cnnsup",
+    "cnn_imagenet": "cnnin1k",
 }
-DOWNLOADED_ARMS = [
-    "vit_random", "satdino_b", "sarmae_b",
-    "cnn_random", "bigearthnet_s2", "bigearthnet_s1",
+ALL_ARMS = [
+    "vit_random", "satdino_b", "sarmae_b", "vit_imagenet",
+    "cnn_random", "bigearthnet_s2", "bigearthnet_s1", "cnn_imagenet",
 ]
-SUPERVISED_ARMS = ["vit_supervised", "cnn_supervised"]
-SUPERVISED_CKPT = {
-    "vit_supervised": Path("runs/vitsup-lsssdd/checkpoints/best.ckpt"),
-    "cnn_supervised": Path("runs/cnnsup-lsssdd/checkpoints/best.ckpt"),
-}
-FRACS = [1.0, 0.5, 0.25, 0.1]  # expensive first: stragglers finish together
+FRACS = [1.0, 0.5, 0.25, 0.1]  # remaining work: expensive first
+PRIORITY_CELLS = [
+    ("vit_imagenet", 0.1),
+    ("cnn_imagenet", 0.1),
+]
 
 
 def log(message: str) -> None:
@@ -55,84 +55,157 @@ def exp_id(init: str, frac: float, seed: int = 0) -> str:
     return f"{SHORT[init]}-f{int(round(frac * 100))}-s{seed}"
 
 
-def cell_done(init: str, frac: float) -> bool:
-    return (Path("runs") / exp_id(init, frac) / "final_metrics.json").exists()
+def cell_done(
+    init: str,
+    frac: float,
+    runs_root: Path = Path("runs"),
+) -> bool:
+    """Validate a completed cell marker; malformed markers are a hard STOP."""
 
-
-def pretrain_done(backbone: str) -> bool:
-    exp = "vitsup-lsssdd" if backbone == "vit" else "cnnsup-lsssdd"
-    return (Path("runs") / exp / "final_metrics.json").exists()
-
-
-def build_work() -> list[dict]:
-    work: list[dict] = []
-    for backbone in ("vit", "cnn"):
-        if not pretrain_done(backbone):
-            work.append({"kind": "pretrain", "backbone": backbone})
-    for frac in FRACS:
-        for init in DOWNLOADED_ARMS + SUPERVISED_ARMS:
-            if not cell_done(init, frac):
-                work.append({"kind": "cell", "init": init, "frac": frac})
-    return work
-
-
-def ready(item: dict) -> bool:
-    if item["kind"] == "cell" and item["init"] in SUPERVISED_CKPT:
-        return SUPERVISED_CKPT[item["init"]].exists()
+    final = runs_root / exp_id(init, frac) / "final_metrics.json"
+    if not final.exists():
+        return False
+    try:
+        payload = json.loads(final.read_text())
+        best_dev_f1 = float(payload["best_dev_f1"])
+    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"invalid completion marker: {final}") from exc
+    if payload.get("exp_id") != exp_id(init, frac) or not math.isfinite(best_dev_f1):
+        raise RuntimeError(f"invalid completion marker contents: {final}")
     return True
 
 
-def launch(item: dict, gpu: int) -> subprocess.Popen:
+def matrix_cells() -> list[tuple[str, float]]:
+    """Exact seed-0 core order, with the two replacement f10 cells first."""
+
+    cells = list(PRIORITY_CELLS)
+    cells.extend(
+        (init, frac)
+        for frac in FRACS
+        for init in ALL_ARMS
+        if (init, frac) not in PRIORITY_CELLS
+    )
+    return cells
+
+
+def build_work(runs_root: Path = Path("runs")) -> list[dict]:
+    return [
+        {"init": init, "frac": frac}
+        for init, frac in matrix_cells()
+        if not cell_done(init, frac, runs_root)
+    ]
+
+
+def launch(
+    item: dict,
+    gpu: int,
+    *,
+    micro_batch: int,
+    workers: int,
+) -> subprocess.Popen:
     env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(gpu))
-    if item["kind"] == "pretrain":
-        name = f"pretrain-{item['backbone']}"
-        argv = [sys.executable, "-m", "src.train.pretrain_supervised", "--backbone", item["backbone"]]
-    else:
-        name = exp_id(item["init"], item["frac"])
-        argv = [
-            sys.executable, "-m", "src.train.finetune",
-            "--init", item["init"], "--label_frac", str(item["frac"]),
-            "--seed", "0", "--workers", "4",
-        ]
-        if item["init"] in SUPERVISED_CKPT:
-            argv += ["--supervised-checkpoint", str(SUPERVISED_CKPT[item["init"]])]
+    name = exp_id(item["init"], item["frac"])
+    argv = [
+        sys.executable,
+        "-m",
+        "src.train.finetune",
+        "--init",
+        item["init"],
+        "--label_frac",
+        str(item["frac"]),
+        "--seed",
+        "0",
+        "--workers",
+        str(workers),
+        "--micro-batch",
+        str(micro_batch),
+    ]
     log(f"gpu{gpu}: launching {name}")
     log_dir = Path("runs/logs/node")
     log_dir.mkdir(parents=True, exist_ok=True)
-    out = open(log_dir / f"{name}.log", "a")
-    return subprocess.Popen(argv, env=env, stdout=out, stderr=subprocess.STDOUT)
+    with (log_dir / f"{name}.log").open("a") as out:
+        return subprocess.Popen(
+            argv,
+            env=env,
+            stdout=out,
+            stderr=subprocess.STDOUT,
+        )
+
+
+def validate_hardware_args(gpus: list[int], micro_batch: int) -> None:
+    if len(set(gpus)) != len(gpus):
+        raise ValueError("--gpus contains duplicate container-local device IDs")
+    if any(gpu < 0 for gpu in gpus):
+        raise ValueError("--gpus must contain non-negative container-local IDs")
+    if micro_batch <= 0 or micro_batch > 16 or 16 % micro_batch:
+        raise ValueError("--micro-batch must be a positive divisor of effective batch 16")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--gpus", type=int, nargs="+", default=list(range(8)))
+    parser.add_argument("--gpus", type=int, nargs="+", required=True)
+    parser.add_argument("--micro-batch", type=int, default=8)
+    parser.add_argument("--workers", type=int, default=4)
     args = parser.parse_args()
+    try:
+        validate_hardware_args(args.gpus, args.micro_batch)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     running: dict[int, tuple[subprocess.Popen, dict]] = {}
+    failure_seen = False
     while True:
-        # reap finished
         for gpu in list(running):
             proc, item = running[gpu]
-            if proc.poll() is not None:
-                name = item.get("init") or f"pretrain-{item['backbone']}"
-                log(f"gpu{gpu}: {name} exited with {proc.returncode}")
-                del running[gpu]
+            if proc.poll() is None:
+                continue
+            name = exp_id(item["init"], item["frac"])
+            valid_marker = False
+            if proc.returncode == 0:
+                try:
+                    valid_marker = cell_done(item["init"], item["frac"])
+                except RuntimeError as exc:
+                    log(f"gpu{gpu}: {name}: {exc}")
+            if proc.returncode != 0 or not valid_marker:
+                failure_seen = True
+                log(
+                    f"gpu{gpu}: {name} FAILED (exit {proc.returncode}); "
+                    "no new cells will launch"
+                )
+            else:
+                log(f"gpu{gpu}: {name} complete")
+            del running[gpu]
+
+        if failure_seen:
+            if not running:
+                log("NODE QUEUE STOPPED AFTER FAILURE")
+                return 1
+            time.sleep(30)
+            continue
 
         work = [
-            item for item in build_work()
-            if ready(item)
-            and not any(r_item == item for _, r_item in running.values())
+            item
+            for item in build_work()
+            if not any(r_item == item for _, r_item in running.values())
         ]
-        free_gpus = [g for g in args.gpus if g not in running]
+        free_gpus = [gpu for gpu in args.gpus if gpu not in running]
         for gpu in free_gpus:
             if not work:
                 break
             item = work.pop(0)
-            running[gpu] = (launch(item, gpu), item)
+            running[gpu] = (
+                launch(
+                    item,
+                    gpu,
+                    micro_batch=args.micro_batch,
+                    workers=args.workers,
+                ),
+                item,
+            )
         if not running and not work:
             log("NODE QUEUE DRAINED")
             return 0
-        time.sleep(60)
+        time.sleep(30)
 
 
 if __name__ == "__main__":

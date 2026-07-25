@@ -4,11 +4,11 @@
   cell and (re)build ``runs/summary/grid.csv`` — one row per run with the
   dev-selected threshold's test/dev metrics, per-arm metadata from
   configs/arms.yaml, and a ``monotonicity_ok`` flag per arm (F1
-  non-decreasing in label fraction within seed noise; a False is a STOP,
+  non-decreasing within the fixed diagnostic tolerance; a False is a STOP,
   DEVPLAN P5 acceptance).
 - ``plot``: render the two-track label-efficiency figure (x = label
   fraction, log scale; y = F1; solid ViT / dashed CNN; one color per
-  pretraining role; shaded seed bands when reruns exist) ->
+  pretraining role) ->
   ``runs/summary/label_efficiency.png``. Renders whatever cells exist, so
   the partial Phase-4 figure and the full Phase-5 figure share one code
   path.
@@ -25,9 +25,21 @@ ROLE_COLORS = {
     "floor": "#888888",
     "optical": "#1f77b4",
     "sar": "#d62728",
-    "supervised": "#2ca02c",
+    "imagenet": "#2ca02c",
 }
-SEED_NOISE_TOLERANCE = 0.02  # monotone "within seed noise" slack (F1 points)
+MONOTONICITY_TOLERANCE = 0.02  # fixed F1-point diagnostic; not uncertainty
+
+
+def metric_column(table) -> str:
+    """Choose one complete point-estimate column for the whole figure."""
+
+    if "test_f1" in table.columns and table["test_f1"].notna().all():
+        return "test_f1"
+    if "dev_f1" in table.columns and table["dev_f1"].notna().all():
+        return "dev_f1"
+    raise ValueError(
+        "grid rows do not share a complete test_f1 or dev_f1 column"
+    )
 
 
 def collect(arms_config: dict, runs_root: Path, out_csv: Path) -> "object":
@@ -68,12 +80,16 @@ def collect(arms_config: dict, runs_root: Path, out_csv: Path) -> "object":
 
     table = pd.DataFrame(rows)
     if not table.empty:
+        if table.duplicated(["init", "label_frac"]).any():
+            raise ValueError(
+                "duplicate arm/fraction rows violate the seed-0 point-estimate design"
+            )
         table["monotonicity_ok"] = True
-        metric = "test_f1" if table["test_f1"].notna().any() else "dev_f1"
+        metric = metric_column(table)
         for init_name, group in table.groupby("init"):
-            means = group.groupby("label_frac")[metric].mean().sort_index()
-            drops = means.diff().fillna(0.0)
-            if (drops < -SEED_NOISE_TOLERANCE).any():
+            points = group.sort_values("label_frac")[metric]
+            drops = points.diff().fillna(0.0)
+            if (drops < -MONOTONICITY_TOLERANCE).any():
                 table.loc[table["init"] == init_name, "monotonicity_ok"] = False
 
     out_csv.parent.mkdir(parents=True, exist_ok=True)
@@ -91,21 +107,22 @@ def plot(table, out_png: Path) -> None:
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    metric = "test_f1" if table["test_f1"].notna().any() else "dev_f1"
+    if table.duplicated(["track", "role", "label_frac"]).any():
+        raise ValueError(
+            "duplicate track/role/fraction rows cannot be plotted as point estimates"
+        )
+    metric = metric_column(table)
     fig, axis = plt.subplots(figsize=(7.5, 5.5))
 
     for (track, role), group in table.groupby(["track", "role"]):
-        stats = (
-            group.groupby("label_frac")[metric]
-            .agg(["mean", "min", "max"])
-            .sort_index()
-        )
+        points = group.sort_values("label_frac")
         style = "-" if track == "vit" else "--"
         color = ROLE_COLORS[role]
         label = f"{track.upper()} {role}"
-        axis.plot(stats.index, stats["mean"], style, color=color, marker="o", label=label)
-        if (stats["max"] - stats["min"]).max() > 0:
-            axis.fill_between(stats.index, stats["min"], stats["max"], color=color, alpha=0.12)
+        axis.plot(
+            points["label_frac"], points[metric], style,
+            color=color, marker="o", label=label,
+        )
 
     axis.set_xscale("log")
     axis.set_xticks(sorted(table["label_frac"].unique()))

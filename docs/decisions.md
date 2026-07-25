@@ -29,9 +29,9 @@ is gitignored, so the committed log lives here.
   study's metric) with patience 4 dev evals; `epochs: 50` acts as a safety
   ceiling, not a stopping point. No amendment, no re-pin. Consequence
   accepted: grid cost is measured-not-fixed (~500–1,100 GPU-h depending on
-  where stopping fires); the dev card runs recipe-conform cells (batch 16
-  verified at 7 GB) continuously, and the V100 node clears the tail when
-  available.
+  where stopping fires). The later P100 throughput gate rejected that node for
+  the active grid, and the owner assigned the remaining unchanged one-GPU jobs
+  to the validated RTX 5070 Ti. The historical V100 forecast is retired.
 
 ## Threshold-transfer fragility (measured 2026-07-11)
 
@@ -44,9 +44,10 @@ is gitignored, so the committed log lives here.
   confidences). The other seven f10 cells transferred within ~0.01-0.07.
 - Protocol unchanged (P2.2b frozen-dev-threshold is the plan's own and the
   0.305 is the reportable number), but: (a) P7 analysis must include a
-  threshold-sensitivity slice (frozen vs oracle gap per cell); (b) seed
-  reruns test whether beS1's fragility is systematic; (c) the writeup
-  reports both tiers where the gap is material.
+  threshold-sensitivity slice (frozen vs oracle gap per cell); (b) compare
+  calibration behavior across fractions and arms; and (c) report both tiers
+  where the gap is material. With seed 0 only, do not claim that this
+  fragility is systematic or estimate its seed variance.
 
 ## Geographic revisit overlap (owner-raised, measured 2026-07-09)
 
@@ -166,3 +167,113 @@ is gitignored, so the committed log lives here.
   finite-loss abort in the LightningModule now fails loudly instead of
   burning epochs. A GRN-fp16-overflow hypothesis was tested and DISPROVEN
   (autocast already runs `norm` in fp32) — no GRN patch is shipped.
+
+## Arms 4/8 and seed-count amendment (human decision, 2026-07-22)
+
+- **The original Arms 4/8 are superseded, not silently rewritten.** The
+  random-init→LS-SSDD→xView3 design was actually run at f10/seed 0 as
+  `vitsup-f10-s0` and `cnnsup-f10-s0`. Those outcomes and checkpoints remain
+  historical diagnostics, but are excluded from the revised study tables and
+  curves. Their LS-SSDD source training drove validation loss essentially to
+  zero on a 9,000-tile, 15-scene corpus whose seeded train/validation tiles
+  share scene backgrounds (see the pre-existing capacity caveat above). The
+  owner therefore judged this stage to be source-corpus memorization rather
+  than a defensible generic representation baseline. No LS-SSDD pretraining
+  job remains in the active matrix.
+- **Revised Arm 4 (run prefix `vitin1k`; init `vit_imagenet`)** is the
+  headless encoder from `timm/vit_base_patch16_224.augreg_in1k`: supervised
+  ImageNet-1K AugReg training from random initialization. The pinned HF
+  distribution is `timm/vit_base_patch16_224.augreg_in1k`, revision
+  `458542882691a06a8b667c6fb5fe5c9573093a81`, file `model.safetensors`,
+  SHA-256
+  `678a1ce471be7da9822fe2508497a5bcf6da4c6802053151b232ba88a42c21a2`
+  (Apache-2.0).
+- **Revised Arm 8 (run prefix `cnnin1k`; init `cnn_imagenet`)** is the
+  headless encoder from `timm/convnextv2_base.fcmae_ft_in1k`: ImageNet-1K
+  FCMAE self-supervision followed by supervised ImageNet-1K classification
+  fine-tuning. The pinned HF distribution is
+  `timm/convnextv2_base.fcmae_ft_in1k`, revision
+  `7b29800e499fdc06de5b612970f3384dc8d29ca5`, file
+  `model.safetensors`, SHA-256
+  `ec152f1e375edc2b3dfac7a81155a449b4c5cbb7c5cf0b9494838f6c87518d73`
+  (CC BY-NC 4.0).
+- **Interpretation is bounded:** both replacements use the same generic
+  source dataset (ImageNet-1K) and end at the same supervised ImageNet-1K
+  classification objective, but their training histories are not matched:
+  ViT uses supervised AugReg from scratch, whereas ConvNeXt-V2 uses
+  FCMAE→supervised fine-tuning. They are the within-track generic-ImageNet
+  controls; comparisons of their absolute cross-track scores cannot isolate
+  architecture from pretraining history. Backbone architecture, fixed
+  `[VH, VV, VH−VV]` input, detector, schedule, splits, and sacred scorer are
+  unchanged.
+- **One seed only.** The active study reports seed-0 point estimates; the
+  former seed-1/2 rerun tranche is removed. Curves are descriptive and must
+  not claim seed variance or statistical uncertainty. The active run count is
+  32 core cells (8 arms × 4 label fractions × 1 seed) plus R2 YOLO26 and R3
+  LocateAnything, for **34 total runs**. The former optional ImageNet R1 is
+  absorbed into the two core ImageNet roles and is no longer a separate run.
+
+## P100 f10 throughput tripwire and resolution (human decision, 2026-07-22)
+
+- All five free physical P100s (host IDs 3–7) were locked to the container;
+  the two revised f10 cells launched concurrently on container-local CUDA
+  devices 0 and 1 with the frozen effective batch 16 (micro-batch 8,
+  accumulation 2). Both exact checkpoints loaded fully and losses stayed
+  finite.
+- Stabilized epoch-0 throughput was **0.95 steps/s for ViT** and **0.20
+  steps/s for ConvNeXt-V2**, with 1,402 training batches per f10 epoch. Before
+  whole-scene dev evaluation, that projects to 20.50 and 97.36 training hours
+  respectively at the 50-epoch ceiling (10.25 and 48.68 hours even at 25
+  epochs).
+- Comparable completed f10 runs on the development GPU took 3.06–3.49 hours
+  for ViT and 6.43–6.48 hours for 50-epoch CNN cells. The P100 projections are
+  therefore about **5.9× and 15.0× slower**, beyond DEVPLAN's mandatory >2×
+  compute/time tripwire.
+- Both trainers were interrupted gracefully during epoch 0. Their partial
+  configuration/metric probes were moved under
+  `runs/probes/2026-07-22-p100-throughput/`; the active run-ID paths are
+  clear, and no checkpoint or `final_metrics.json` exists. The structured
+  measurement is
+  `results/throughput/p100_f10_probe_2026-07-22.json`.
+- **RESOLVED by hardware move:** the owner selected the already-validated RTX
+  5070 Ti for the 26 remaining core cells. The same one-GPU Trainer path is
+  retained; DDP, global effective batch, detector, optimizer, schedule, splits,
+  seed, and scorer are unchanged. Completed 5070 timings project roughly
+  19–22 continuous compute days after the ignored data, prior run records, and
+  both amended ImageNet checkpoint directories are transferred and verified.
+  The P100 probes remain stopped provenance and must not be resumed without a
+  new human decision.
+
+## fp16 focal-loss overflow fix (human decision, 2026-07-23)
+
+- **cnnin1k-f10-s0 died deterministically at epoch 18** (twice, same batch —
+  optimizer step ~641/701) via the finite-loss abort, after a healthy and
+  leading trajectory (dev F1 0.862/0.873/0.869 at epochs 4/9/14). Both partial
+  runs and their checkpoints are archived under
+  `runs/probes/2026-07-23-5070-gpu-contention-crash/`. (The first archived
+  attempt there also records an unrelated 3-way GPU-contention OOM crash and a
+  harness-kill: this cell took three environmental strikes before the real
+  numeric defect surfaced.)
+- **Root cause is in the loss, not the backbone**: under fp16 autocast the
+  focal loss's `clamp(eps, 1 - eps)` upper bound is a NO-OP — `1 - 1e-6`
+  rounds to exactly 1.0 in half precision (largest representable half below
+  1.0 is `1 - 2^-11`), and fp16 `sigmoid(x) == 1.0` exactly for `x >~ 9`. A
+  Gaussian-shoulder pixel adjacent to a confidently detected vessel is a
+  penalty-reduced NEGATIVE with `target < 1`; when the sharpening detector
+  drives its logit past ~9, `log(1 - prob) = log(0) = -inf`. The strongest
+  CNN arm crossed first — this is a capability-triggered failure, not noise.
+- **Evidence**: static — fp16 numerics shown above are exact; dynamic — a
+  1,402-batch sweep with the archived epoch-9 checkpoint measured max logit
+  5.15 (no saturation yet) and fp16-vs-fp32 loss agreement to ~1e-5 on every
+  batch, i.e. the fix is numerically inert away from the saturation cliff.
+- **Fix (owner-approved)**: `penalty_reduced_focal_loss` casts its inputs to
+  fp32 at entry (losses.py), restoring the clamp and bounding the worst-case
+  per-pixel penalty at `-log(1e-6)`. This implements the plan's own
+  precision rule ("logit/softmax math in fp32" — DEVPLAN node adaptation
+  rule 2), applied identically to every arm. Regression:
+  `tests/test_focal_loss_fp16.py`.
+- **Scope (owner decision)**: rerun `cnnin1k-f10-s0` only. The seven
+  completed f10 cells stand — their training never entered the saturation
+  regime (their losses were finite throughout, and the parity sweep bounds
+  the counterfactual difference at input-rounding scale, well under run-level
+  cuDNN nondeterminism). Do not silently rerun completed cells for this.

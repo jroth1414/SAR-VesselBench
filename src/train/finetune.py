@@ -25,11 +25,11 @@ INIT_SHORT = {
     "vit_random": "vitrand",
     "satdino_b": "satdino",
     "sarmae_b": "sarmae",
-    "vit_supervised": "vitsup",
+    "vit_imagenet": "vitin1k",
     "cnn_random": "cnnrand",
     "bigearthnet_s2": "beS2",
     "bigearthnet_s1": "beS1",
-    "cnn_supervised": "cnnsup",
+    "cnn_imagenet": "cnnin1k",
 }
 
 
@@ -57,7 +57,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--epochs", type=int, default=None, help="override detector.yaml (smoke only)")
     parser.add_argument("--data-config", default="configs/data.yaml")
     parser.add_argument("--detector-config", default="configs/detector.yaml")
-    parser.add_argument("--supervised-checkpoint", default=None, help="for vit_supervised / cnn_supervised")
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument(
         "--smoke",
@@ -130,7 +129,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         epochs=epochs,
         warmup_epochs=det_cfg["schedule"]["warmup_epochs"],
         head_channels=det_cfg["head"]["channels"],
-        supervised_checkpoint=args.supervised_checkpoint,
     )
 
     dev_eval = DevSceneEval(

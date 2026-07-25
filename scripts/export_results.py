@@ -3,10 +3,10 @@
 runs/ stays gitignored (checkpoints, logs, media — ground rule 11); this
 copies ONLY the small, license-clean result data so training/performance
 numbers can be shared with project partners through the repo and synced
-back from the V100 node the same way:
+back from a GPU node the same way:
 
 - runs/summary/grid.csv + label_efficiency.png (pure plot)
-- every run's final_metrics.json and per-epoch metrics.csv
+- every current-manifest run's final_metrics.json and per-epoch metrics.csv
 - p36_summary.json (the P3.6 gate record)
 
 Deliberately EXCLUDED: checkpoints, chip/prediction galleries (they contain
@@ -18,6 +18,25 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+
+
+def current_exp_ids() -> set[str]:
+    """Return only active core/reference ids; retired runs stay archived."""
+
+    import yaml
+
+    config = yaml.safe_load(Path("configs/arms.yaml").read_text())
+    exp_ids = set()
+    rerun_fracs = set(config["seeds"]["rerun_fracs"])
+    for meta in config["arms"].values():
+        for frac in config["label_fracs"]:
+            seeds = list(config["seeds"]["core"])
+            if frac in rerun_fracs:
+                seeds += list(config["seeds"]["reruns"])
+            for seed in seeds:
+                exp_ids.add(f"{meta['short']}-f{int(round(frac * 100))}-s{seed}")
+    exp_ids.update(ref["exp_id"] for ref in config["references"].values())
+    return exp_ids
 
 RUNS = Path("runs")
 OUT = Path("results")
@@ -36,7 +55,10 @@ def main() -> int:
         shutil.copy2(RUNS / "p36_summary.json", OUT / "p36_summary.json")
         copied += 1
 
+    allowed = current_exp_ids()
     for final in sorted(RUNS.glob("*/final_metrics.json")):
+        if final.parent.name not in allowed:
+            continue
         run_dir = OUT / final.parent.name
         run_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(final, run_dir / "final_metrics.json")
