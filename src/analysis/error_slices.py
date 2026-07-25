@@ -9,7 +9,9 @@ Outputs:
   gaps, dark-vessel support/recall, near-shore F1, and optional oracle fields
   when future exports include them.
 - ``role_deltas.csv``: per track/fraction/seed deltas versus that track's
-  random floor, plus SAR-vs-optical and supervised-vs-SAR contrasts.
+  random floor, plus SAR-vs-optical and ImageNet-vs-SAR contrasts.
+- ``threshold_transfer.png``: best-dev versus frozen-threshold test F1, with
+  large transfer gaps flagged.
 """
 
 from __future__ import annotations
@@ -163,12 +165,12 @@ def compute_role_deltas(slice_table: list[dict[str, Any]]) -> list[dict[str, Any
 
         sar = by_role.get("sar")
         optical = by_role.get("optical")
-        supervised = by_role.get("supervised")
+        imagenet = by_role.get("imagenet")
         if sar is not None and optical is not None:
             rows.append(_contrast_row(track, label_frac, seed, "sar_minus_optical", sar, optical))
-        if supervised is not None and sar is not None:
+        if imagenet is not None and sar is not None:
             rows.append(
-                _contrast_row(track, label_frac, seed, "supervised_minus_sar", supervised, sar)
+                _contrast_row(track, label_frac, seed, "imagenet_minus_sar", imagenet, sar)
             )
 
     return sorted(rows, key=lambda r: (r["track"], r["label_frac"], r["seed"], r["role"]))
@@ -215,6 +217,119 @@ def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         writer.writerows(rows)
 
 
+def plot_threshold_transfer(
+    slice_table: list[dict[str, Any]],
+    out_path: Path,
+) -> Path | None:
+    """Plot best-dev versus frozen-threshold test F1 for comparable rows."""
+
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
+
+    role_order = {"floor": 0, "optical": 1, "sar": 2, "imagenet": 3}
+    rows = [
+        row
+        for row in slice_table
+        if not _missing(row.get("dev_f1")) and not _missing(row.get("test_f1"))
+    ]
+    rows.sort(
+        key=lambda row: (
+            0 if row["track"] == "vit" else 1,
+            row["label_frac"],
+            row["seed"],
+            role_order.get(row["role"], 99),
+        )
+    )
+    if not rows:
+        return None
+
+    colors = {"vit": "#1f77b4", "cnn": "#ff7f0e"}
+    labels = [
+        f"{row['track'].upper()} · {row['role']} · "
+        f"{int(round(row['label_frac'] * 100))}%"
+        for row in rows
+    ]
+    y_values = list(reversed(range(len(rows))))
+
+    fig_height = max(4.5, 0.48 * len(rows) + 1.8)
+    fig, axis = plt.subplots(figsize=(8.5, fig_height))
+    for y_value, row in zip(y_values, rows):
+        color = colors[row["track"]]
+        axis.plot(
+            [row["test_f1"], row["dev_f1"]],
+            [y_value, y_value],
+            color=color,
+            linewidth=2.2,
+            alpha=0.8,
+        )
+        axis.scatter(
+            row["dev_f1"],
+            y_value,
+            s=58,
+            facecolor="white",
+            edgecolor=color,
+            linewidth=2,
+            zorder=3,
+        )
+        axis.scatter(
+            row["test_f1"],
+            y_value,
+            s=48,
+            marker="s",
+            color=color,
+            zorder=3,
+        )
+        if row["threshold_transfer_flag"]:
+            axis.annotate(
+                f"gap {row['dev_to_test_f1_gap']:.3f}",
+                (row["test_f1"], y_value),
+                xytext=(7, 7),
+                textcoords="offset points",
+                color="#b22222",
+                fontsize=8,
+                fontweight="bold",
+            )
+
+    axis.set_yticks(y_values, labels)
+    axis.set_xlabel("F1 (frozen scorer)")
+    axis.set_title("Dev-to-test threshold transfer")
+    axis.grid(axis="x", alpha=0.25)
+    axis.legend(
+        handles=[
+            Line2D(
+                [0],
+                [0],
+                marker="o",
+                markerfacecolor="white",
+                markeredgecolor="#555555",
+                markeredgewidth=2,
+                color="none",
+                label="best dev F1",
+            ),
+            Line2D(
+                [0],
+                [0],
+                marker="s",
+                markerfacecolor="#555555",
+                markeredgecolor="#555555",
+                color="none",
+                label="test F1 at frozen dev threshold",
+            ),
+        ],
+        loc="lower right",
+        fontsize=8,
+    )
+    fig.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=160)
+    plt.close(fig)
+    print(f"threshold-transfer figure -> {out_path}")
+    return out_path
+
+
 def write_phase7_tables(
     arms_config: dict[str, Any],
     results_root: Path,
@@ -228,6 +343,7 @@ def write_phase7_tables(
     deltas_path = out_dir / "role_deltas.csv"
     _write_csv(slice_path, slice_table)
     _write_csv(deltas_path, deltas)
+    plot_threshold_transfer(slice_table, out_dir / "threshold_transfer.png")
 
     print(f"{len(slice_table)} slice rows -> {slice_path}")
     print(f"{len(deltas)} delta rows -> {deltas_path}")

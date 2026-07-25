@@ -18,6 +18,7 @@ def _arms_config() -> dict:
             "vit_random": {"short": "vitrand", "track": "vit", "role": "floor"},
             "satdino_b": {"short": "satdino", "track": "vit", "role": "optical"},
             "sarmae_b": {"short": "sarmae", "track": "vit", "role": "sar"},
+            "vit_imagenet": {"short": "vitin1k", "track": "vit", "role": "imagenet"},
             "cnn_random": {"short": "cnnrand", "track": "cnn", "role": "floor"},
         },
         "label_fracs": [0.1],
@@ -96,13 +97,20 @@ def test_compute_role_deltas_stays_within_track(tmp_path: Path):
         "cnnrand-f10-s0",
         {"best_dev_f1": 0.5, "last_dev": {}, "test_f1": 0.40, "test_near_shore_f1": 0.0},
     )
+    _write_final(
+        tmp_path,
+        "vitin1k-f10-s0",
+        {"best_dev_f1": 0.78, "last_dev": {}, "test_f1": 0.70, "test_near_shore_f1": 0.2},
+    )
 
     table = collect_slice_metrics(_arms_config(), tmp_path)
     deltas = compute_role_deltas(table)
 
     vit_sar = next(row for row in deltas if row["track"] == "vit" and row["role"] == "sar")
     contrast = next(row for row in deltas if row["role"] == "sar_minus_optical")
+    imagenet_contrast = next(row for row in deltas if row["role"] == "imagenet_minus_sar")
 
     assert round(vit_sar["test_f1_vs_floor"], 2) == 0.12
     assert round(contrast["test_f1"], 2) == 0.07
+    assert round(imagenet_contrast["test_f1"], 2) == -0.02
     assert "cnn" in {row["track"] for row in deltas}
