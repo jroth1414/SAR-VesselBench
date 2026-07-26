@@ -10,8 +10,8 @@ input:
 backbones:
   vit: {timm_id: vit_base_patch16_224, out_stride: 16}
   cnn: {timm_id: convnextv2_base, out_stride: 32}
-  # Smaller-variant fallback, triggered ONLY by STOP condition #6 (compute
-  # >2x budget) and applied to a whole track uniformly (P3.1):
+  # Historical smaller-variant escape hatch. Never activate automatically;
+  # any use requires a separate human STOP and a full-track rerun (P3.1):
   fallback: {vit: vit_small_patch16_224, cnn: convnextv2_tiny}
 
 head:
@@ -34,7 +34,7 @@ schedule:
   warmup_epochs: 5
   cosine: true
   batch_size: 16
-  precision: 16-mixed        # fp16 + GradScaler; norms fp32 (Volta-safe)
+  precision: 32-true         # owner-approved V100 stability amendment (2026-07-26)
 
 sampler: {fg_frac: 0.5}
 

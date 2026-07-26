@@ -17,9 +17,12 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 from typing import Sequence
+
+import yaml
 
 ROLE_COLORS = {
     "floor": "#888888",
@@ -28,6 +31,9 @@ ROLE_COLORS = {
     "imagenet": "#2ca02c",
 }
 MONOTONICITY_TOLERANCE = 0.02  # fixed F1-point diagnostic; not uncertainty
+DETECTOR_PATH = Path(__file__).resolve().parents[2] / "configs" / "detector.yaml"
+EXPECTED_DETECTOR_SHA256 = hashlib.sha256(DETECTOR_PATH.read_bytes()).hexdigest()
+EXPECTED_PRECISION = yaml.safe_load(DETECTOR_PATH.read_text())["schedule"]["precision"]
 
 
 def metric_column(table) -> str:
@@ -62,6 +68,13 @@ def collect(arms_config: dict, runs_root: Path, out_csv: Path) -> "object":
                 if not final.exists():
                     continue
                 payload = json.loads(final.read_text())
+                if (
+                    payload.get("precision") != EXPECTED_PRECISION
+                    or payload.get("detector_sha256") != EXPECTED_DETECTOR_SHA256
+                ):
+                    raise ValueError(
+                        f"{exp_id}: completion marker does not match shared recipe"
+                    )
                 dev = payload.get("last_dev") or {}
                 rows.append(
                     {
@@ -71,6 +84,9 @@ def collect(arms_config: dict, runs_root: Path, out_csv: Path) -> "object":
                         "role": meta["role"],
                         "label_frac": frac,
                         "seed": seed,
+                        "precision": payload.get("precision"),
+                        "detector_sha256": payload.get("detector_sha256"),
+                        "git_sha": payload.get("git_sha"),
                         "dev_f1": payload.get("best_dev_f1"),
                         "dev_threshold": dev.get("threshold"),
                         "test_f1": payload.get("test_f1"),  # written by P5.4 scoring

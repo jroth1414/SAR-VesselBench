@@ -58,13 +58,14 @@ class HeatmapLitModule(L.LightningModule):
             logits, batch["heatmap"], batch["mask"]
         )
         if not torch.isfinite(loss):
-            # Fail LOUDLY: a NaN forward is permanent (GradScaler only guards
-            # gradients) and silently burns epochs — the P3.6 bigearthnet_s1
-            # run trained two more epochs on NaN before the dev eval refused
+            # Fail LOUDLY: a non-finite forward is permanent and silently
+            # burns epochs — the P3.6 bigearthnet_s1 run trained two more
+            # epochs on NaN before the dev eval refused
             # the non-finite heatmap.
             raise RuntimeError(
                 f"non-finite {stage} loss at epoch {self.current_epoch} — "
-                "fp16 divergence (see DEVPLAN risk register); stop and diagnose"
+                "under the shared precision recipe; stop and diagnose "
+                "(DEVPLAN risk register)"
             )
         self.log(f"{stage}_loss", loss, prog_bar=stage == "train", sync_dist=stage != "train")
         return loss

@@ -1,4 +1,4 @@
-"""Sequential grid-cell queue for the dev card (Phase 4/5, option B).
+"""Sequential grid-cell queue for the active V100 recipe (Phase 4/5).
 
 Runs recipe-conform grid cells (exact frozen detector.yaml: batch 16, early
 stopping, plan-literal epochs) one at a time, cheapest fractions first so the
@@ -12,11 +12,14 @@ ordinary random/downloaded initializations; no prerequisite training jobs.
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import json
 import math
 import subprocess
 import sys
 from pathlib import Path
+
+import yaml
 
 SHORT = {
     "vit_random": "vitrand",
@@ -32,6 +35,17 @@ ALL_ARMS = [
     "vit_random", "satdino_b", "sarmae_b", "vit_imagenet",
     "cnn_random", "bigearthnet_s2", "bigearthnet_s1", "cnn_imagenet",
 ]
+REPO = Path(__file__).resolve().parents[1]
+DETECTOR_PATH = REPO / "configs" / "detector.yaml"
+EXPECTED_DETECTOR_SHA256 = hashlib.sha256(DETECTOR_PATH.read_bytes()).hexdigest()
+EXPECTED_PRECISION = yaml.safe_load(DETECTOR_PATH.read_text())["schedule"]["precision"]
+EXPECTED_GIT_SHA = subprocess.run(
+    ["git", "-c", f"safe.directory={REPO}", "rev-parse", "HEAD"],
+    cwd=REPO,
+    capture_output=True,
+    text=True,
+    check=True,
+).stdout.strip()
 
 
 def build_queue() -> list[dict]:
@@ -53,8 +67,17 @@ def cell_done(exp: str, runs_root: Path = Path("runs")) -> bool:
         best_dev_f1 = float(payload["best_dev_f1"])
     except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         raise RuntimeError(f"invalid completion marker: {final}") from exc
-    if payload.get("exp_id") != exp or not math.isfinite(best_dev_f1):
-        raise RuntimeError(f"invalid completion marker contents: {final}")
+    if (
+        payload.get("exp_id") != exp
+        or not math.isfinite(best_dev_f1)
+        or payload.get("precision") != EXPECTED_PRECISION
+        or payload.get("detector_sha256") != EXPECTED_DETECTOR_SHA256
+        or payload.get("git_sha") != EXPECTED_GIT_SHA
+        or payload.get("micro_batch") != 16
+        or payload.get("gradient_accumulation") != 1
+        or payload.get("effective_batch") != 16
+    ):
+        raise RuntimeError(f"invalid completion marker contents or recipe: {final}")
     return True
 
 
@@ -81,12 +104,9 @@ def main() -> int:
             "0",
             "--workers",
             "4",
+            "--micro-batch",
+            "16",
         ]
-        if item["init"].startswith(("cnn", "bigearthnet")):
-            # ConvNeXt at the recipe batch overflows the 16 GB dev card
-            # into shared memory (~20x slowdown); micro-batch 8 with
-            # gradient accumulation keeps the effective batch at 16.
-            argv += ["--micro-batch", "8"]
         log(f"{exp}: starting (init {item['init']}, frac {item['frac']})")
         code = subprocess.run(argv).returncode
         if code != 0:

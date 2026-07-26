@@ -1,9 +1,10 @@
 """Freeze guard for configs/detector.yaml (DEVPLAN do-not-touch manifest).
 
-Pinned 2026-07-05 at the sprint-3-detector merge (phase-3-done): the shared
-head / optimizer / schedule / augmentation / decode contract — the fairness
-guarantee every arm trains under. Never edited per study-arm; changing it
-after this pin requires an explicit human STOP and re-pin (ground rule 2).
+Originally pinned at the sprint-3-detector merge. Re-pinned 2026-07-26 on
+``sprint-7c-fp32-grid`` after the owner approved one shared ``32-true``
+amendment and a from-scratch rerun of all 32 core cells. The head, optimizer,
+schedule, augmentation, and decode contract remain identical for every arm;
+future changes still require an explicit human STOP and re-pin.
 """
 
 from __future__ import annotations
@@ -11,8 +12,10 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
+import yaml
+
 PINNED_DETECTOR_SHA256 = (
-    "4fd1bfe88861cc676dd67b2092e379fbcf401dd9c1d42fb09e81a84b9cdbe2f8"
+    "c42ae65bf9045cc93f0d73ae1437b2f6a1300670cb49d8e93f83a39d58a62a12"
 )
 
 
@@ -23,3 +26,6 @@ def test_detector_immutable():
     digest = hashlib.sha256(config_path.read_bytes()).hexdigest()
 
     assert digest == PINNED_DETECTOR_SHA256
+
+    config = yaml.safe_load(config_path.read_text())
+    assert config["schedule"]["precision"] == "32-true"

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 from pathlib import Path
 from typing import Sequence
@@ -63,7 +64,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
 
     data_cfg = yaml.safe_load(Path(args.data_config).read_text())
-    det_cfg = yaml.safe_load(Path(args.detector_config).read_text())
+    detector_path = Path(args.detector_config)
+    det_cfg = yaml.safe_load(detector_path.read_text())
+    detector_sha256 = hashlib.sha256(detector_path.read_bytes()).hexdigest()
     arms_cfg = yaml.safe_load(Path(args.arms_config).read_text())
 
     # Entry preconditions (P6): every evaluated cell finished with a frozen
@@ -78,6 +81,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 missing.append(exp)
                 continue
             payload = json.loads(final.read_text())
+            if (
+                payload.get("precision") != det_cfg["schedule"]["precision"]
+                or payload.get("detector_sha256") != detector_sha256
+            ):
+                missing.append(exp)
+                continue
             threshold = (payload.get("last_dev") or {}).get("threshold")
             checkpoint = Path("runs") / exp / "checkpoints" / "best.ckpt"
             if threshold is None or not checkpoint.exists():
@@ -108,6 +117,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "started": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
                 "cells": [c[0] for c in cells],
                 "n_scenes": len(eval_scenes),
+                "inference_precision": det_cfg["schedule"]["precision"],
+                "detector_sha256": detector_sha256,
             },
             indent=1,
         ),
@@ -149,6 +160,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 tile_stride_px=det_cfg["eval"]["tile_stride_px"],
                 batch_size=det_cfg["eval"]["infer_batch"],
                 device=args.device,
+                precision=det_cfg["schedule"]["precision"],
             )
             for scene_id in eval_scenes
         }
@@ -161,6 +173,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "init": init_name,
                 "label_frac": frac,
                 "threshold": threshold,
+                "inference_precision": det_cfg["schedule"]["precision"],
                 "f1": result.aggregate.f1,
                 "precision": result.aggregate.precision,
                 "recall": result.aggregate.recall,

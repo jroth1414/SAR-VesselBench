@@ -36,6 +36,15 @@ GSD_M = 10.0
 OUTPUT_STRIDE_PX = 4
 OUTPUT_STRIDE_M = OUTPUT_STRIDE_PX * GSD_M  # 40.0 — the P2.2 contract
 SOURCE_CASE = {"ais": "AIS", "ais/manual": "AIS/Manual", "manual": "Manual"}
+SUPPORTED_PRECISIONS = {"16-mixed", "32-true"}
+
+
+def _autocast_enabled(precision: str, device_type: str) -> bool:
+    """Whether the shared recipe enables model-forward autocast."""
+
+    if precision not in SUPPORTED_PRECISIONS:
+        raise ValueError(f"unsupported shared inference precision: {precision}")
+    return device_type == "cuda" and precision == "16-mixed"
 
 
 def normalize_source(source: object) -> str | None:
@@ -113,7 +122,7 @@ def infer_scene(
     tile_stride_px: int = 384,
     batch_size: int = 8,
     device: str | torch.device = "cuda",
-    autocast_dtype: torch.dtype = torch.float16,
+    precision: str,
 ) -> list[PredictionPoint]:
     """Run tiled inference over one scene -> scene-meter PredictionPoints."""
 
@@ -152,7 +161,11 @@ def infer_scene(
         if not batch_tiles:
             return
         tensor = torch.from_numpy(np.stack(batch_tiles)).to(device)
-        with torch.autocast(device.type, dtype=autocast_dtype, enabled=device.type == "cuda"):
+        with torch.autocast(
+            device.type,
+            dtype=torch.float16,
+            enabled=_autocast_enabled(precision, device.type),
+        ):
             heat = torch.sigmoid(model(tensor)).squeeze(1).float().cpu().numpy()
         for (row0, col0), tile_heat in zip(batch_origins, heat):
             out_r = row0 // OUTPUT_STRIDE_PX

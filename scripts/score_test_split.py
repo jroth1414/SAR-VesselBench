@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 from pathlib import Path
 from typing import Sequence
@@ -26,7 +27,14 @@ def log(message: str) -> None:
     print(f"[{dt.datetime.now().isoformat(timespec='seconds')}] {message}", flush=True)
 
 
-def score_run(run_dir: Path, *, data_cfg: dict, det_cfg: dict, device: str) -> dict | None:
+def score_run(
+    run_dir: Path,
+    *,
+    data_cfg: dict,
+    det_cfg: dict,
+    detector_sha256: str,
+    device: str,
+) -> dict | None:
     import pandas as pd
     import torch
 
@@ -37,6 +45,17 @@ def score_run(run_dir: Path, *, data_cfg: dict, det_cfg: dict, device: str) -> d
 
     final_path = run_dir / "final_metrics.json"
     payload = json.loads(final_path.read_text())
+    expected_precision = det_cfg["schedule"]["precision"]
+    if (
+        payload.get("precision") != expected_precision
+        or payload.get("detector_sha256") != detector_sha256
+    ):
+        raise RuntimeError(
+            f"{run_dir.name}: completion marker precision mismatch "
+            f"({payload.get('precision')} != {expected_precision}; "
+            f"detector hash {payload.get('detector_sha256')} != "
+            f"{detector_sha256})"
+        )
     if payload.get("test_f1") is not None:
         return None
     dev = payload.get("last_dev") or {}
@@ -73,6 +92,7 @@ def score_run(run_dir: Path, *, data_cfg: dict, det_cfg: dict, device: str) -> d
             tile_stride_px=det_cfg["eval"]["tile_stride_px"],
             batch_size=det_cfg["eval"]["infer_batch"],
             device=device,
+            precision=det_cfg["schedule"]["precision"],
         )
 
     result = score_dataset(gt_by_scene, apply_threshold(pred_by_scene, threshold))
@@ -87,6 +107,7 @@ def score_run(run_dir: Path, *, data_cfg: dict, det_cfg: dict, device: str) -> d
             "test_fp": result.aggregate.fp,
             "test_fn": result.aggregate.fn,
             "test_threshold_applied": threshold,
+            "test_inference_precision": expected_precision,
             "test_dark_recall": dark.recall,
             "test_dark_support": dark.tp + dark.fn,
             "test_near_shore_f1": near.f1,
@@ -112,7 +133,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     data_cfg = yaml.safe_load(Path(args.data_config).read_text())
-    det_cfg = yaml.safe_load(Path(args.detector_config).read_text())
+    detector_path = Path(args.detector_config)
+    det_cfg = yaml.safe_load(detector_path.read_text())
+    detector_sha256 = hashlib.sha256(detector_path.read_bytes()).hexdigest()
     arms_cfg = yaml.safe_load(Path(args.arms_config).read_text())
 
     exp_ids = []
@@ -132,7 +155,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         if not (run_dir / "final_metrics.json").exists():
             continue
         log(f"{exp_id}: scoring test split (16 scenes, frozen dev threshold)")
-        payload = score_run(run_dir, data_cfg=data_cfg, det_cfg=det_cfg, device=args.device)
+        payload = score_run(
+            run_dir,
+            data_cfg=data_cfg,
+            det_cfg=det_cfg,
+            detector_sha256=detector_sha256,
+            device=args.device,
+        )
         if payload:
             scored += 1
             log(

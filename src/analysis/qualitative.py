@@ -79,6 +79,7 @@ def render_pred_gallery(
     n_cols: int = 4,
     seed: int = 0,
     tau: float = 0.05,
+    precision: str = "32-true",
 ) -> Path:
     """Overlay decoded predictions (crosses) + labels (circles) on dev chips.
 
@@ -95,6 +96,7 @@ def render_pred_gallery(
 
     from src.data.datasets import FineTuneDataset
     from src.eval.decode import decode_heatmap
+    from src.eval.infer_scene import _autocast_enabled
     from src.train.lit_modules import HeatmapLitModule
 
     module = HeatmapLitModule.load_from_checkpoint(str(checkpoint), map_location="cuda")
@@ -121,7 +123,11 @@ def render_pred_gallery(
 
     fig, axes = plt.subplots(n_rows, n_cols, figsize=(3 * n_cols, 3 * n_rows))
     for axis, sample in zip(np.asarray(axes).ravel(), samples):
-        with torch.no_grad(), torch.autocast("cuda", dtype=torch.float16):
+        with torch.no_grad(), torch.autocast(
+            "cuda",
+            dtype=torch.float16,
+            enabled=_autocast_enabled(precision, "cuda"),
+        ):
             logits = module(sample["image"][None].cuda())
         heat = torch.sigmoid(logits)[0, 0].float().cpu().numpy()
         peaks = decode_heatmap(heat, threshold=tau, output_stride_m=4.0, d_nms_m=12.0)
@@ -150,6 +156,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="configs/data.yaml")
+    parser.add_argument("--detector-config", default="configs/detector.yaml")
     parser.add_argument("--qa", action="store_true", help="render runs/qa/chips.png")
     parser.add_argument(
         "--pred-gallery",
@@ -171,11 +178,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             seed=args.seed,
         )
     if args.pred_gallery:
+        detector = yaml.safe_load(Path(args.detector_config).read_text())
         render_pred_gallery(
             Path(args.pred_gallery),
             config=config,
             out_path=Path("runs/qa/pred_gallery.png"),
             seed=args.seed,
+            precision=detector["schedule"]["precision"],
         )
     return 0
 

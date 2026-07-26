@@ -15,6 +15,7 @@ Section-12 manifest: ``{init_short}-f{frac}-s{seed}``.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 from typing import Sequence
@@ -83,7 +84,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     data_cfg = yaml.safe_load(Path(args.data_config).read_text())
-    det_cfg = yaml.safe_load(Path(args.detector_config).read_text())
+    detector_path = Path(args.detector_config)
+    det_cfg = yaml.safe_load(detector_path.read_text())
+    detector_sha256 = hashlib.sha256(detector_path.read_bytes()).hexdigest()
+    git_sha = _git_sha()
 
     run_id = exp_id(args.init, args.label_frac, args.seed)
     if args.exp_suffix:
@@ -190,7 +194,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         "args": vars(args),
         "detector": det_cfg,
         "data": data_cfg,
-        "git_sha": _git_sha(),
+        "git_sha": git_sha,
+        "detector_sha256": detector_sha256,
+        "execution": {
+            "micro_batch": batch_size,
+            "gradient_accumulation": accumulate,
+            "effective_batch": batch_size * accumulate,
+        },
     }
     (run_dir / "config.yaml").write_text(yaml.safe_dump(resolved), newline="\n")
 
@@ -204,6 +214,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     final = {
         "exp_id": run_id,
+        "git_sha": git_sha,
+        "detector_sha256": detector_sha256,
+        "precision": det_cfg["schedule"]["precision"],
+        "micro_batch": batch_size,
+        "gradient_accumulation": accumulate,
+        "effective_batch": batch_size * accumulate,
         "epochs_run": trainer.current_epoch,
         "best_dev_f1": dev_eval.best,
         "last_dev": dev_eval.last_result,
@@ -217,12 +233,14 @@ def main(argv: Sequence[str] | None = None) -> int:
 def _git_sha() -> str:
     import subprocess
 
-    try:
-        return subprocess.run(
-            ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True
-        ).stdout.strip()
-    except Exception:  # noqa: BLE001
-        return "unknown"
+    repo = Path(__file__).resolve().parents[2]
+    return subprocess.run(
+        ["git", "-c", f"safe.directory={repo}", "rev-parse", "HEAD"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
 
 
 class DevSceneEval(Callback):
@@ -261,6 +279,7 @@ class DevSceneEval(Callback):
             tile_stride_px=self.det_cfg["eval"]["tile_stride_px"],
             batch_size=self.det_cfg["eval"]["infer_batch"],
             device=pl_module.device,
+            precision=self.det_cfg["schedule"]["precision"],
         )
         self.last_result = result
         if self.best is None or result["f1"] > self.best:

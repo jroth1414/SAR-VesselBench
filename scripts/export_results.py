@@ -6,7 +6,8 @@ numbers can be shared with project partners through the repo and synced
 back from a GPU node the same way:
 
 - runs/summary/grid.csv + label_efficiency.png (pure plot)
-- every current-manifest run's final_metrics.json and per-epoch metrics.csv
+- every current-manifest run's final_metrics.json, resolved config.yaml,
+  runtime_provenance.json, and per-epoch metrics.csv
 - p36_summary.json (the P3.6 gate record)
 
 Deliberately EXCLUDED: checkpoints, chip/prediction galleries (they contain
@@ -63,6 +64,14 @@ def main() -> int:
         run_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(final, run_dir / "final_metrics.json")
         copied += 1
+        config_yaml = final.parent / "config.yaml"
+        if config_yaml.exists():
+            shutil.copy2(config_yaml, run_dir / "config.yaml")
+            copied += 1
+        runtime_provenance = final.parent / "runtime_provenance.json"
+        if runtime_provenance.exists():
+            shutil.copy2(runtime_provenance, run_dir / "runtime_provenance.json")
+            copied += 1
         metrics_csv = final.parent / "metrics" / "metrics.csv"
         if metrics_csv.exists():
             shutil.copy2(metrics_csv, run_dir / "metrics.csv")

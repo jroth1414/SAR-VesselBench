@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from scripts import run_grid_node, run_grid_queue
+from scripts import export_results, run_grid_node, run_grid_queue
 
 
 EXPECTED_SHORTS = {
@@ -96,10 +96,12 @@ def test_runners_enumerate_the_exact_core_manifest():
 
 
 def test_node_runner_rejects_unsafe_hardware_args():
-    run_grid_node.validate_hardware_args([0, 1, 2, 3, 4], 8)
+    run_grid_node.validate_hardware_args([0, 1, 2, 3, 4], 16)
     with pytest.raises(ValueError, match="duplicate"):
-        run_grid_node.validate_hardware_args([0, 0], 8)
-    with pytest.raises(ValueError, match="divisor"):
+        run_grid_node.validate_hardware_args([0, 0], 16)
+    with pytest.raises(ValueError, match="requires --micro-batch 16"):
+        run_grid_node.validate_hardware_args([0], 8)
+    with pytest.raises(ValueError, match="requires --micro-batch 16"):
         run_grid_node.validate_hardware_args([0], 3)
 
 
@@ -110,18 +112,79 @@ def test_runner_completion_markers_are_value_checked(tmp_path):
     run_dir.mkdir()
     final = run_dir / "final_metrics.json"
     final.write_text(
-        json.dumps({"exp_id": exp, "best_dev_f1": 0.5}),
+        json.dumps(
+            {
+                "exp_id": exp,
+                "best_dev_f1": 0.5,
+                "precision": run_grid_node.EXPECTED_PRECISION,
+                "detector_sha256": run_grid_node.EXPECTED_DETECTOR_SHA256,
+                "git_sha": run_grid_node.EXPECTED_GIT_SHA,
+                "micro_batch": 16,
+                "gradient_accumulation": 1,
+                "effective_batch": 16,
+            }
+        ),
         newline="\n",
     )
 
+    assert run_grid_node.EXPECTED_PRECISION == "32-true"
+    assert (
+        run_grid_node.EXPECTED_DETECTOR_SHA256
+        == run_grid_queue.EXPECTED_DETECTOR_SHA256
+    )
     assert run_grid_node.cell_done(init, frac, tmp_path)
     assert run_grid_queue.cell_done(exp, tmp_path)
 
     final.write_text(
-        json.dumps({"exp_id": "wrong-id", "best_dev_f1": 0.5}),
+        json.dumps(
+            {
+                "exp_id": "wrong-id",
+                "best_dev_f1": 0.5,
+                "precision": run_grid_node.EXPECTED_PRECISION,
+                "detector_sha256": run_grid_node.EXPECTED_DETECTOR_SHA256,
+                "git_sha": run_grid_node.EXPECTED_GIT_SHA,
+                "micro_batch": 16,
+                "gradient_accumulation": 1,
+                "effective_batch": 16,
+            }
+        ),
         newline="\n",
     )
     with pytest.raises(RuntimeError, match="contents"):
         run_grid_node.cell_done(init, frac, tmp_path)
     with pytest.raises(RuntimeError, match="contents"):
         run_grid_queue.cell_done(exp, tmp_path)
+
+    payload = {
+        "exp_id": exp,
+        "best_dev_f1": 0.5,
+        "precision": "16-mixed",
+        "detector_sha256": run_grid_node.EXPECTED_DETECTOR_SHA256,
+        "git_sha": run_grid_node.EXPECTED_GIT_SHA,
+        "micro_batch": 16,
+        "gradient_accumulation": 1,
+        "effective_batch": 16,
+    }
+    final.write_text(json.dumps(payload), newline="\n")
+    with pytest.raises(RuntimeError, match="recipe"):
+        run_grid_node.cell_done(init, frac, tmp_path)
+
+
+
+def test_export_results_retains_runtime_provenance(tmp_path, monkeypatch):
+    runs = tmp_path / "runs"
+    out = tmp_path / "results"
+    exp = "vitin1k-f10-s0"
+    run_dir = runs / exp
+    run_dir.mkdir(parents=True)
+    (run_dir / "final_metrics.json").write_text("{}\n")
+    (run_dir / "runtime_provenance.json").write_text("{\"campaign_id\": \"gate\"}\n")
+
+    monkeypatch.setattr(export_results, "RUNS", runs)
+    monkeypatch.setattr(export_results, "OUT", out)
+    monkeypatch.setattr(export_results, "current_exp_ids", lambda: {exp})
+
+    assert export_results.main() == 0
+    assert (out / exp / "runtime_provenance.json").read_text() == (
+        run_dir / "runtime_provenance.json"
+    ).read_text()

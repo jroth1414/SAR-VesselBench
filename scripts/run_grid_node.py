@@ -6,11 +6,11 @@ one training process per selected device via CUDA_VISIBLE_DEVICES. All cells
 are independent and fill GPUs greedily, most expensive fractions first so
 stragglers finish together.
 
-On 12 GB P100s, pass ``--micro-batch 8`` to preserve the frozen effective
-batch of 16 through gradient accumulation. Select only GPUs reserved for this
-job; there is intentionally no implicit all-GPU default. GPU IDs are
-container-local (from ``nvidia-smi -L``), not physical lease IDs. Example:
-    python scripts/run_grid_node.py --gpus 0 1 2 3 4 --micro-batch 8
+The active V100 campaign uses ``--micro-batch 16`` (effective batch 16) under
+the shared ``32-true`` recipe. Select only GPUs reserved for this job; there is
+intentionally no implicit all-GPU default. GPU IDs are container-local (from
+``nvidia-smi -L``), not physical lease IDs. Example:
+    python scripts/run_grid_node.py --gpus 0 1 2 3 4 5 6 7 --micro-batch 16
 Resumable: kill and relaunch freely.
 """
 
@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import math
 import os
@@ -25,6 +26,8 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+
+import yaml
 
 SHORT = {
     "vit_random": "vitrand",
@@ -45,6 +48,17 @@ PRIORITY_CELLS = [
     ("vit_imagenet", 0.1),
     ("cnn_imagenet", 0.1),
 ]
+REPO = Path(__file__).resolve().parents[1]
+DETECTOR_PATH = REPO / "configs" / "detector.yaml"
+EXPECTED_DETECTOR_SHA256 = hashlib.sha256(DETECTOR_PATH.read_bytes()).hexdigest()
+EXPECTED_PRECISION = yaml.safe_load(DETECTOR_PATH.read_text())["schedule"]["precision"]
+EXPECTED_GIT_SHA = subprocess.run(
+    ["git", "-c", f"safe.directory={REPO}", "rev-parse", "HEAD"],
+    cwd=REPO,
+    capture_output=True,
+    text=True,
+    check=True,
+).stdout.strip()
 
 
 def log(message: str) -> None:
@@ -70,8 +84,17 @@ def cell_done(
         best_dev_f1 = float(payload["best_dev_f1"])
     except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         raise RuntimeError(f"invalid completion marker: {final}") from exc
-    if payload.get("exp_id") != exp_id(init, frac) or not math.isfinite(best_dev_f1):
-        raise RuntimeError(f"invalid completion marker contents: {final}")
+    if (
+        payload.get("exp_id") != exp_id(init, frac)
+        or not math.isfinite(best_dev_f1)
+        or payload.get("precision") != EXPECTED_PRECISION
+        or payload.get("detector_sha256") != EXPECTED_DETECTOR_SHA256
+        or payload.get("git_sha") != EXPECTED_GIT_SHA
+        or payload.get("micro_batch") != 16
+        or payload.get("gradient_accumulation") != 1
+        or payload.get("effective_batch") != 16
+    ):
+        raise RuntimeError(f"invalid completion marker contents or recipe: {final}")
     return True
 
 
@@ -137,14 +160,14 @@ def validate_hardware_args(gpus: list[int], micro_batch: int) -> None:
         raise ValueError("--gpus contains duplicate container-local device IDs")
     if any(gpu < 0 for gpu in gpus):
         raise ValueError("--gpus must contain non-negative container-local IDs")
-    if micro_batch <= 0 or micro_batch > 16 or 16 % micro_batch:
-        raise ValueError("--micro-batch must be a positive divisor of effective batch 16")
+    if micro_batch != 16:
+        raise ValueError("active V100 campaign requires --micro-batch 16")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gpus", type=int, nargs="+", required=True)
-    parser.add_argument("--micro-batch", type=int, default=8)
+    parser.add_argument("--micro-batch", type=int, default=16)
     parser.add_argument("--workers", type=int, default=4)
     args = parser.parse_args()
     try:
