@@ -29,7 +29,7 @@ A controlled label-efficiency comparison of **downloaded pretrained backbones** 
 
    Arms 4 and 8 are matched on generic source dataset and final classification supervision, **not on full training history**: Arm 4 is supervised AugReg, while Arm 8 is FCMAE then supervised fine-tuning. Treat this as a documented cross-track limitation; never describe them as a matched MAE/FCMAE pair.
 
-2. **Initialization is the only variable *within* a track; architecture is the only variable *across* matched roles.** Within each track (ViT arms 1–4, CNN arms 5–8): same backbone, head, optimizer/schedule, fixed run seed `0`, and fixed 3-channel input `[VH, VV, VH−VV]`. The head/optimizer/schedule are shared across both tracks too — only the backbone (and its head adapter) differs. Never tune something per-arm. (There is no challenge arm.)
+2. **Initialization is the only variable *within* a track; architecture is the only variable *across* matched roles.** Within each track (ViT arms 1–4, CNN arms 5–8): same backbone, head, optimizer/schedule, shared `32-true` training and model-forward inference, fixed run seed `0`, and fixed 3-channel input `[VH, VV, VH−VV]`. The head/optimizer/schedule/precision are shared across both tracks too — only the backbone (and its head adapter) differs. Never tune something per-arm. (There is no challenge arm.)
 
 3. **The scorer is sacred.** `src/eval/scorer.py` was written in sprint-2 and intentionally re-frozen in `sprint-2b-eval-hardening` after the near-shore FP fix. Never modify it after that lock without a human STOP and re-pin. Every reported number flows through it.
 
@@ -37,7 +37,7 @@ A controlled label-efficiency comparison of **downloaded pretrained backbones** 
 
 5. **One framework: PyTorch Lightning.** All training entrypoints share one `LightningModule` pattern, one `LightningDataModule`, one `Trainer` config. This is part of the fairness guarantee — do not write a bespoke loop for one arm.
 
-6. **Do-not-touch after their sprint** (changing any of these requires a human STOP): `src/eval/scorer.py`, `data/splits.json`, `data/stats.json`, `data/lsssdd_split.json`, `configs/detector.yaml`, the verified-eval lockfile. `data/lsssdd_split.json` is now a **retired historical artifact** retained for provenance; retiring LS-SSDD from the active study does not authorize deleting or editing its frozen split.
+6. **Do-not-touch after their sprint** (changing any of these requires a human STOP): `src/eval/scorer.py`, `data/splits.json`, `data/stats.json`, `data/lsssdd_split.json`, `configs/detector.yaml`, the verified-eval lockfile. The owner approved and `sprint-7c-fp32-grid` intentionally re-pinned `configs/detector.yaml` once on 2026-07-26 for shared `32-true`; that does not unlock any future edit. `data/lsssdd_split.json` remains a retired historical provenance artifact.
 
 ## The four guard tests (CI enforces these — see `.github/workflows/ci.yml`)
 
@@ -65,7 +65,7 @@ Do not optimize to seem autonomous. Asking is the job.
 
 ## Workflow
 
-- **Branch per sprint** (see DEVPLAN §1b for the list and review tiers). No direct commits to `main`.
+- **Branch per sprint** (see DEVPLAN §1b for the list and review tiers). The integration branch is `dev`; no direct commits to `dev` or `main`.
 - **PR per sprint**, reviewed and merged by the human. Keep diffs small enough to read line-by-line; if a sprint's diff grows past a few hundred lines, split it.
 - **Branch ordering:** no model-code sprint opens until `sprint-2-scorer` is merged; no chip-training sprint until `sprint-1-data` is merged.
 - **Commits:** small, frequent, each referencing the task ID (e.g. `P1.3: scene-level split builder`).
@@ -79,8 +79,8 @@ Do not optimize to seem autonomous. Asking is the job.
 
 ## Environment notes
 
-- Two GPU machines, different builds: an RTX 5070 Ti (Blackwell sm_120, verified cu128) and this server's **8× Tesla P100 PCIe 12 GB** pool (Pascal sm_60, verified by `locks/env-p100node.txt`: torch 2.11.0+cu126). The old `locks/env-v100node.txt` is historical V100/sm_70 provenance only; never use it as the P100 environment.
-- On P100, use fp16, no FlashAttention/bf16, and **micro-batch 8 with accumulation 2** to preserve effective batch 16. Reserve/lock cards through `gpu`. Host IDs reported by `gpu info` are not CUDA indices after attachment: use only the container-local indices reported by `nvidia-smi -L` (normally `0..N-1`) for `CUDA_VISIBLE_DEVICES` and runner `--gpus`.
-- The P100 hardware/environment/memory gate and targeted value-sensitive load checks for all six downloaded checkpoints passed on 2026-07-22. The complete pre-launch test suite must still pass immediately before training.
+- The active execution host is this server with **8× Tesla V100-SXM2-32GB** cards (Volta sm_70), verified by `locks/env-v100node.txt`: Python 3.11 and torch 2.11.0+cu126. The RTX 5070 Ti and 8× P100 records are historical machine-specific provenance, not active core-training instructions.
+- For every core cell on V100, use shared Lightning `32-true` for training and dev/test/final model forwards, **micro-batch 16, accumulation 1, effective batch 16**, and one process per GPU. R2/R3 retain their independent reference precisions. Reserve cards through `gpu`; use only the container-local indices from `nvidia-smi -L`, never physical host IDs from `gpu info`.
+- The V100 environment, 200-step CNN fp32 gate, and batch-16 memory gate passed on 2026-07-26. Immediately before launch, rerun the complete suite, all six value-sensitive checkpoint loads, and finite fp32 train/inference probes for both families.
 - CI is CPU-only and uses `requirements-ci.txt` — a minimal set, *not* the training environment. CI runs guard tests on tiny fixtures with **no GPU and no model downloads** — so `test_fm_checkpoints_load`'s value-sensitive weight load runs on the GPU boxes, and CI runs only its CPU-offline structural (key-manifest) half. CI triggers on `dev` (the active branch), not only `main`.
 - Working scratch goes outside version control; never commit data, checkpoints, or `runs/`.

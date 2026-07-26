@@ -1,6 +1,12 @@
-# Historical P100-node setup — throughput path retired
+# Historical P100-node setup — superseded by V100 fp32 campaign
 
-Current hardware is eight Tesla P100-PCIE-12GB GPUs (Pascal `sm_60`), not
+> **SUPERSEDED AGAIN (2026-07-26).** The active host exposes eight
+> V100-SXM2-32GB cards and the core grid now uses shared `32-true`. Follow the
+> README and DEVPLAN cold-start runbook. Everything below is retained only as
+> evidence for the retired P100/5070 decisions; do not execute it.
+
+
+At the time, the hardware was eight Tesla P100-PCIE-12GB GPUs (Pascal `sm_60`), not
 the eight 32 GB V100s assumed by the historical handoff. GPU access is leased;
 availability is dynamic. Order matters.
 
@@ -8,12 +14,12 @@ availability is dynamic. Order matters.
 > were measured and interrupted in epoch 0: projected 50-epoch training-only
 > wall time was 20.50 h for ViT and 97.36 h for CNN. The owner moved all
 > remaining unchanged one-GPU jobs to the RTX 5070 Ti. Do not reserve P100s or
-> rerun the probe commands; use the README's 5070 Ti resume checklist.
+> rerun the probe commands; that retired transfer decision is historical only.
 
 ## 1. Repo and environment compatibility gate
 
 Work from the reviewed commit. `locks/env-p100node.txt` is the verified P100
-freeze; `locks/env-v100node.txt` is historical V100 provenance only:
+freeze; the V100 lock is now active, but none of the commands below are:
 
 ```bash
 python -m venv .venv-p100
@@ -27,7 +33,7 @@ The printed architecture list must include `sm_60`. A missing CUDA runtime,
 missing `sm_60`, or failed import is a STOP; do not guess a replacement
 training environment or silently change the frozen precision recipe.
 
-## 2. Current data and checkpoint state
+## 2. Historical data and checkpoint snapshot
 
 The transfer is already unpacked in the repository layout:
 
@@ -113,7 +119,7 @@ The future reportable IDs remain `vitin1k-f10-s0` and
 do not score them. After approved full runs finish, use
 `scripts/score_test_split.py` without changing the frozen threshold protocol.
 
-## 6. Remaining matrix
+## 6. Historical remaining-matrix instructions
 
 The active design has one seed: 32 core cells plus R2 YOLO26 and R3
 LocateAnything = **34 total runs**. There are no LS-SSDD pretraining jobs,

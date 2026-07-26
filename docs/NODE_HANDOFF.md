@@ -1,6 +1,12 @@
-# Historical P100-node handoff — active grid moved to RTX 5070 Ti
+# Historical P100/5070 handoff — superseded by V100 fp32 campaign
 
-This server has eight Tesla P100-PCIE-12GB GPUs (Pascal `sm_60`), managed by
+> **SUPERSEDED AGAIN (2026-07-26).** The active campaign uses eight locked
+> V100-SXM2-32GB cards and shared core `32-true` from
+> `sprint-7c-fp32-grid`. Follow README and the DEVPLAN cold-start runbook.
+> Everything below is historical provenance and must not be executed.
+
+
+At the time of this handoff, the server had eight Tesla P100-PCIE-12GB GPUs (Pascal `sm_60`), managed by
 the `gpu` lease command. For the throughput probe, all five then-free P100s
 (host IDs 3--7) were locked and exposed as local CUDA devices 0--4. The locks
 were returned after the mandatory stop. CUDA devices are renumbered from zero
@@ -9,7 +15,8 @@ The earlier version of this
 handoff assumed eight 32 GB V100s
 (`sm_70`); those hardware, environment, batch-fit, and runtime claims are
 **superseded**. The repo of record is
-`github.com/jroth1414/JHU-xView3`, integration branch **`dev`**. Until the amendment merges, use remote branch **`sprint-7b-imagenet-arms`**. Read
+`github.com/jroth1414/JHU-xView3`, integration branch **`dev`**; the historical
+work below used `sprint-7b-imagenet-arms`. Read
 `AGENTS.md`, the DEVPLAN cold-start runbook, and the 2026-07-22 amendment in
 `docs/decisions.md` before acting. Frozen study artifacts remain binding.
 
@@ -19,7 +26,7 @@ handoff assumed eight 32 GB V100s
 > recipe-identical one-GPU cells to the RTX 5070 Ti. Do not reserve P100s or
 > rerun these commands; they are retained only as measured provenance.
 
-## Current study and data state
+## Historical study and data snapshot
 
 - Phases 0–3 remain DONE and tagged. All frozen artifacts are committed and
   SHA-256-pinned: scorer, splits.json (150 study scenes: 111/23/16 plus 50
@@ -41,7 +48,7 @@ handoff assumed eight 32 GB V100s
   scene directories, 39 dev/test raster scenes, labels, weights, and runs.
   The 50 eval-final rasters are absent by design and remain untouched.
 
-## Current execution path
+## Retired execution path
 
 Do not run the remaining grid on this P100 node. Transfer the ignored payload,
 prior run records, and both revised ImageNet checkpoint directories to the RTX

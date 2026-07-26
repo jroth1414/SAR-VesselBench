@@ -18,18 +18,18 @@ Development plan for a coding agent (Claude Code or similar). Execute phases in 
 
 ### Branch model (as actually built — this overrides the "main" phrasing elsewhere)
 - The integration / default branch is **`dev`** (GitHub `HEAD → dev`), **not `main`**; `main` currently lags `dev`. Everywhere this plan or AGENTS.md says "land on `main`" / "no direct commits to `main`," read **`dev`**: open each sprint branch off `dev` and PR back into `dev`.
-- Current amendment work belongs on `sprint-7b-imagenet-arms`, opened from `dev`; historical sprint branches are not an active-work checklist.
+- Current amendment work belongs on `sprint-7c-fp32-grid`, opened from `dev`; historical sprint branches are not an active-work checklist.
 - CI must trigger on `dev` (see the CI-trigger fix in §1b) or it never runs on the active branch.
 
 ### Status ledger (ground truth as of this revision)
 | Phase | Sprint branch | State | Evidence | Missing to reach DONE |
 |---|---|---|---|---|
-| 0 Env/scaffold | `sprint-0-env` + `sprint-7b-imagenet-arms` | **DONE — 5070/P100 validated 2026-07-22** | `locks/env-5070ti.txt` (sm_120) plus verified `locks/env-p100node.txt` (torch 2.11.0+cu126, sm_60); both GPU sanity gates pass; completed 5070 f10 records provide the active forecast, while P100 memory probes remain verified provenance | — |
+| 0 Env/scaffold | `sprint-0-env` + `sprint-7c-fp32-grid` | **DONE — 8x V100 validated 2026-07-26** | `locks/env-v100node.txt` is the verified Python 3.11 / torch 2.11.0+cu126 / sm_70 environment; all eight V100-SXM2-32GB cards are leased and the fp32 batch-16 feasibility gate passed | rerun the complete pre-launch gate at the final sprint-7c commit |
 | 1 Data/splits | `sprint-1-data` + `sprint-1b/1c` freeze branches | **DONE — all three artifacts frozen** | all P1 code + tests green; labels acquired and profiled (BLOCKER-4); **`data/splits.json` FROZEN** (150 scenes: 111/23/16 + 50 eval_final, seed 0) pinned by `test_splits_immutable`; **`data/lsssdd_split.json` FROZEN** (8,100/900 over the verified 9,000 sub-images) pinned by `test_lsssdd_split_immutable`; **`data/stats.json` FROZEN** (105,408 train chips, 111 scenes, 150/150 chipped with zero failures: VH −26.448/5.951, VV −16.599/6.062 dB) pinned by `test_stats_immutable`; label projection visually verified (QA gallery) | tag `phase-1-done` at the sprint-1c merge |
 | 2 Scorer/decode/threshold | `sprint-2-scorer` + `sprint-2b-eval-hardening` | **DONE — scorer re-frozen after eval hardening; tagged `phase-2-done`** | `scorer.py` counts near-shore FPs and exposes per-scene aggregation; `threshold.py` owns dev threshold selection; `decode.py` rejects non-finite heatmaps; Phase-2 tests pass | — |
 | 3 Detector | `sprint-3-detector` + `sprint-3b` + `sprint-3c-optimizer-fix` | **DONE — detector frozen + tagged `phase-3-done`; P3.6 PASSED** | the optimizer fix and Option-B plan-literal 50-epoch/early-stop budget decision are merged; historical P3.6 dev F1: ViT floor 0.788 < SatDINO 0.835 < SARMAE 0.858; CNN floor 0.677 < BigEarthNet-S2 0.726 < BigEarthNet-S1 0.819 (`runs/p36_summary.json`) | — |
-| 4 FM+floor arms+refs | `sprint-4/5/6` | **PARTIAL** | seed-0 f10 cells are complete for Arms 1,2,3,5,6,7; R2 `yolo26-f100` and R3 `locateanything-zs` are complete; their result exports are under `results/` | f25/f50/f100 for the six retained arms; keep the frozen detector/scorer/splits unchanged |
-| 5 ImageNet arms+grid | `sprint-7-grid` + `sprint-7b-imagenet-arms` | **READY — unchanged 5070 Ti execution selected 2026-07-22** | exact Arms 4/8 implementation and all 88 guards pass; P100 probes were stopped at the throughput tripwire; the owner selected the already-validated one-GPU 5070 path with no DDP or recipe change | transfer/verify the ignored data, prior run records, and both amended ImageNet weight directories on the 5070 Ti, then drain the resumable 26-cell queue |
+| 4 FM+floor arms+refs | `sprint-4/5/6` + `sprint-7c-fp32-grid` | **RESET FOR UNIFORM FP32 RERUN** | prior AMP core records and independently precisioned reference records are retained only as superseded provenance; canonical namespaces are empty | rerun all 24 Phase-4 core cells plus fresh R2/R3 under the new campaign |
+| 5 ImageNet arms+grid | `sprint-7-grid` + `sprint-7b-imagenet-arms` + `sprint-7c-fp32-grid` | **READY — full fp32 V100 relaunch approved 2026-07-26** | the owner approved shared `32-true`, a detector re-pin, all-32 restart, and the >2x/1,300-GPU-hour override after the V100 feasibility gate | pass final gates, launch the fresh 32-core + R2/R3 campaign, then require the 0.02 monotonicity check |
 | 6 Final eval | `sprint-8-final-eval` | NOT STARTED | once-only tripwire and frozen 50 eval IDs exist; no lockfile has been written | the 50 eval-final raster scenes are not present on this node and must be acquired/extracted before the one allowed evaluation |
 | 7 Analysis | `sprint-9-analysis` | NOT STARTED | — | — |
 | 8 Contingent ref | — | **REMOVED** | former R1 ImageNet-ConvNeXt role is now represented symmetrically by core Arms 4/8 | — |
@@ -41,10 +41,11 @@ Development plan for a coding agent (Claude Code or similar). Execute phases in 
 - **BLOCKER-4 (RESOLVED 2026-07-05).** Label CSVs acquired by the human: `D:\train.csv` (64,113 rows, 554 scenes), `D:\validation.csv` (19,224 rows, 50 scenes). **Measured label facts every later phase must respect (extends Appendix B):** (a) `source` values are LOWERCASE — `ais` / `manual` / `ais/manual`; the frozen scorer's dark test is `source == "Manual"`, so the eval adapter (P3 `infer_scene.py` / `final_eval.py`) MUST normalize case when building `GroundTruthPoint`s — the scorer itself stays frozen. (b) The **train CSV is 100% `ais`-sourced** — dark vessels (`manual`) exist ONLY in the validation/eval_final scenes (8,022 rows, 6,420 vessels), so the dark-recall slice is structurally empty on dev/test and is measurable only at final eval. (c) Train confidence↔is_vessel is degenerate: HIGH ⇒ is_vessel=False (16,692 fixed objects), MEDIUM ⇒ is_vessel=True (36,375 vessels), LOW ⇒ NaN (11,046, ignore); the standard positives rule (`is_vessel & conf∈{HIGH,MEDIUM}`) therefore selects exactly the 36,375 MEDIUM vessels in train. (d) bbox fields exist only in validation (19,049 rows); YOLO-reference boxes for train are always synthesized from points+lengths. (e) `distance_from_shore_km` uses a `9999.99` far-from-shore sentinel.
 - **BLOCKER-5 (RESOLVED historically; source no longer active).** (a) Local DIU-format archives are the canonical xView3 imagery source (the SARFish HF mirror hosts raw `SAFE.zip` products, not xView3 GeoTIFFs, and no labels); `download_sarfish.py --from-local` registers them. (b) LS-SSDD-v1.0 was acquired and verified for the original design: 6,000+3,000 800×800 JPGs + 9,000 VOC XMLs, with a frozen seeded 8,100/900 split. The 2026-07-22 amendment supersedes the random→LS-SSDD Arms 4/8, so LS-SSDD is no longer an active training dependency. **`data/lsssdd_split.json` remains frozen and hash-pinned as a historical provenance artifact; never delete, regenerate, or repurpose it.** A directory named `LS-SSDD` on the current server was audited as OSDataset2.0 and must not be substituted.
 - **Design amendment (human, 2026-07-22).** Replace the original random→LS-SSDD Arms 4/8 with matched ImageNet/generic-classification transfer: Arm 4 = `timm/vit_base_patch16_224.augreg_in1k`; Arm 8 = `timm/convnextv2_base.fcmae_ft_in1k`. Both end in supervised ImageNet-1K classification on generic natural images and transfer encoder weights only, but their training histories are not identical: the ViT checkpoint is supervised AugReg, whereas the ConvNeXt-V2 checkpoint includes FCMAE self-supervised pretraining followed by supervised IN1K fine-tuning. This is a disclosed cross-track limitation, not a within-track confound. The old LS f10 results are superseded and excluded from every current table/curve: `vitsup-f10-s0` dev/test F1 0.8518/0.7805 and `cnnsup-f10-s0` 0.7507/0.6644; their LS pretraining val losses (5.69e-10 and 0.0) motivated the overfit concern. Preserve them only under a clearly marked historical archive.
-- **Seed-count decision (human, 2026-07-22): seed 0 only.** The study matrix is 8 arms × 4 fractions = **32 core fine-tunes**. With the already-run R2/R3 references, the complete research plan is **34 experiments**. There are no seed reruns, seed bands, or error-bar claims.
-- **BLOCKER-6 — RESOLVED 2026-07-22 for f10 launch.** The actual host is 8× Tesla P100 PCIe 12 GB (Pascal sm_60). A repo-local Python 3.11 environment installed the committed `locks/env-p100node.txt` (torch 2.11.0+cu126); `torch.cuda.get_arch_list()` includes sm_60 and `gpu_sanity.py` passed finite fp16 matmul plus non-Flash SDPA. Full fp16-autocast forward/backward/AdamW probes passed at micro-batch 8: ViT allocated/reserved 3.796/4.078 GiB; ConvNeXt-V2 10.193/10.523 GiB. Real runs use accumulation 2, preserving the frozen effective batch 16 without editing `configs/detector.yaml`. At the verification snapshot, five GPUs were free and lockable; availability is dynamic, so re-run `gpu info` immediately before `gpu get --lock 5` (or a smaller available count). Once five are attached, use only the container-local indices 0–4 printed by `nvidia-smi -L`—never physical host IDs. The two replacement f10 wall times remain the throughput measurement gate; STOP if the refreshed forecast exceeds budget by >2×.
-- **BLOCKER-7 — RESOLVED 2026-07-22 by hardware move.** Real P100 f10 probes on the frozen recipe stabilized at 0.95 steps/s (ViT) and 0.20 steps/s (CNN), projecting 20.50 h and 97.36 h at the 50-epoch ceiling before dev evaluation. Both were interrupted gracefully during epoch 0 with no completion marker. The owner selected unchanged single-GPU execution on the already-validated RTX 5070 Ti; no DDP, effective-batch, detector, schedule, or scorer change is authorized. Completed 5070 timings project roughly 19–22 continuous compute days for the 26 remaining core cells after data/weight/run transfer. The P100 measurement remains provenance in `results/throughput/p100_f10_probe_2026-07-22.json`, not an active execution plan.
-- **Scene-count decision (human, 2026-07-05): 150 study scenes** of the 554 available, selected stratified at seed 0 and frozen as 111 train / 23 dev / 16 test; all 50 verified IDs form `eval_final`. This split remains immutable. The old V100/P100 compute rationales are historical; current execution uses the unchanged one-GPU recipe on the RTX 5070 Ti.
+- **Seed-count decision (human, 2026-07-22): seed 0 only.** The study matrix is 8 arms × 4 fractions = **32 core fine-tunes**. R2/R3 had already run when this decision was made; sprint 7c reruns both fresh, so the complete research plan remains **34 experiments**. There are no seed reruns, seed bands, or error-bar claims.
+- **BLOCKER-6 — HISTORICAL, RESOLVED 2026-07-22 for the retired P100 path.** The audited host at that time was 8× Tesla P100 PCIe 12 GB (Pascal sm_60). A repo-local Python 3.11 environment installed the committed `locks/env-p100node.txt` (torch 2.11.0+cu126); `torch.cuda.get_arch_list()` includes sm_60 and `gpu_sanity.py` passed finite fp16 matmul plus non-Flash SDPA. Full fp16-autocast forward/backward/AdamW probes passed at micro-batch 8: ViT allocated/reserved 3.796/4.078 GiB; ConvNeXt-V2 10.193/10.523 GiB. Real runs use accumulation 2, preserving the frozen effective batch 16 without editing `configs/detector.yaml`. At the verification snapshot, five GPUs were free and lockable; availability is dynamic, so re-run `gpu info` immediately before `gpu get --lock 5` (or a smaller available count). Once five are attached, use only the container-local indices 0–4 printed by `nvidia-smi -L`—never physical host IDs. The two replacement f10 wall times remain the throughput measurement gate; STOP if the refreshed forecast exceeds budget by >2×.
+- **BLOCKER-7 — HISTORICAL, RESOLVED 2026-07-22 by the retired 5070 hardware move.** Real P100 f10 probes on the frozen recipe stabilized at 0.95 steps/s (ViT) and 0.20 steps/s (CNN), projecting 20.50 h and 97.36 h at the 50-epoch ceiling before dev evaluation. Both were interrupted gracefully during epoch 0 with no completion marker. The owner selected unchanged single-GPU execution on the already-validated RTX 5070 Ti; no DDP, effective-batch, detector, schedule, or scorer change is authorized. Completed 5070 timings project roughly 19–22 continuous compute days for the 26 remaining core cells after data/weight/run transfer. The P100 measurement remains provenance in `results/throughput/p100_f10_probe_2026-07-22.json`, not an active execution plan.
+- **BLOCKER-8 — RESOLVED BY OWNER AMENDMENT 2026-07-26.** A fresh 8x V100 `16-mixed` campaign failed at `cnnin1k-f100-s0` epoch 30 with a non-finite forward despite the existing fp32 focal-loss island. The owner approved shared core training and model-forward inference at `32-true`, a one-time `configs/detector.yaml` re-pin, a from-scratch rerun of all 32 core cells, and an explicit override of the >2x/1,300-GPU-hour compute STOP. The stopped AMP artifacts are diagnostic-only; completion markers must match the new detector hash and precision. R2/R3 keep their independent reference recipes.
+- **Scene-count decision (human, 2026-07-05): 150 study scenes** of the 554 available, selected stratified at seed 0 and frozen as 111 train / 23 dev / 16 test; all 50 verified IDs form `eval_final`. This split remains immutable. Current execution is the owner-approved fresh full-fp32 core grid on eight V100-SXM2-32GB cards; earlier 5070/P100 and V100-AMP paths are historical provenance.
 - **Expected CI color.** All freeze/split/parity guards exist and must be green. On this amendment branch, `test_fm_checkpoints_load` must cover six exact pretrained checkpoints; a failure or a still-four-checkpoint manifest is a STOP, not an expected skip.
 
 ### State-detection runbook (rebuild the ledger from the repo)
@@ -105,12 +106,12 @@ The two tracks are matched by *role*: floor (1,5), optical remote-sensing pretra
 2. **Initialization is the only variable *within* a track; architecture is the only variable *across* matched roles.** Two backbone definitions only: ViT-B/16 (arms 1–4) and ConvNeXt-V2-Base (arms 5–8). Within each track, one head, one optimizer config, one augmentation policy, one decode config, one fine-tuning schedule, and the single seed 0 — every arm fine-tunes end-to-end, with no frozen/fine-tuned asymmetry. The head/optimizer/schedule are shared across *both* tracks too (only the backbone and its family adapter differ), so ViT-vs-CNN is fair. If you are tempted to tune something per-arm, stop — that breaks the study. All six pretrained initializations are downloaded and encoder-only; no LS-SSDD or other backbone training remains active.
 3. **Scene-level splits only.** No chip from a dev/test/eval scene may appear in any training or pretraining corpus. Membership is keyed on `scene_id`, recorded once in `data/splits.json`; every dataloader asserts membership at construction.
 4. **The ~50 human-verified xView3 validation scenes are touched exactly once,** by `src/eval/final_eval.py`, after the grid is complete. Tripwire: the script refuses to run without `--i-am-sure` and writes a timestamped lockfile on first use.
-5. **Execution hardware is a recipe-preserving choice.** The 26 remaining core cells are assigned to one RTX 5070 Ti (16 GB, Blackwell sm_120) using the already-validated single-GPU path: recipe batch 16 for ViT and CNN micro-batch 8 + accumulation 2 to preserve effective batch 16. The P100 environment remains verified provenance/contingency only; measured throughput failed the project tripwire and no P100 cell may resume without a new human decision. The V100 lock is historical and unverified. Hardware changes never authorize DDP, a different effective batch, or edits to `configs/detector.yaml`.
+5. **Execution hardware is a recipe-preserving choice.** All 32 core cells restart on the locked 8x V100-SXM2-32GB pool, one process per container-local GPU, micro-batch 16, accumulation 1, and shared `32-true` training plus model-forward inference. The owner explicitly approved this frozen-contract amendment and its compute override on 2026-07-26. The 5070, P100, and V100-AMP paths are historical only. Hardware changes never authorize DDP, a different effective batch, or a per-arm precision recipe.
 6. **Core arms vs. references are reported separately.** The eight core arms (1–8) go in the study tables and the two-track label-efficiency figure. R2 YOLO26 and R3 LocateAnything go in a separate references section for context; they are not on the controlled curves. There is no R1 and no challenge/leaderboard arm.
 7. **Determinism.** Every run takes `--seed`; seed torch, numpy, random, and dataloader workers (Lightning's `seed_everything(workers=True)`). Log the resolved config (full YAML), git SHA, and an environment hash into the run directory.
 8. **Run directories.** Every experiment writes `runs/<exp_id>/` with `config.yaml`, `metrics.csv` (per-epoch), `final_metrics.json`, `checkpoints/`, `log.txt`. Experiment IDs come from the manifest in Section 12 (Run manifest) — never invent ad-hoc names.
-9. **One framework for every arm: PyTorch Lightning.** All eight xView3 fine-tunes use the same `LightningModule`, `LightningDataModule`, and `Trainer` configuration. The P100 runner dispatches one process per reserved container-local GPU and uses the verified micro-batch 8 + accumulation 2 for both families; effective batch, optimizer steps, seeding, and checkpointing remain identical across arms. Any future memory adaptation requires a new STOP/revalidation and must preserve the effective recipe. Backbones load as plain `nn.Module`s inside the LightningModule (timm for both ImageNet checkpoints and both base architectures; SatDINO/SARMAE via their loaders; BigEarthNet ConvNeXt via the `configilm`/reBEN loader). One head class attaches via a small **per-family** adapter: ViT stride-16 tokens (32×32) reshape then upsample to the stride-4 map; the ConvNeXt stride-32 stage-3 map (16×16) needs one **extra** upsample block to reach the same stride-4 map (see P3.3). Both decode on the same stride-4 (128×128) output, but pre-head feature resolution differs by 2× — an inherent architecture-family property reported as a limitation. Keep configs in YAML; avoid hydra.
-10. **Fairness accounting.** Every arm logs parameter count and xView3 fine-tuning GPU-hours. Pretraining GPU-hours are 0 on our side for all six downloaded pretrained arms (2,3,4,6,7,8); their external training histories are cited. The random floors (1,5) have no pretraining. Within each track all four arms share architecture and effective fine-tuning compute; across tracks the two backbones are size-matched (~86M vs ~89M). Report P100 hardware, microbatch, accumulation, and measured time explicitly.
+9. **One framework for every arm: PyTorch Lightning.** All eight xView3 fine-tunes use the same `LightningModule`, `LightningDataModule`, `Trainer`, shared `32-true` precision, and recipe-aware completion marker. The V100 runner dispatches one process per reserved container-local GPU at micro-batch/effective-batch 16; optimizer steps, seeding, checkpointing, and dev/test/final model-forward precision remain identical across core arms. Any future memory or precision adaptation requires a new STOP and uniform rerun. Backbones remain plain `nn.Module`s behind the existing two family adapters and one shared head; keep configs in YAML and avoid hydra.
+10. **Fairness accounting.** Every arm logs parameter count, precision, detector hash, and xView3 fine-tuning GPU-hours. Pretraining GPU-hours are 0 locally for all six downloaded pretrained arms; random floors have no pretraining. Within each track all four arms share architecture and effective fine-tuning compute; across tracks the backbones are size-matched. Report V100 hardware, micro-batch 16, accumulation 1, full-fp32 precision, and measured time explicitly.
 11. **Commit per task** with messages referencing the task ID (e.g. `P1.3: scene-level split builder`). Never commit data, checkpoints, or anything under `runs/`.
 12. **Follow cited methods; do not invent.** For any component that names a reference method (Section 1a), implement that method's published recipe — do not substitute a "better," "simpler," or "more modern" approach reasoned up independently, however plausible it seems. Novelty in this project lives in the *experimental comparison*, not in re-deriving pretraining or channel-adaptation mechanics. If a reference is ambiguous, unavailable, or two references conflict, STOP and surface the question to a human rather than improvising — a silently-wrong method (e.g. a hand-rolled patch-embed hack or an ad-hoc reconstruction target) corrupts every downstream number without throwing an error.
 
@@ -126,7 +127,7 @@ JHU-xView3/
   locks/
     env-5070ti.txt            # cu12x / nightly for sm_120
     env-p100node.txt          # verified P100/sm_60 torch 2.11.0+cu126 freeze
-    env-v100node.txt          # historical V100/sm_70 candidate only
+    env-v100node.txt          # verified active V100/sm_70 torch 2.11.0+cu126 freeze
   Makefile                    # one target per phase entrypoint
   configs/
     data.yaml                 # paths, chip size, split fractions, seed
@@ -214,7 +215,7 @@ This section governs *how* the plan is executed, not what it builds. Its purpose
 
 ### Schedule (calendar)
 
-The project runs **July 1 to September 1, 2026** (about nine weeks); the final project is due **Sep 1**. All pretrained backbones are downloaded, the grid is seed 0 only, and the owner selected unchanged one-GPU execution on the RTX 5070 Ti after the P100 throughput tripwire fired. The immediate work is transfer verification followed by the two replacement ImageNet f10 cells and the remaining 24 fraction cells. Completed 5070 timings project roughly 19–22 continuous compute days for all 26. The old V100-based 293–360 GPU-hour estimate is historical and retired.
+The project runs **July 1 to September 1, 2026** (about nine weeks); the final project is due **Sep 1**. All pretrained backbones are downloaded and the grid remains seed 0 only. On 2026-07-26 the owner approved a from-scratch shared-full-fp32 restart of all 32 core cells on eight locked V100-SXM2-32GB cards, plus fresh R2/R3 references. The expected wall clock is about eight days with a nine-day prudent budget; the 50-epoch tail plus non-overlapped references is a 10–11 day conservative bound. Earlier 5070/P100 and V100-AMP forecasts are historical.
 
 | Dates (2026) | Focus (phases) |
 |---|---|
@@ -249,6 +250,7 @@ Each sprint branch carries a short `SPRINT.md` stating its goal, its acceptance 
 | `sprint-5-cnn-arms` | Phase 4 (Arms 6,7) | Spine | CNN backbone integration + BigEarthNet S1/S2 arms |
 | `sprint-6-floor-refs` | Phase 4 (rest) | Leaf | both floors (1,5) + external refs (R2,R3); off the controlled curves |
 | `sprint-7-grid` + `sprint-7b-imagenet-arms` | Phase 5 | Spine | ImageNet Arms 4/8 amendment + full seed-0 label-fraction grid |
+| `sprint-7c-fp32-grid` | Phase 5 | Spine | shared full-fp32 detector re-pin, recipe-aware provenance, and fresh 34-run V100 campaign |
 | `sprint-8-final-eval` | Phase 6 | **Foundation** | touches the once-only verified-scene eval |
 | `sprint-9-analysis` | Phase 7 | Leaf | ViT-vs-CNN figures/slices; read the output, trust the code |
 
@@ -309,22 +311,22 @@ These tests are enforced by **GitHub Actions CI** (`.github/workflows/ci.yml`), 
 
 ## 2. Phase 0 — Environment and smoke checks
 
-Targets the 5070 Ti and actual P100 host. The original scaffold and amended BLOCKER-6 hardware gate are complete.
+Targets the active 8x V100-SXM2-32GB host; the 5070 Ti and P100 records remain historical hardware provenance. The original scaffold and the sprint-7c fp32 hardware gate are complete.
 
 - **P0.1** Create the repo skeleton under the actual repo root `JHU-xView3/` (Section 1): a `.gitignore` covering `data/`, `runs/`, `*.pt`, `*.pth`, `*.ckpt`, `*.tif`, `*.tiff`, `*.parquet`, `__pycache__/`, `.pytest_cache/`; a `pyproject.toml` declaring the `src`-layout package + base deps (`pip install -e .` is the only sanctioned install); imports resolve as absolute `from src.…` from the repo root — guarantee it with either an `__init__.py` in every `src/` subpackage **or** `[tool.pytest.ini_options] pythonpath=["."]`, not pytest's accidental `sys.path` insertion; and a `README.md` documenting install + both GPU boxes. **Commit a minimal `.gitignore` now** — it is zero-risk and is the only thing enforcing ground rule 11 ("never commit data or checkpoints").
 - **P0.2** Machine-specific environments, because the boxes differ:
-  - `locks/env-p100node.txt` is the verified P100 freeze: torch 2.11.0+cu126 explicitly includes sm_60 kernels and pins the full package set. `locks/env-v100node.txt` is historical only. Never use a moving or bare `pip install torch`.
+  - `locks/env-v100node.txt` is the active verified V100 freeze: Python 3.11, torch 2.11.0+cu126, sm_70, plus the exact reference dependencies. `locks/env-p100node.txt` and `locks/env-5070ti.txt` remain machine-specific historical provenance. Never use a moving or bare `pip install torch`.
   - `locks/env-5070ti.txt` is the verified Blackwell environment; do not assume its binaries support Pascal.
   - **Generation recipe:** install a resolved set on each machine and freeze it. Record device capability, driver, torch CUDA build, and package hash in README/run metadata.
   README documents which environment ran each experiment.
-- **P0.3** `scripts/gpu_sanity.py`: print device name + capability, run a 4096×4096 fp16 matmul and an `F.scaled_dot_product_attention` call, assert no NaN, report the SDPA backend chosen. Run on both machines; paste both outputs into the README.
+- **P0.3** `scripts/gpu_sanity.py`: print device name + capability, run finite matmul and SDPA kernel checks, and record the selected backend. The active V100 run must show sm_70; the fp16 kernel check is hardware/reference sanity and does not change the core `32-true` recipe. Historical 5070/P100 outputs remain provenance.
 - **P0.4** Active `Makefile` targets: `make env-check`, `make test`, `make data`, `make qa`, `make grid`, `make references` (R2/R3), and `make final-eval CONFIRM=1`. There are no active supervised-pretraining or optional-R1 targets; all six pretrained core checkpoints are downloaded.
 
 **Entry preconditions:** none — this is the bootstrap phase. Work on `sprint-0-env` off `dev`.
 
-**Definition of Done — machine-checkable:** `test -f pyproject.toml && test -f Makefile && test -f .gitignore && test -f locks/env-p100node.txt && test -f locks/env-5070ti.txt && pip install -e . && python -m pytest --collect-only -q` exits 0.
+**Definition of Done — machine-checkable:** `test -f pyproject.toml && test -f Makefile && test -f .gitignore && test -f locks/env-v100node.txt && test -f locks/env-p100node.txt && test -f locks/env-5070ti.txt && pip install -e . && python -m pytest --collect-only -q` exits 0.
 
-**P100 review record (2026-07-22):** `gpu_sanity.py` passed on sm_60 and both family probes completed with finite loss at micro-batch 8; accumulation 2 preserves effective batch 16. The GPU-manager snapshot showed five free/lockable cards. Recheck availability before launch; after five-card attachment, address only container-local CUDA indices 0–4.
+**Historical P100 review record (2026-07-22; do not launch from this note):** `gpu_sanity.py` passed on sm_60 and both family probes completed with finite loss at micro-batch 8; accumulation 2 preserved effective batch 16. The contemporaneous GPU-manager snapshot showed five free/lockable cards, and that retired path used container-local CUDA indices 0–4.
 
 ## 3. Phase 1 — Data acquisition, chipping, splits
 
@@ -413,7 +415,7 @@ Owner: detector owner. Jul 8–21. Dev card: 5070 Ti. This detector is frozen on
 - **ViT arm backbone:** ViT-B/16 via timm (`vit_base_patch16_224`, `in_chans=3` on the fixed [VH,VV,VH−VV] input), learnable pos-embed interpolated to 512×512 inputs (32×32 tokens), final norm kept. SatDINO, SARMAE, and the Arm-4 AugReg checkpoint all load into this architecture.
 - **CNN arm backbone:** ConvNeXt-V2-Base via timm (`convnextv2_base`, `in_chans=3` on the same input). Take the stage-3 feature map; at 512 input it is stride 32 (16×16, 1024-dim). BigEarthNet and the Arm-8 FCMAE checkpoint all load into this architecture.
 - Both expose a uniform `(feature_map, channels, stride)` interface to the head adapter. ViT: (B,768,32,32); ConvNeXt: (B,1024,16,16).
-- The architectures and frozen detector are now locked by completed results. A P100 timing or memory failure is a STOP; do not invoke the old smaller-variant fallback or change `detector.yaml` mid-study.
+- The architectures remain locked. The owner-approved 2026-07-26 precision amendment is the sole detector change: shared `32-true` plus an all-32 restart. The smaller-variant fallback is historical and never activates automatically; any later detector change is a new STOP.
 
 ### P3.2 `src/models/init_loaders.py`
 Eight loaders behind one enum, four per track. Each prints matched/missing/unexpected key counts after loading. **Within a track all four produce the identical backbone; only the weights differ.**
@@ -448,12 +450,12 @@ Eight loaders behind one enum, four per track. Each prints matched/missing/unexp
 - `src/data/transforms.py`: random 512 crop from the 800 chip (vessel-biased: 70% of crops centered within 128 px of a vessel when one exists), flips, 90° rotations, intensity jitter ±0.1 in log space. No augmentation that breaks SAR statistics (no blur, no elastic).
 
 ### P3.5 `src/train/finetune.py` — the shared loop
-- AdamW, lr 1e-4, layer-wise lr decay 0.65, weight decay 0.05, cosine schedule, 5-epoch warmup, 50 epochs, **effective batch 16** (verified P100 setting: micro-batch 8 + accumulation 2 for both families; fp16 + GradScaler, norms fp32), grad clip 1.0.
+- AdamW, lr 1e-4, layer-wise lr decay 0.65, weight decay 0.05, cosine schedule, 5-epoch warmup, 50 epochs, **effective batch 16** (V100 micro-batch 16, accumulation 1), shared Lightning `32-true` training and model-forward inference for every core arm, grad clip 1.0. The focal loss remains explicitly fp32 and the established bounded-score heatmap canvas remains float16 storage.
 - `--init {vit_random,satdino_b,sarmae_b,vit_imagenet,cnn_random,bigearthnet_s2,bigearthnet_s1,cnn_imagenet}` selects the loader and implicitly the backbone family. **Within each track all four fine-tune end-to-end with the identical schedule**. Head, loss, sampler, augmentation, decode, schedule, and seed 0 are identical across both tracks; only the backbone family/adapter differs across tracks and only loaded weights differ within one.
 - `--label_frac {0.1,0.25,0.5,1.0}` subsamples xView3 train scenes (scene-level, seeded); fractions **nest** (10% ⊂ 25% ⊂ 50% ⊂ 100%) so the curves are monotone in data.
 - Every 5 epochs: tiled inference (`infer_scene.py`, 512 windows, stride 384, global NMS) on 8 fixed dev scenes → dev F1. Early-stop patience 4 dev evals. Save best + last.
 
-**Acceptance:** the historical detector smoke/gates remain valid. The amendment adds required structural and value-sensitive loads for `vit_imagenet` and `cnn_imagenet`, exact checkpoint-variant assertions, and unchanged parity. The P100 micro-batch-8/accumulation-2 smoke passed for both families on 2026-07-22; the two replacement f10 cells are next.
+**Acceptance:** all historical structural guards remain valid. Sprint 7c additionally requires the intentionally re-pinned detector hash, recipe-aware completion markers, shared-fp32 dev/test/final inference, the full CPU suite, all six value-sensitive checkpoint loads, and finite batch-16 fp32 train/inference probes for both families before launch.
 
 ### P3.6 Downloaded-backbone load + early-signal check (cheap, before the full grid)
 The historical P3.6 gate covered SatDINO, SARMAE, and BigEarthNet S1/S2 and remains recorded unchanged. The 2026-07-22 amendment extends the checkpoint guard to the two ImageNet arms and requires their f10 runs under the full frozen recipe; do not rewrite the historical P3.6 summary. A pretrained arm underperforming its floor is a finding after load integrity and protocol parity are confirmed.
@@ -466,7 +468,7 @@ The historical P3.6 gate covered SatDINO, SARMAE, and BigEarthNet S1/S2 and rema
 
 ## 6. Phase 4 — Both tracks' foundation-model + floor arms, and references
 
-Owner: detector owner. Jul 15–28. The historical P100 load/memory gate passed but its throughput path was retired; unfinished Phase-4 cells run through the unchanged sequential 5070 Ti queue selected for Phase 5. There is no backbone pretraining; all pretrained checkpoints are downloaded. The old V100 runtime/memory estimate is historical and does not apply.
+Owner: detector owner. Jul 15–28. All Phase-4 core cells are now part of the uniform from-scratch V100 full-fp32 rerun approved in sprint 7c; earlier 5070/P100/mixed-precision results are provenance only. There is no backbone pretraining; all pretrained checkpoints are downloaded.
 
 **Ordering rationale.** Run the four downloaded-backbone arms (2,3,6,7) early, because the highest-risk unknown is the **channel-format gap** per track: whether the fixed [VH,VV,VH−VV] tensor loads cleanly into each pretrained stem. The P3.6 check catches a catastrophic mismatch before the full grid, once per architecture. Since the channel representation is study-wide, validating it on the FM arms de-risks the shared input for every arm. The two floors (1,5) and references need no special handling and run alongside.
 
@@ -480,7 +482,7 @@ Owner: detector owner. Jul 15–28. The historical P100 load/memory gate passed 
 
 *References:*
 - **P4.5** Arm R2 — `src/references/yolo26_ref.py`: build YOLO boxes from xView3 points+lengths (square side `max(6 px, length_m/10)` centered on the point; SARFish bbox fields where present), train YOLO26 (ultralytics, COCO init) on the 100% train split; score its centers through the SACRED scorer. 1 run.
-- **P4.6** Arm R3 — `src/references/locateanything_zs.py`: LocateAnything-3B zero-shot on ~200 dev chips, prompts {"ship","vessel","boat"}; runs on the 5070 Ti (bf16-checkpoint caution, Appendix C.5); centers through the scorer.
+- **P4.6** Arm R3 — `src/references/locateanything_zs.py`: LocateAnything-3B zero-shot on ~200 dev chips, prompts {"ship","vessel","boat"}; runs fresh on the V100 pool under its independently validated reference precision; centers through the scorer.
 
 **Acceptance:** 24 study runs (arms 1,2,3,5,6,7 × 4 fractions) + 2 reference runs have `final_metrics.json`; a partial two-track label-efficiency plot (6 curves) renders from `curves.py`; the channel representation is confirmed working on real SAR for *both* backbone families via the four FM arms.
 
@@ -493,14 +495,14 @@ Owner: detector owner. Jul 15–28. The historical P100 load/memory gate passed 
 Owner: detector owner. Jul 29–Aug 11. Arms 4/8 load exact downloaded ImageNet checkpoints; this project performs no backbone pretraining.
 
 - **P5.1 — DONE 2026-07-22.** Arm 4 `vit_imagenet` is pinned to `timm/vit_base_patch16_224.augreg_in1k`; Arm 8 `cnn_imagenet` is pinned to `timm/convnextv2_base.fcmae_ft_in1k`. Only classification heads are dropped; both are included in the six-checkpoint structural/value-sensitive guard with exact source/license provenance.
-- **P5.2 — READY ON RTX 5070 Ti AFTER TRANSFER GATES.** Five P100s were locked and the two replacement f10 cells launched on local CUDA 0/1. Exact loads and finite losses passed, but measured 0.95/0.20 steps/s projected 20.50/97.36 training hours at 50 epochs before dev eval—5.9×/15.0× comparable 5070 wall times. Both were interrupted during epoch 0 with no checkpoint or completion marker. The owner selected the unchanged single-GPU 5070 path; do not introduce DDP or alter the frozen recipe. Restore and verify 150 chip directories, 39 dev/test raster directories, prior completed `runs/` records, and both exact amended ImageNet weight directories, then launch `CUDA_VISIBLE_DEVICES=0 python scripts/run_grid_queue.py`. The queue must skip six valid f10 cells and complete the two replacement f10 plus all 24 f25/f50/f100 cells. Do not invoke LS-SSDD pretraining.
+- **P5.2 — READY FOR FRESH 8x V100 FP32 LAUNCH.** The first fresh V100 campaign proved the eight-card hardware/data path but `cnnin1k-f100-s0` failed under `16-mixed` at epoch 30. On 2026-07-26 the owner approved the uniform `32-true` amendment, detector re-pin, all-32 restart, and compute override. The stopped AMP namespace is archived and canonical IDs are empty. After the final full suite, six-checkpoint value-sensitive gate, both-family fp32 train/inference memory gate, clean-worktree check, and exact manifest hashes pass, launch all 32 cells from scratch at micro-batch/effective-batch 16 across local CUDA 0–7. R2/R3 rerun fresh under their external recipes. Do not invoke LS-SSDD pretraining or reuse any AMP completion marker.
 - **P5.3** Use **seed 0 only** for every cell. Do not schedule seeds 1/2 and do not report seed bands, variance, confidence intervals, or error bars. Archive the superseded `vitsup-f10-s0`, `cnnsup-f10-s0`, `vitsup-lsssdd`, and `cnnsup-lsssdd` artifacts outside the active run-ID namespace; never delete or mix them into current summaries.
 - **P5.4** Per run: freeze the dev-tuned threshold, score test unchanged, append to `runs/summary/grid.csv`, and render eight seed-0 curves (solid ViT, dashed CNN; colors for floor, optical RS, SAR, and ImageNet/generic). No uncertainty shading.
 - **P5.5** Headline computations: (a) within-track ordering at 10% (floor vs generic ImageNet vs optical RS vs SAR); (b) within-track generic-vs-RS and optical-vs-SAR gaps; (c) cross-track matched-role gaps with the ImageNet training-history caveat; (d) interpolated label budgets. Describe seed-0 results as point estimates, not uncertainty-aware estimates.
 
 **Acceptance:** `grid.csv` has exactly 32 active rows (8 arms × 4 fractions × seed 0), no superseded IDs, no NaNs, and populated per-fraction scene/vessel/dark-proxy/near-shore counts. The eight-curve point-estimate figure renders without bands. `monotonicity_ok` uses the predeclared 0.02 F1 drop tolerance and must be true for every arm; false is a STOP.
 
-**Entry preconditions (Phase 5):** frozen artifacts/guards green; `src/eval/threshold.py` exists; exact ImageNet checkpoints and source/license notes present; six-checkpoint load guard green; BLOCKER-6 P100 validation recorded passed. These code and source-weight conditions are satisfied on the source server; after transfer, the same exact-byte and value-sensitive guards must pass on the 5070 Ti before either replacement f10 launch. The historical LS split is not an input.
+**Entry preconditions (Phase 5):** frozen split/stats/scorer guards green; detector intentionally re-pinned to the owner-approved `32-true` config; `src/eval/threshold.py` exists; all six exact checkpoints and source/license notes pass structural and V100 value-sensitive checks; both backbone families pass finite fp32 batch-16 train and scene-inference probes; canonical 34-run namespaces are empty; the committed launch SHA and worktree are clean. The historical LS split is not an input.
 
 **Definition of Done — machine-checkable (Phase 5):** `grid.csv` contains exactly the 32 manifest IDs, all at seed 0, zero NaNs, populated count columns, no `vitsup`/`cnnsup` rows, and `monotonicity_ok == true` for all arms; the eight-curve figure renders. Together with `yolo26-f100` and `locateanything-zs`, 34 total experiment result records exist. Tag `phase-5-done`.
 
@@ -539,7 +541,7 @@ The former CNN-only ImageNet reference R1 is permanently removed: ImageNet is no
 | Train crops | size / vessel-biased frac | 512 / 0.7 |
 | Heatmap | stride / sigma / loss | 4 / 2 out-px / penalty-reduced focal α=2 β=4 |
 | Decode | tau / d_nms / match tol / output_stride | dev-tuned / 120 m / 200 m / 40 m (= stride-4 × 10 m GSD) |
-| Fine-tune | opt / lr / lld / wd / effective batch | AdamW / 1e-4 / 0.65 / 0.05 / 50 / 16 (microbatch+accumulation only as P100 hardware adaptation) |
+| Fine-tune | opt / lr / lld / wd / epochs / batch / precision | AdamW / 1e-4 / 0.65 / 0.05 / 50 / 16 / shared `32-true` training and model-forward inference |
 | ViT-track backbone | ViT-B/16 | ~86M params, embed-dim 768, fine-tuned end-to-end |
 | CNN-track backbone | ConvNeXt-V2-Base | ~89M params, stage-3 1024-dim, fine-tuned end-to-end |
 | Init (ViT, downloaded) | arms 2 / 3 / 4 | SatDINO / SARMAE / `vit_base_patch16_224.augreg_in1k` |
@@ -560,23 +562,34 @@ References: `yolo26-f100`, `locateanything-zs`.
 Backbone trainings: none. Historical `vitsup-lsssdd`/`cnnsup-lsssdd` and `vitsup-f10-s0`/`cnnsup-f10-s0` are superseded archives, never active manifest IDs.
 Contingent R1: removed; do not schedule `imgnetcnn-*`.
 
-**Total = 32 core fine-tunes + 2 existing reference experiments = 34.** All six pretrained core initializations are downloaded. Do not describe the study matrix itself as 34 cells: it is 32 cells, while the complete experiment plan is 34 including R2/R3.
+**Total = 32 core fine-tunes + 2 freshly rerun reference experiments = 34.** All six pretrained core initializations are downloaded. Do not describe the study matrix itself as 34 cells: it is 32 cells, while the complete experiment plan is 34 including R2/R3.
 
-### P100 throughput record and 5070 execution decision
+### Active V100 full-fp32 execution decision
 
-The historical V100 estimate is retired, and the real P100 f10 probes triggered the >2× throughput tripwire. At 1,402 batches/epoch, stabilized 0.95 steps/s (ViT) and 0.20 steps/s (CNN) imply the following training-only ranges; whole-scene dev evaluations add time. The table is retained as measured provenance, not as the current execution plan.
+The verified host exposes eight V100-SXM2-32GB cards at local CUDA 0–7.
+A 200-step `cnnin1k-f100` feasibility probe measured 0.72 fp32 training
+steps/s and 30.516 GiB reserved at batch 16. The live AMP campaign rate was
+about 1.74 steps/s, so the owner explicitly approved the 2.42x slowdown and
+the resulting compute-budget override. Structured evidence is committed at
+`results/throughput/v100_fp32_probe_2026-07-26.json`; earlier P100/5070
+records remain historical provenance.
 
 | Component | Runs | Measured/projection | Status |
 |---|---|---|---|
-| `vitin1k-f10-s0` | 1 | 10.25 h at 25 epochs; 20.50 h at 50 | stopped in epoch 0 |
-| `cnnin1k-f10-s0` | 1 | 48.68 h at 25 epochs; 97.36 h at 50 | stopped in epoch 0 |
-| Seed-0 core grid | 32 | six valid f10 complete; 26 remaining project to roughly 19–22 continuous days on one 5070 Ti | READY after transfer gates |
+| Seed-0 core grid | 32 | about 7.0–7.5 days at the observed 42.2-epoch mean; 8.1–8.8 days at the 50-epoch ceiling on eight V100s | fresh launch after sprint-7c gates |
 | Seed reruns | 0 | 0 | removed |
 | Backbone pretraining jobs | 0 | 0 | downloaded weights |
-| YOLO26 + LocateAnything | 2 | complete | recorded in result provenance |
-| **Active plan total** | **34 experiments** | unchanged one-GPU 5070 Ti queue selected | **READY at 26 remaining core cells** |
+| YOLO26 + LocateAnything | 2 | about 33–45 h and 3–8 h respectively; overlap with core work where safe | fresh reference records required |
+| **Active plan total** | **34 experiments** | **about 7.2–7.8 days likely; 8.5–9.1 days prudent with overlap** | **READY from empty canonical namespaces** |
 
-The probes are approximately 5.9× (ViT) and 15.0× (CNN) slower than comparable completed 5070 f10 runs, exceeding the declared >2× tripwire. The owner therefore selected the unchanged single-GPU 5070 path. This is a hardware/scheduling decision only: the detector, global effective batch 16, optimizer, schedule, seed, splits, and scorer remain frozen. Before launch, transfer and verify the ignored payload plus both revised ImageNet checkpoints; no training begins from the partial P100 probe directories.
+The fresh launcher uses one controller: R2 starts on GPU 0, R3 on GPU 1,
+and core cells start on GPUs 2–7. Each reference GPU joins that same core
+queue when its reference exits, so no GPU is shared and no core cell can be
+double-dispatched.
+
+If references are serialized after the core queue, the conservative total is
+about 9–10.7 days. No schedule optimization may share a GPU between two
+models, alter effective batch 16, introduce DDP, or mix core precision.
 
 ## 13. Risk register
 
@@ -589,10 +602,10 @@ The probes are approximately 5.9× (ViT) and 15.0× (CNN) slower than comparable
 | A downloaded arm underperforms its floor | arm ≤ floor at low fractions | not a bug — report as a transfer finding; verify load + channel handling first |
 | Cross-track result is null (ViT≈CNN, or SAR-adv doesn't generalize) | matched-role gaps ~0 | still a result ("the SAR-domain advantage is/ isn't architecture-general"); lean on dark-vessel/near-shore slices |
 | Licenses (SARMAE CC BY-NC 4.0, BigEarthNet weights) | venue/redistribution needs NC-incompatible use, or a weight `LICENSE.note` is missing (P3.2 gate) | CC BY-NC 4.0 permits the non-commercial course/workshop use but forbids commercial use and constrains redistribution; release derived checkpoints (if any) only under CC BY-NC with attribution; scope the paper's claims and any released code/weights non-commercial. "Fine for the course" ≠ "fine for a CVPR/ICCV submission" — assert each separately. Verify the BigEarthNet weight license at download |
-| P100 memory/throughput fails after the passed gate | OOM, non-finite fp16, or refreshed forecast >2× budget | STOP; retain the verified sm_60 lock and micro-batch 8 + accumulation 2, and diagnose without changing architecture or the frozen detector. Revalidate only if the environment/model runtime changes |
+| V100 full-fp32 memory or stability fails | OOM, non-finite loss/heatmap, or repeated failed cell | fail-stop the queue and preserve artifacts; diagnose without per-arm LR, batch, precision, architecture, scorer, split, or schedule changes |
 | Heatmap recall stuck low | dev recall ≪ YOLO26 ref | verify load/data/cropping and report; any detector change requires human approval, re-pin, and uniform reruns |
 | Label noise dominates | LOW-conf ignore shifts F1 > 2 pts | report the frozen primary protocol and limitation; do not retune scorer/protocol |
-| fp16 divergence | NaN loss | STOP and diagnose the hardware/load path; never halve LR for one arm or edit the frozen schedule |
+| Non-finite full-fp32 core result | NaN/Inf loss or heatmap | STOP immediately; preserve the exact cell and diagnose. The fp32 amendment does not authorize a per-arm workaround |
 | Download cap blown | size estimate > cap | reduce train scenes toward 75; SLC never fetched; need only *weights* for FMs, not SAR-1M (76 GB) or full BigEarthNet |
 | Arm count / analysis overrun | Phase 7 slipping, curves illegible | no new arms or seeds; the 32-cell core is fixed, and secondary prose/figures may move to an appendix |
 | R3 limitations | zero-shot detector collapses or returns null predictions on SAR | retain the pinned null result as reference context; do not tune it into a core arm |
@@ -607,13 +620,13 @@ Columns used: `scene_id, detect_scene_row, detect_scene_column, is_vessel, is_fi
 
 LS-SSDD carries only boxes and was reduced to centroids under the superseded design. It is not a current Arm-4/8 source; its frozen split and old results are retained only for provenance.
 
-## Appendix C — Pascal (sm_60) gotchas, P100 node
+## Appendix C — Historical Pascal (sm_60) record, P100 node (do not execute)
 
 1. The driver may advertise a newer CUDA level than the installed torch wheel supports. Use a torch build that explicitly contains **sm_60** kernels and prove it with `gpu_sanity.py`; the historical V100 lock is not evidence of P100 compatibility.
 2. **No bf16.** fp16 + `torch.cuda.amp.GradScaler`; keep LayerNorm/GroupNorm and any logit/softmax math in fp32 (`autocast` handles most; verify with `gpu_sanity.py`).
 3. **No FlashAttention.** Use the supported math/memory-efficient SDPA path and verify it; P100 has no Tensor Cores, so fp16 does not imply modern mixed-precision throughput.
 4. **Avoid bitsandbytes**; nothing here needs it and Pascal support is not part of the recipe.
-5. **Memory gate passed 2026-07-22.** Both ViT and CNN completed finite fp16 forward/backward/AdamW probes at micro-batch 8; use accumulation 2 for effective batch 16 on every P100 cell. Revalidate only after an environment/model-runtime change. Run bf16-sensitive R3 on the 5070 Ti.
+5. **Historical memory gate (2026-07-22).** Both ViT and CNN completed finite fp16 forward/backward/AdamW probes at micro-batch 8; that retired P100 plan used accumulation 2 for effective batch 16, while bf16-sensitive R3 was assigned to the 5070 Ti. These are provenance facts, not active launch instructions.
 
 ## Appendix D — What is deliberately out of scope
 

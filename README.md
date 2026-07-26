@@ -159,13 +159,13 @@ cold-start runbook holds the live status ledger. Current state:
 - **AMENDED — 2026-07-22**: Arms 4/8 changed from random→LS-SSDD to the two downloaded ImageNet-1K
   checkpoints above; the old `vitsup-f10-s0` and `cnnsup-f10-s0` cells are superseded and excluded.
   Seed reruns and R1 are removed. The target is 32 seed-0 core cells plus R2/R3 = 34 experiments.
-- **PARTIAL — core grid**: the six unaffected seed-0 f10 cells (arms 1,2,3,5,6,7) remain valid.
-  The replacement ImageNet loaders, exact-byte pins, and the complete 88-test pre-launch suite
-  (including all six value-sensitive checkpoint guards) passed on 2026-07-22. R2/R3 records exist.
-- **EXECUTION DECISION — RTX 5070 Ti**: measured P100 throughput failed the >2× compute tripwire,
-  so those probes were stopped and archived. The owner selected unchanged one-GPU execution on the
-  5070 Ti—no DDP and no recipe change. There are 26 core cells left; completed-run timings project
-  roughly 19–22 continuous compute days after data, weights, and prior run records are restored.
+- **RESET — full core grid**: every mixed-precision core result is superseded after the V100
+  `cnnin1k-f100-s0` epoch-30 divergence. The stopped campaign is preserved for diagnostics; all
+  32 canonical core IDs and both reference IDs restart empty under the new campaign.
+- **EXECUTION DECISION — 8x V100 full fp32 (2026-07-26)**: the owner approved shared
+  Lightning `32-true` training and model-forward inference, micro-batch/effective-batch 16,
+  a detector re-pin, all-32 restart, and the >2x/1,300-GPU-hour override. Likely wall clock is
+  about eight days; reserve nine days, or 10–11 if references cannot overlap the core queue.
 - **READY — Phase 6 tripwires** (`src/eval/final_eval.py`: `--i-am-sure` + lockfile, hard
   preconditions). The 50 raw eval-scene rasters are not in the current transfer payload, and final
   evaluation remains untouched. Phase 7 analysis is also pending; do not promote P3.6 or partial f10
@@ -178,7 +178,7 @@ JHU-xView3/
   docs/               # decisions, node handoff, amended proposal + final-paper abstract
   requirements-ci.txt # minimal CPU deps for CI guard tests
   configs/            # data.yaml, detector.yaml (frozen), arms.yaml (run manifest)
-  locks/              # verified 5070 Ti + P100 pins; historical V100 candidate
+  locks/              # verified active V100 pin + historical 5070/P100 pins
   src/data/           # download/registration, chipper, centroids, splits, datasets
   src/models/         # backbones, heatmap head + adapters, 8 init loaders
   src/train/          # shared Lightning module/datamodule + fine-tune; retired LS tooling remains
@@ -195,22 +195,17 @@ JHU-xView3/
 
 ## 6. Getting started
 
-The amendment is currently on `sprint-7b-imagenet-arms` pending review into `dev`:
+The full-fp32 amendment is on `sprint-7c-fp32-grid`, opened from `dev`:
 
 ```bash
 git clone https://github.com/jroth1414/JHU-xView3
 cd JHU-xView3
 git fetch origin
-git switch --track origin/sprint-7b-imagenet-arms
+git switch sprint-7c-fp32-grid
 
-# 1) Install torch/torchvision from the index that matches YOUR machine FIRST
-#    (never bare `pip install torch`; validate the build against the actual GPU):
-#      5070 Ti (Blackwell sm_120):  pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
-#      P100 server (Pascal sm_60):  pip install -r locks/env-p100node.txt \
-#                                    --extra-index-url https://download.pytorch.org/whl/cu126
-#
-#    locks/env-5070ti.txt is environment provenance, not an install command:
-#    its editable VCS line points to an older repository SHA.
+# 1) On the active V100 host, install the exact verified environment:
+#    pip install -r locks/env-v100node.txt --extra-index-url https://download.pytorch.org/whl/cu126
+#    Never use a bare moving torch install.
 
 # 2) Install the checked-out package (the only sanctioned package install):
 pip install -e .[dev]
@@ -220,67 +215,53 @@ python scripts/gpu_sanity.py    # or: make env-check
 pytest tests/ -q                # or: make test
 ```
 
-### Resume the remaining matrix on one RTX 5070 Ti
+### Launch the fresh 34-run campaign on eight V100s
 
-Git does not transfer ignored data, weights, checkpoints, or `runs/`. Restore the 150 chip-scene
-directories, 39 dev/test raster scenes, labels, and `runs.tar` from the transfer payload before
-launching. Restoring the existing run records is what lets the queue validate and skip the six
-completed f10 cells.
+The active campaign starts from empty canonical namespaces. Do not restore or
+copy mixed-precision completion markers into `runs/`; the archived AMP campaign
+is diagnostic provenance only. Core runs use shared `32-true` training and
+model-forward inference at micro-batch/effective-batch 16. R2/R3 are fresh
+external-reference runs and retain their independently validated precision.
 
-The existing `weights.tar` predates the ImageNet amendment. Transfer these two current directories
-separately, including `config.json`, `SOURCE.note`, and `LICENSE.note`:
-
-- `data/weights/imagenet_vit_augreg_in1k/`
-- `data/weights/imagenet_cnn_fcmae_ft_in1k/`
-
-From the 5070 Ti checkout, verify the restored payload and exact checkpoint bytes:
+Before launch, verify the reviewed branch, payload, exact ImageNet bytes, GPU
+leases, full test suite, all six value-sensitive loads, and both-family fp32
+train/inference memory gates:
 
 ```bash
-test "$(find data/chips -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq 150
-test "$(find data/raw/xview3/GRD -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq 39
+git status --short --branch
+gpu info
+nvidia-smi -L
+python scripts/gpu_sanity.py
+pytest tests/ -q
+pytest tests/test_fm_checkpoints_load.py -q
+find data/chips -mindepth 1 -maxdepth 1 -type d
+find data/raw/xview3/GRD -mindepth 1 -maxdepth 1 -type d
 sha256sum data/weights/imagenet_vit_augreg_in1k/model.safetensors
 sha256sum data/weights/imagenet_cnn_fcmae_ft_in1k/model.safetensors
-pytest tests/ -q
 ```
 
-Expected hashes, in the order above:
+Expected ImageNet hashes, in the order above:
 
 ```text
 678a1ce471be7da9822fe2508497a5bcf6da4c6802053151b232ba88a42c21a2
 ec152f1e375edc2b3dfac7a81155a449b4c5cbb7c5cf0b9494838f6c87518d73
 ```
 
-After every gate passes, start the resumable one-GPU queue from the repository root:
+The runtime launcher under `runs/launch/` is intentionally gitignored and must
+pin a clean committed SHA, the verified environment hash, the re-pinned
+detector hash, and every other frozen artifact hash. One controller starts R2
+on GPU 0, R3 on GPU 1, and core cells on GPUs 2–7; each released reference GPU
+joins the same core queue. It rejects recipe-mismatched completion markers and
+fail-stops new launches if any cell fails. The 50 `eval_final` scenes remain
+untouched until the complete fp32 grid passes the 0.02 monotonicity check.
 
-```bash
-CUDA_VISIBLE_DEVICES=0 python scripts/run_grid_queue.py
-```
-
-The queue validates completion markers, fills fractions cheapest-first, uses recipe batch 16 for ViT,
-and automatically uses CNN micro-batch 8 with accumulation 2 to preserve effective batch 16. A failed
-cell stops the queue. The 50 verified `eval_final` scenes are not part of this transfer or queue and
-must not be evaluated until the full grid and thresholds are frozen.
-
-**GPU sanity outputs (P0.3).** RTX 5070 Ti box, recorded 2026-07-04 (torch 2.11.0+cu128, stable —
-Blackwell no longer needs a nightly):
-
-```
-torch 2.11.0+cu128 | cuda build 12.8
-device: NVIDIA GeForce RTX 5070 Ti | capability sm_120 | 15.9 GiB
-fp16 matmul 4096x4096: ok (mean abs 51.06)
-sdpa backends enabled: {'flash': True, 'mem_efficient': True, 'math': True}
-sdpa: ok | first usable backend: mem_efficient
-gpu_sanity: PASS
-```
-
-P100 server: eight Tesla P100 PCIe cards with 12 GB each (Pascal sm_60). The verified
-`locks/env-p100node.txt` uses torch 2.11.0+cu126 and includes sm_60 kernels; `gpu_sanity.py` passed.
-Both families passed fp16-autocast backward/AdamW steps at micro-batch 8 (ViT 3.80 GiB peak allocated,
-ConvNeXt-V2 10.19 GiB), so accumulation 2 preserves effective batch 16. The old
-`locks/env-v100node.txt` remains historical V100/sm_70 provenance only.
-Reserve GPUs through `gpu`, then use only the attached container-local indices printed by
-`nvidia-smi -L` (normally `0..N-1`) for `CUDA_VISIBLE_DEVICES` or runner `--gpus`. Do not pass
-physical host IDs from `gpu info`.
+**Active V100 gate.** Eight Tesla V100-SXM2-32GB cards (Volta sm_70) are
+attached as local CUDA 0–7. The verified environment is Python 3.11.15 with
+torch 2.11.0+cu126. A 200-step ConvNeXt fp32 batch-16 probe completed finite at
+about 0.72 step/s; a full step reserved 30.516 GiB, so the margin is tight and
+the pre-launch memory gate is mandatory. Reserve GPUs through `gpu`, then use
+only container-local indices from `nvidia-smi -L`, never host IDs from
+`gpu info`.
 
 **Continuous integration.** `.github/workflows/ci.yml` runs, on every push/PR to `dev`/`main`, the
 anti-drift **guard tests** that encode study validity:
@@ -290,16 +271,15 @@ anti-drift **guard tests** that encode study validity:
 - `test_fm_checkpoints_load` — every downloaded backbone loads value-sensitively (not silently random).
 - `test_scorer_immutable` — the frozen scorer's hash is unchanged.
 
-CI runs the CPU/offline structural guard halves; value-sensitive checkpoint loading runs on a verified
-GPU box with the pinned local weights. The real training environment is **not** CI. Both the 5070 Ti
-and P100 environments have verified, machine-specific locks.
+CI runs the CPU/offline structural guard halves; value-sensitive checkpoint loading runs on the
+active V100 host with pinned local weights. The real training environment is **not** CI.
+`locks/env-v100node.txt` is the active verified lock; 5070/P100 locks are historical.
 
-**Experiment budget:** 32 core seed-0 fine-tunes plus R2/R3 = **34 experiments**. No LS-SSDD
-backbone training, R1, or seed reruns remain. Six valid f10 cells and both references are complete,
-leaving 26 core cells. The P100 route was rejected at its measured throughput gate; unchanged
-single-GPU execution is assigned to the 5070 Ti, with a completed-run projection of roughly
-19–22 continuous compute days after transfer/setup. Results are seed-0 point estimates; do not
-report seed-derived uncertainty or error bars.
+**Experiment budget:** 32 core seed-0 fine-tunes plus fresh R2/R3 = **34 experiments**. No
+LS-SSDD backbone training, R1, seed reruns, or mixed-precision core result remains active. The
+shared-fp32 projection is about 1,550 GPU-hours. With eight V100s, expect roughly eight days,
+reserve nine days with safe reference overlap, and use 10–11 days as the serialized-reference
+conservative bound. Results are seed-0 point estimates; do not report seed-derived uncertainty.
 
 ---
 

@@ -31,7 +31,7 @@ is gitignored, so the committed log lives here.
   accepted: grid cost is measured-not-fixed (~500–1,100 GPU-h depending on
   where stopping fires). The later P100 throughput gate rejected that node for
   the active grid, and the owner assigned the remaining unchanged one-GPU jobs
-  to the validated RTX 5070 Ti. The historical V100 forecast is retired.
+  to the validated RTX 5070 Ti. The then-current historical V100 forecast was retired.
 
 ## Threshold-transfer fragility (measured 2026-07-11)
 
@@ -277,3 +277,60 @@ is gitignored, so the committed log lives here.
   regime (their losses were finite throughout, and the parity sweep bounds
   the counterfactual difference at input-rounding scale, well under run-level
   cuDNN nondeterminism). Do not silently rerun completed cells for this.
+
+## V100 full-fp32 core-grid amendment (human decision, 2026-07-26)
+
+- **Trigger:** the fresh V100 campaign (`fresh34-v100-20260724`, `dev` at
+  `2fb24e08b903313fe097e5c559218a2201c06de1`) failed at
+  `cnnin1k-f100-s0`, epoch 30, batch 2467, with a non-finite training loss.
+  The Sprint 7b fp32 focal-loss island was already present. All tensors in
+  the last saved checkpoint were finite, while its GradScaler had fallen to
+  512, which is consistent with repeated AMP overflows before a NaN arose in
+  the model forward. The exact failing crop/augmentation stream cannot be
+  replayed because sampler and persistent-worker RNG states were not saved.
+- **Diagnosis:** bounded fp32 focal arithmetic, finite generated targets, and
+  finite checkpoint tensors make an AMP activation overflow the leading
+  explanation. Full fp32 is estimated at 85–95% confidence to remove this
+  numerical failure class; it is a mitigation with strong evidence, not a
+  proof that every 50-epoch trajectory will remain finite.
+- **Feasibility gate:** a fresh `cnnin1k-f100-s0` probe at batch 16 completed
+  200 true-fp32 training steps with finite loss (`0.5623`) and no OOM.
+  Training stabilized near 0.72 step/s; a separate full step measured
+  30.420 GiB allocated and 30.516 GiB reserved on a 32 GiB V100. The probe's
+  one-scene dev pass exposed a separate hard-coded fp16 inference autocast;
+  this amendment therefore propagates the shared precision to dev, test, and
+  final model forwards as well. The established float16 heatmap canvas stays
+  unchanged because sigmoid scores are bounded and this is decode storage,
+  not model-forward arithmetic.
+- **Owner-approved recipe amendment:** set the shared core trainer and all
+  core model-forward inference to Lightning `32-true`, re-pin
+  `configs/detector.yaml`, and rerun all 32 seed-0 core cells from scratch.
+  This explicitly supersedes the earlier one-cell-only rerun decision above.
+  The detector SHA256 moves from the AMP pin
+  `4fd1bfe88861cc676dd67b2092e379fbcf401dd9c1d42fb09e81a84b9cdbe2f8`
+  to `c42ae65bf9045cc93f0d73ae1437b2f6a1300670cb49d8e93f83a39d58a62a12`.
+  A one-cell precision exception is forbidden. R2 YOLO26 and R3
+  LocateAnything remain external references under their published precision
+  paths, but they are also rerun fresh for the requested 34-experiment
+  campaign.
+- **Budget override:** measured CNN training is about 2.42x slower than the
+  live AMP rate. The central full-core projection is about 1,550 GPU-hours,
+  explicitly overriding both the greater-than-2x STOP and the prior
+  1,300-GPU-hour ceiling. One controller starts R2/R3 on GPUs 0/1 and
+  core cells on GPUs 2–7, then returns each released reference GPU to the
+  same core queue. This keeps the expected wall clock near eight days, with
+  nine days reserved for the 50-epoch/evaluation tail; serialized references
+  would instead require roughly 9–10.7 days.
+- **Superseded artifacts:** the stopped AMP campaign (10 complete, 6
+  interrupted, 1 failed, 17 unstarted) is retained under
+  `runs/archive/superseded_amp_fresh34_20260726T211204Z/`; previously exported
+  rows are under `results/superseded/2026-07-26-mixed-precision-grid/`. None of
+  these core results may be mixed with or reported in the fp32 grid. Completion
+  markers now carry and validate the git SHA, detector hash, precision,
+  micro-batch, accumulation, and effective batch; exported results also retain
+  runtime provenance. This prevents stale or recipe-mismatched results from
+  being silently skipped on resume.
+- **Independent sanity STOP remains:** the superseded ViT ImageNet AMP curve
+  dropped from f10 dev F1 0.8858 to f50 0.8514, beyond the predeclared 0.02
+  tolerance. The fp32 rerun replaces those observations but does not presume
+  to resolve the scientific monotonicity check; the new grid must pass it.
