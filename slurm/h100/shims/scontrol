@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Defer Lightning's per-process requeue until all eight checkpoints are safe.
+set -euo pipefail
+
+if [[ "${1:-}" == "requeue" && -n "${H100_REQUEUE_REQUEST_DIR:-}" ]]; then
+  mkdir -p "$H100_REQUEUE_REQUEST_DIR"
+  gpu="${CUDA_VISIBLE_DEVICES:?CUDA_VISIBLE_DEVICES missing in child}"
+  tmp="$H100_REQUEUE_REQUEST_DIR/.gpu-${gpu}.request.$$"
+  printf '%s\n' "${SLURM_JOB_ID:-unknown}" > "$tmp"
+  mv "$tmp" "$H100_REQUEUE_REQUEST_DIR/gpu-${gpu}.request"
+  exit 0
+fi
+
+echo "refusing real scontrol inside the H100 SIF; host batch owns requeue" >&2
+exit 70
