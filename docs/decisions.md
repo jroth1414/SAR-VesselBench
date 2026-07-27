@@ -2,8 +2,7 @@
 
 Chronological log of judgment calls the plan left unspecified (or where a
 cited mechanism did not cover the actual case), each bounded and applied
-identically to every arm. The DEVPLAN references `runs/decisions.md`; `runs/`
-is gitignored, so the committed log lives here.
+identically to every arm. This committed log lives here; `runs/` is gitignored and reserved for execution artifacts.
 
 ## sprint-1 (data)
 
@@ -334,3 +333,23 @@ is gitignored, so the committed log lives here.
   dropped from f10 dev F1 0.8858 to f50 0.8514, beyond the predeclared 0.02
   tolerance. The fp32 rerun replaces those observations but does not presume
   to resolve the scientific monotonicity check; the new grid must pass it.
+
+## H100 strict-IEEE-FP32 uniform-core cutover amendment (human decision, 2026-07-26)
+
+- **Decision and scope:** retain the Sprint-7c full-fp32 numerical fix but move the canonical 32-cell core grid, all at once, to one uniformly recorded H100 hardware/environment class to reduce wall clock. This is an execution-hardware amendment, not approval for BF16, TF32, FP16, DDP, a smaller batch, a shorter schedule, or a per-arm exception. `configs/detector.yaml` remains frozen at its Sprint-7c pin.
+- **Branch/base:** the amendment lives on `sprint-7d-h100-fp32`, intentionally stacked on `sprint-7c-fp32-grid` commit `48e10534a8c7baf0662acd548f52928da69f23c8`; the integration target is `dev` and the merge order is Sprint 7c then Sprint 7d.
+- **Numeric recipe:** every H100 core train and dev/test/final model forward uses Lightning `32-true` with CUDA-matmul TF32 and cuDNN TF32 explicitly disabled, no autocast or GradScaler, micro-batch 16, accumulation 1, effective batch 16, one process/GPU, and no DDP. The float16 bounded-score heatmap canvas remains decode storage only.
+- **Uniform restart and reporting:** after cutover, all 32 seed-0 core cells restart from scratch on the accepted H100 class. V100 core checkpoints/results/markers then become diagnostic provenance only. Never combine V100 and H100 core cells in a curve, table, grid summary, resume decision, or completion namespace.
+- **Cutover barrier:** the current V100 full-fp32 campaign continues uninterrupted until every H100 receipt/environment/test/load/numerical/memory/inference/throughput/launch-hygiene gate passes and fresh valid V100 R2/R3 completion markers exist.
+  The measured approximately 474 GB uncompressed source plus wheelhouse, Box upload/receipt, target environment, and H100 execution remain pending until separately recorded; the Box preflight remains fail-closed unless at least 500 GB (500,000,000,000 bytes) is available, and a failed gate leaves the uniform V100 fallback running and triggers a STOP rather than partial migration.
+- **References:** R2 YOLO26 and R3 LocateAnything remain on V100 under their independently pinned precision paths. They are excluded from the H100 handoff and controlled curves and remain separately reported canonical references after their fresh markers validate.
+- **Forward core-only handoff:** build beneath a root addressed by the full code SHA; the manifest names one git bundle, 150 per-scene chip `.tar.zst` files, 39 frozen dev/test per-scene GRD `.tar.zst` files, the train CSV only, six separate exact core-weight-directory `.tar.zst` files, the exact offline wheelhouse, and a pinned Apptainer definition.
+  Package control files are the manifest, `SHA256SUMS`, and `READY`. The Box destination is supplied only at runtime through `BOX_FOLDER_ID`; no folder ID, JWT, URL token, or credential belongs in the repo, docs, logs, or manifest.
+- **Forward exclusions:** no `validation.csv` or eval-final asset, `runs/`, virtual environment/cache, JWT/token, raw LS-SSDD, preprocessing manifest, YOLO/reference payload, LocateAnything, YOLO, superseded result/checkpoint, old R1/IN22K weight, or LS-SSDD-trained ImageNet-role weight.
+  The package manifest itself is control metadata and is not the excluded preprocessing-manifest material.
+- **H100 acceptance:** target receipt must validate every count/hash and safe archive member; restore the exact clean SHA from the git bundle; permit only the explicit access check/acquisition of the definition's digest-pinned OCI base, while installing every Python package offline with `--no-index` from the verified wheelhouse; record a uniform H100 inventory and environment/container hashes; run the complete guards and all six offline value-sensitive loads; prove TF32-off strict fp32; and pass representative ViT/CNN batch-16 train plus full-scene inference, including the worst-case 200-step CNN gate. From those measurements, project the complete 32-cell H100 finish on the eight-card allocation, including measured verify/clone/extract staging for every projected Slurm allocation, and at the same acceptance snapshot project the live remaining V100 core finish from its measured state and rates. `cutover-check` refreshes the remaining-V100 forecast and refuses to issue `CUTOVER_READY.json` if the conservative H100 wall clock no longer wins. The owner must accept the recorded comparison before cutover.
+  No “few days” estimate is accepted evidence before that apples-to-apples throughput measurement. A greater-than-2x miss remains an additional compute STOP, not a substitute for the earlier-finish criterion.
+- **Reverse handback:** return a content-addressed core-results bundle containing campaign/launch state and, for every core cell, resolved config, metrics, logs, provenance/completion marker, and best plus last checkpoints, together with its manifest, `SHA256SUMS`, and `READY`.
+  Exclude source data, weights, environments/caches, secrets, R2/R3, eval-final material, superseded results, and V100 core diagnostics; verify the remote receipt before declaring handback complete.
+- **Status discipline:** this decision authorizes implementation and fixture validation of transfer/runner tooling, but neither that tooling nor this documentation proves the real package was built/uploaded, the target accepted it, any H100 gate passed, cutover occurred, or any H100 run/result exists.
+  Update the cold-start ledger only from recorded artifacts; until then, the H100 state is approved but gated and not launched.
