@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Sequence
 
@@ -55,6 +56,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--init", required=True, choices=sorted(INIT_SHORT))
     parser.add_argument("--label_frac", type=float, default=1.0, choices=[0.1, 0.25, 0.5, 1.0])
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--git-sha",
+        default=None,
+        help="full host-validated source SHA (avoids requiring git in a slim SIF)",
+    )
     parser.add_argument("--epochs", type=int, default=None, help="override detector.yaml (smoke only)")
     parser.add_argument("--data-config", default="configs/data.yaml")
     parser.add_argument("--detector-config", default="configs/detector.yaml")
@@ -87,7 +93,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     detector_path = Path(args.detector_config)
     det_cfg = yaml.safe_load(detector_path.read_text())
     detector_sha256 = hashlib.sha256(detector_path.read_bytes()).hexdigest()
-    git_sha = _git_sha()
+    git_sha = args.git_sha or _git_sha()
+    if not re.fullmatch(r"[0-9a-f]{40}", git_sha):
+        parser.error("--git-sha/source checkout must resolve to a full 40-hex SHA")
 
     run_id = exp_id(args.init, args.label_frac, args.seed)
     if args.exp_suffix:

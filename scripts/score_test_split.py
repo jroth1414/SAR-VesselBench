@@ -22,6 +22,8 @@ import json
 from pathlib import Path
 from typing import Sequence
 
+from scripts.h100.contracts import atomic_write_json
+
 
 def log(message: str) -> None:
     print(f"[{dt.datetime.now().isoformat(timespec='seconds')}] {message}", flush=True)
@@ -114,7 +116,7 @@ def score_run(
             "test_scored_at": dt.datetime.now().isoformat(timespec="seconds"),
         }
     )
-    final_path.write_text(json.dumps(payload, indent=1), newline="\n")
+    atomic_write_json(final_path, payload)
     del module
     torch.cuda.empty_cache()
     return payload

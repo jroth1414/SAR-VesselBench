@@ -1,0 +1,272 @@
+#!/usr/bin/env bash
+#SBATCH --job-name=xview3-h100-fp32
+#SBATCH --account=geofam
+#SBATCH --partition=minor-use-case
+#SBATCH --reservation=geofam
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --gpus-per-node=8
+#SBATCH --cpus-per-task=48
+#SBATCH --mem=256G
+#SBATCH --time=1-12:30:00
+#SBATCH --signal=B:USR1@900
+#SBATCH --requeue
+
+set -euo pipefail
+
+# This must precede Python, nvidia-smi, Apptainer --nv, or any CUDA import.
+export NVIDIA_TF32_OVERRIDE=0
+
+site_env="${H100_SITE_ENV:?submit.sh must export H100_SITE_ENV}"
+# shellcheck disable=SC1090
+source "$site_env"
+# Transfer credentials are never needed by a compute allocation.
+unset BOX_JWT_CONFIG BOX_FOLDER_ID
+
+meta_root="$H100_RUNS_ROOT/.h100"
+source_validation="$meta_root/SOURCE_VALIDATED.json"
+if [[ "${H100_MODE:?H100_MODE missing}" == "campaign" ]]; then
+  # Submission persisted byte-identical external evidence at these stable
+  # paths.  The allocation ignores mutable source paths from site.env.
+  H100_CUTOVER_READY="$meta_root/CUTOVER_READY.json"
+  H100_V100_CORE_ARCHIVED="$meta_root/V100_CORE_ARCHIVED.json"
+  H100_V100_ARCHIVE_MANIFEST="$meta_root/V100_CORE_ARCHIVE_MANIFEST.json"
+fi
+
+check_sha() {
+  local expected="$1"
+  local path="$2"
+  local actual
+  actual="$(sha256sum "$path" | awk '{print $1}')"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "SHA-256 mismatch for $path: expected $expected, got $actual" >&2
+    exit 1
+  fi
+}
+
+staging_started_epoch="$(date +%s)"
+check_sha "$H100_REPO_BUNDLE_SHA256" "$H100_REPO_BUNDLE"
+check_sha "$H100_MANIFEST_SHA256" "$H100_PACKAGE_ROOT/manifest.json"
+check_sha "$H100_READY_SHA256" "$H100_PACKAGE_ROOT/READY.json"
+check_sha "$H100_SHA256SUMS_SHA256" "$H100_PACKAGE_ROOT/SHA256SUMS"
+(cd "$H100_PACKAGE_ROOT" && sha256sum --check SHA256SUMS)
+check_sha "$H100_SIF_SHA256" "$H100_SIF"
+check_sha "$H100_SIF_BUILD_SHA256" "$H100_SIF_BUILD_JSON"
+if [[ "${H100_MODE:?H100_MODE missing}" == "campaign" ]]; then
+  check_sha "$H100_CUTOVER_READY_SHA256" "$H100_CUTOVER_READY"
+  check_sha "$H100_V100_CORE_ARCHIVED_SHA256" "$H100_V100_CORE_ARCHIVED"
+  check_sha "$H100_V100_ARCHIVE_MANIFEST_SHA256" "$H100_V100_ARCHIVE_MANIFEST"
+fi
+
+scratch="${SLURM_TMPDIR:?SLURM_TMPDIR is required}"
+scratch_free="$(df -PB1 "$scratch" | awk 'NR==2 {print $4}')"
+if (( scratch_free < 500000000000 )); then
+  echo "SLURM_TMPDIR has less than 500 GB free before extraction" >&2
+  exit 1
+fi
+repo="$scratch/repo"
+payload="$scratch/payload"
+[[ ! -e "$repo" && ! -e "$payload" ]] || {
+  echo "scratch repo/payload destinations must start empty" >&2
+  exit 1
+}
+git clone "$H100_REPO_BUNDLE" "$repo"
+git -C "$repo" checkout --detach "$H100_EXPECTED_GIT_SHA"
+check_sha "$H100_ENV_LOCK_SHA256" "$repo/locks/env-v100node.txt"
+mkdir -p "$meta_root/acceptance-logs"
+frozen_args=(
+  --frozen-sha256 "$H100_DETECTOR_SHA256"
+  --frozen-sha256 "$H100_SCORER_SHA256"
+  --frozen-sha256 "$H100_SPLITS_SHA256"
+  --frozen-sha256 "$H100_STATS_SHA256"
+  --frozen-sha256 "$H100_LSSSDD_SHA256"
+)
+(
+  cd "$repo"
+  PYTHONPATH="$repo" "$H100_TRANSFER_PYTHON" -m scripts.h100.source_validation \
+    --repo "$repo" \
+    --expected-git-sha "$H100_EXPECTED_GIT_SHA" \
+    "${frozen_args[@]}" \
+    --package-manifest-sha256 "$H100_MANIFEST_SHA256" \
+    --package-ready-sha256 "$H100_READY_SHA256" \
+    --package-sha256sums-sha256 "$H100_SHA256SUMS_SHA256" \
+    --package-repo-bundle-sha256 "$H100_REPO_BUNDLE_SHA256" \
+    --output "$source_validation"
+)
+source_validation_sha256="$(sha256sum "$source_validation" | awk '{print $1}')"
+host_test_receipt="$meta_root/HOST_HANDOFF_TESTS.json"
+host_test_receipt_sha256=""
+if [[ "${H100_MODE:?H100_MODE missing}" == "acceptance" ]]; then
+  (
+    cd "$repo"
+    PYTHONPATH="$repo" "$H100_TRANSFER_PYTHON" -m scripts.h100.host_test_gate \
+      --repo "$repo" \
+      --log "$meta_root/acceptance-logs/pytest-handoff-host.log" \
+      --receipt "$host_test_receipt" \
+      --source-validation-sha256 "$source_validation_sha256"
+  )
+  host_test_receipt_sha256="$(sha256sum "$host_test_receipt" | awk '{print $1}')"
+fi
+# Handoff owns archive verification/extraction and requires an empty target.
+# Run it on the host before strict runtime PYTHONPATH or Apptainer; the slim
+# SIF intentionally has neither git nor zstd tooling.
+(
+  cd "$repo"
+  PYTHONPATH="$repo" "$H100_TRANSFER_PYTHON" -m scripts.handoff verify --package-root "$H100_PACKAGE_ROOT"
+  PYTHONPATH="$repo" "$H100_TRANSFER_PYTHON" -m scripts.handoff extract \
+    --package-root "$H100_PACKAGE_ROOT" \
+    --destination "$payload"
+)
+staging_seconds="$(( $(date +%s) - staging_started_epoch ))"
+
+apptainer_bin="${H100_APPTAINER:-apptainer}"
+binds="$scratch:$scratch,$H100_PACKAGE_ROOT:$H100_PACKAGE_ROOT:ro,$H100_RUNS_ROOT:$H100_RUNS_ROOT,$H100_SIF:$H100_SIF:ro,$source_validation:$source_validation:ro"
+if [[ "${H100_MODE:?H100_MODE missing}" == "campaign" ]]; then
+  binds="$binds,$H100_CUTOVER_READY:$H100_CUTOVER_READY:ro,$H100_V100_CORE_ARCHIVED:$H100_V100_CORE_ARCHIVED:ro,$H100_V100_ARCHIVE_MANIFEST:$H100_V100_ARCHIVE_MANIFEST:ro"
+fi
+run_sif() {
+  "$apptainer_bin" exec --cleanenv --containall --nv \
+    --bind "$binds" "$H100_SIF" "$@"
+}
+export PYTHONPATH="$repo/scripts/h100:$repo"
+export APPTAINERENV_PYTHONPATH="$PYTHONPATH"
+export APPTAINERENV_NVIDIA_TF32_OVERRIDE=0
+export APPTAINERENV_PYTHONDONTWRITEBYTECODE=1
+export APPTAINERENV_SLURM_JOB_ID="${SLURM_JOB_ID:?SLURM_JOB_ID is required}"
+export APPTAINERENV_SLURM_RESTART_COUNT="${SLURM_RESTART_COUNT:-0}"
+export APPTAINERENV_SLURM_CLUSTER_NAME="${SLURM_CLUSTER_NAME:-unknown}"
+export APPTAINERENV_SLURM_NTASKS="${SLURM_NTASKS:-1}"
+export APPTAINERENV_SLURM_PROCID="${SLURM_PROCID:-0}"
+export APPTAINERENV_SLURM_LOCALID="${SLURM_LOCALID:-0}"
+export APPTAINERENV_SLURM_NODEID="${SLURM_NODEID:-0}"
+
+# Preserve committed frozen data files; link only ignored payload subtrees.
+for relative in chips raw weights; do
+  [[ ! -e "$repo/data/$relative" ]] || {
+    echo "refusing to replace existing repo/data/$relative" >&2
+    exit 1
+  }
+  [[ -e "$payload/data/$relative" ]] || {
+    echo "payload is missing data/$relative" >&2
+    exit 1
+  }
+  ln -s "$payload/data/$relative" "$repo/data/$relative"
+done
+[[ ! -e "$repo/runs" ]] || {
+  echo "fresh clone unexpectedly contains runs" >&2
+  exit 1
+}
+mkdir -p "$H100_RUNS_ROOT"
+ln -s "$H100_RUNS_ROOT" "$repo/runs"
+mkdir -p "$meta_root"
+receipt_tmp="$meta_root/.container_build.json.$$"
+cp "$H100_SIF_BUILD_JSON" "$receipt_tmp"
+check_sha "$H100_SIF_BUILD_SHA256" "$receipt_tmp"
+mv "$receipt_tmp" "$meta_root/container_build.json"
+if [[ "${H100_MODE:?H100_MODE missing}" == "acceptance" ]]; then
+  (
+    cd "$repo"
+    run_sif python -m scripts.h100.acceptance \
+      --repo "$repo" \
+      --runs-root "$H100_RUNS_ROOT" \
+      --scratch "$scratch" \
+      --scratch-free-before-extraction "$scratch_free" \
+      --ready "$H100_RUNS_ROOT/.h100/H100_READY.json" \
+      --smoke-ready "$H100_RUNS_ROOT/.h100/slurm-smoke/SLURM_SMOKE_READY.json" \
+      --sif "$H100_SIF" \
+      --sif-sha256 "$H100_SIF_SHA256" \
+      --container-build-sha256 "$H100_SIF_BUILD_SHA256" \
+      --base-oci "$H100_BASE_OCI" \
+      --expected-git-sha "$H100_EXPECTED_GIT_SHA" \
+      --source-validation-json "$source_validation" \
+      --source-validation-sha256 "$source_validation_sha256" \
+      --host-test-receipt "$host_test_receipt" \
+      --host-test-receipt-sha256 "$host_test_receipt_sha256" \
+      "${frozen_args[@]}" \
+      --package-manifest-sha256 "$H100_MANIFEST_SHA256" \
+      --package-ready-sha256 "$H100_READY_SHA256" \
+      --package-sha256sums-sha256 "$H100_SHA256SUMS_SHA256" \
+      --package-repo-bundle-sha256 "$H100_REPO_BUNDLE_SHA256" \
+      --remaining-v100-wall-hours "$H100_REMAINING_V100_WALL_HOURS" \
+      --staging-seconds "$staging_seconds"
+  )
+  exit 0
+fi
+
+allocation_hardware="$H100_RUNS_ROOT/.h100/h100_runtime-${SLURM_JOB_ID}-r${SLURM_RESTART_COUNT:-0}.json"
+allocation_hardware_tmp="${allocation_hardware}.tmp.$$"
+(
+  cd "$repo"
+  run_sif python -m scripts.h100.strict_fp32_probe --expected-gpus 8 \
+    > "$allocation_hardware_tmp"
+)
+mv "$allocation_hardware_tmp" "$allocation_hardware"
+
+(
+  cd "$repo"
+  run_sif python -m scripts.h100.operator_cutover \
+    --cutover-ready "$H100_CUTOVER_READY" \
+    --cutover-ready-sha256 "$H100_CUTOVER_READY_SHA256" \
+    --receipt "$H100_V100_CORE_ARCHIVED" \
+    --receipt-sha256 "$H100_V100_CORE_ARCHIVED_SHA256" \
+    --archive-manifest "$H100_V100_ARCHIVE_MANIFEST" \
+    --archive-manifest-sha256 "$H100_V100_ARCHIVE_MANIFEST_SHA256" \
+    --expected-h100-git-sha "$H100_EXPECTED_GIT_SHA" \
+    --expected-sif-sha256 "$H100_SIF_SHA256" \
+    --expected-package-manifest-sha256 "$H100_MANIFEST_SHA256" \
+    --expected-package-ready-sha256 "$H100_READY_SHA256" \
+    --expected-package-sha256sums-sha256 "$H100_SHA256SUMS_SHA256" \
+    --expected-package-repo-bundle-sha256 "$H100_REPO_BUNDLE_SHA256" \
+    --expected-reference-git-sha "$H100_EXPECTED_REFERENCE_GIT_SHA" \
+    --expected-reference-campaign-id "$H100_REFERENCE_CAMPAIGN_ID"
+)
+
+controller_pid=""
+forward_usr1() {
+  if [[ -n "$controller_pid" ]]; then
+    kill -USR1 "$controller_pid" 2>/dev/null || true
+  fi
+}
+trap forward_usr1 USR1
+
+(
+  cd "$repo"
+  run_sif python -m scripts.h100.campaign \
+    --repo "$repo" \
+    --runs-root "$H100_RUNS_ROOT" \
+    --campaign-id "$H100_CAMPAIGN_ID" \
+    --expected-git-sha "$H100_EXPECTED_GIT_SHA" \
+    --sif-sha256 "$H100_SIF_SHA256" \
+    --base-oci "$H100_BASE_OCI" \
+    --package-manifest-sha256 "$H100_MANIFEST_SHA256" \
+    --hardware-json "$allocation_hardware" \
+    --acceptance-json "$H100_RUNS_ROOT/.h100/H100_READY.json" \
+    --source-validation-json "$source_validation" \
+    --source-validation-sha256 "$source_validation_sha256" \
+    --cutover-ready-json "$H100_CUTOVER_READY" \
+    --cutover-ready-sha256 "$H100_CUTOVER_READY_SHA256" \
+    --v100-core-archived-json "$H100_V100_CORE_ARCHIVED" \
+    --v100-core-archived-sha256 "$H100_V100_CORE_ARCHIVED_SHA256" \
+    --v100-archive-manifest-json "$H100_V100_ARCHIVE_MANIFEST" \
+    --v100-archive-manifest-sha256 "$H100_V100_ARCHIVE_MANIFEST_SHA256" \
+    --workers-per-gpu 6
+) &
+controller_pid="$!"
+controller_rc=0
+while true; do
+  set +e
+  wait "$controller_pid"
+  controller_rc="$?"
+  set -e
+  if kill -0 "$controller_pid" 2>/dev/null; then
+    continue
+  fi
+  break
+done
+if [[ "$controller_rc" -eq 75 ]]; then
+  # The SIF has no scontrol.  It reaches this host-only call only after every
+  # running cell has a promoted last.ckpt and the manifest requests requeue.
+  "${H100_REAL_SCONTROL:-/usr/bin/scontrol}" requeue "$SLURM_JOB_ID"
+  exit 0
+fi
+exit "$controller_rc"

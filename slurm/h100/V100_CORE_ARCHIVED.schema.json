@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xview3.local/schemas/V100_CORE_ARCHIVED.schema.json",
+  "title": "External V100 core archive attestation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "status",
+    "created_utc",
+    "attestation",
+    "cutover_ready_sha256",
+    "h100",
+    "v100",
+    "archive"
+  ],
+  "properties": {
+    "schema": {
+      "const": 1
+    },
+    "status": {
+      "const": "v100-core-archived"
+    },
+    "created_utc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "attestation": {
+      "const": "external-human-operator"
+    },
+    "cutover_ready_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "h100": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "acceptance_uuid",
+        "git_sha",
+        "sif_sha256",
+        "package"
+      ],
+      "properties": {
+        "acceptance_uuid": {
+          "type": "string",
+          "minLength": 1
+        },
+        "git_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "sif_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "package": {
+          "$ref": "#/$defs/package"
+        }
+      }
+    },
+    "v100": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "git_sha",
+        "campaign_id",
+        "stopped_utc",
+        "stop_mode",
+        "running_core_processes",
+        "diagnostic_status"
+      ],
+      "properties": {
+        "git_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "campaign_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "stopped_utc": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "stop_mode": {
+          "const": "graceful"
+        },
+        "running_core_processes": {
+          "const": 0
+        },
+        "diagnostic_status": {
+          "const": "non-reportable-diagnostic"
+        }
+      }
+    },
+    "archive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "manifest_path",
+        "manifest_sha256"
+      ],
+      "properties": {
+        "manifest_path": {
+          "type": "string",
+          "pattern": "^/"
+        },
+        "manifest_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "manifest_sha256",
+        "ready_sha256",
+        "sha256sums_sha256",
+        "repo_bundle_sha256"
+      ],
+      "properties": {
+        "manifest_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "ready_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "sha256sums_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "repo_bundle_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    }
+  }
+}
