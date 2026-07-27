@@ -1,0 +1,30 @@
+Bootstrap: docker
+From: python:3.11.15-slim-bookworm@sha256:28255a3ace7eb4c48bc1b57b90af29e1bc82b4fd6c60614a8e3dce61b87ff941
+
+%labels
+    org.opencontainers.image.title "xView3 strict-FP32 H100 runtime"
+    org.opencontainers.image.base.digest "sha256:28255a3ace7eb4c48bc1b57b90af29e1bc82b4fd6c60614a8e3dce61b87ff941"
+    org.opencontainers.image.python "3.11.15"
+
+%files
+    env-v100node.txt /opt/xview3/env-v100node.txt
+    wheelhouse /opt/xview3/wheelhouse
+
+%post
+    set -eu
+    export PIP_NO_INDEX=1
+    export PIP_DISABLE_PIP_VERSION_CHECK=1
+    python -m pip install \
+        --no-index \
+        --find-links=/opt/xview3/wheelhouse \
+        --requirement /opt/xview3/env-v100node.txt
+    python -m pip check
+    rm -rf /root/.cache/pip /opt/xview3/wheelhouse
+
+%environment
+    export PYTHONNOUSERSITE=1
+    export PIP_NO_INDEX=1
+    export PIP_DISABLE_PIP_VERSION_CHECK=1
+
+%test
+    python -c "import lightning, timm, torch; assert torch.__version__ == '2.11.0+cu126'"
