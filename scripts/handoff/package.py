@@ -1140,6 +1140,7 @@ def build_wheelhouse(
                 "pip",
                 "download",
                 "--only-binary=:all:",
+                "--no-deps",
                 "--requirement",
                 str(lock_path),
                 "--dest",

@@ -39,6 +39,11 @@ python -m scripts.handoff upload --repo "$PWD" \
   --receipt /outside/repo/receipts/xview3-h100-fp32-FULL40CHARSHA.upload.json
 ```
 
+The wheelhouse resolver uses binary-only, no-dependency downloads because the
+lock already enumerates every non-bootstrap distribution. `pip`, `setuptools`,
+and `wheel` come only from the digest-pinned Python base and are the sole
+normalized-freeze extras accepted on the H100 target.
+
 `--repo` must be the clean isolated Sprint-7d worktree. `--data-root` may be
 the live V100 checkout's untracked data tree (or an equivalent read-only
 source) so the branch worktree does not need data duplication; the builder

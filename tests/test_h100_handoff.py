@@ -293,6 +293,42 @@ def test_wheelhouse_is_exact_and_contains_only_regular_wheels(tmp_path):
         validate_wheelhouse(options.wheelhouse, lock)
 
 
+def test_wheelhouse_download_resolves_only_the_exact_lock(
+    tmp_path, monkeypatch
+):
+    options, _ = _fixture_source(tmp_path)
+    output = tmp_path / "fresh-wheelhouse"
+    commands = []
+
+    def fake_run(argv, *, cwd=None, capture=True):
+        command = list(argv)
+        commands.append(command)
+        if command[-1] == "--version":
+            return "Python 3.11.15"
+        destination = Path(command[command.index("--dest") + 1])
+        _write(
+            destination / "torch-2.11.0+cu126-py3-none-any.whl",
+            b"fixture wheel",
+        )
+        return ""
+
+    monkeypatch.setattr(handoff_package, "_run", fake_run)
+    monkeypatch.setattr(
+        handoff_package, "_inside_repository_worktrees", lambda *_args: False
+    )
+    handoff_package.build_wheelhouse(
+        repo_root=options.repo_root,
+        output=output,
+        python=tmp_path / "python3.11",
+    )
+    download = commands[1]
+    assert "--only-binary=:all:" in download
+    assert "--no-deps" in download
+    assert [path.name for path in output.iterdir()] == [
+        "torch-2.11.0+cu126-py3-none-any.whl"
+    ]
+
+
 def test_transfer_dependencies_are_exact_and_cli_import_is_lazy():
     repo = Path(__file__).parents[1]
     requirements = (

@@ -74,4 +74,6 @@ into four ordered commits: deterministic source packaging and Box transfer;
 strict-FP32 target acceptance; fail-stop campaign/cutover/result handback; and
 the policy/documentation amendment. A fifth operational-hardening commit
 corrects the Box co-owner root-permission preflight without changing the
-package contract. Review and merge remain human gates.
+package contract. A sixth resolver-hardening commit limits the wheelhouse to
+the fully enumerated lock; bootstrap tooling remains supplied only by the
+pinned OCI base. Review and merge remain human gates.
