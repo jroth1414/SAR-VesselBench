@@ -72,4 +72,6 @@ handoff share signed receipts and therefore land as one atomic contract. To
 keep that contract reviewable despite its size, the implementation is split
 into four ordered commits: deterministic source packaging and Box transfer;
 strict-FP32 target acceptance; fail-stop campaign/cutover/result handback; and
-the policy/documentation amendment. Review and merge remain human gates.
+the policy/documentation amendment. A fifth operational-hardening commit
+corrects the Box co-owner root-permission preflight without changing the
+package contract. Review and merge remain human gates.

@@ -59,9 +59,12 @@ slice alone is target acceptance.
 
 Production build accepts only the committed
 `containers/h100-strict-fp32.def`; a byte-identical copy at another path is
-rejected. Box preflight also requires upload, update/rename, and delete
-permissions. Files larger than the literal 50,000,000-byte boundary use
-chunked upload.
+rejected. Box preflight proves upload, update, rename, and delete on a
+disposable child file and verifies cleanup. It intentionally does not require
+`can_delete` on the collaborated root itself: Box reports that value as false
+for co-owners because only the owner can delete the shared root. The probe
+refuses to run beside a published `READY.json`. Files larger than the literal
+50,000,000-byte boundary use chunked upload.
 
 On the H100 host, use an outside-repository destination that does not yet
 exist. Download is built and fully verified in a private sibling staging

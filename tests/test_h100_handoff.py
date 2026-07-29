@@ -739,6 +739,10 @@ class _Folder:
         return self.client.items[self.id]
 
     def get_items(self, **kwargs):
+        if self.client._fail_probe(
+            "list", ".xview3-handoff-preflight-list"
+        ):
+            raise RuntimeError("probe listing failed")
         offset = kwargs.get("offset", 0)
         limit = kwargs.get("limit", 1000)
         children = [
@@ -755,7 +759,10 @@ class _Folder:
     def upload(self, path, name):
         self.client.events.append(("direct", name))
         stored = self.client._store(self.id, name, Path(path).read_bytes())
-        if self.client.fail_after_store_name == name:
+        if (
+            self.client.fail_after_store_name == name
+            or self.client._fail_probe("upload-response", name)
+        ):
             raise RuntimeError("committed upload response was lost")
         return stored
 
@@ -773,10 +780,28 @@ class _File:
 
     def update_contents(self, path):
         item = self.client.items[self.id]
+        if self.client._fail_probe("update", item.name):
+            raise RuntimeError("probe update denied")
+        lost_response = self.client._fail_probe("update-response", item.name)
         self.client.events.append(("update", item.name))
-        return self.client._store(
+        stored = self.client._store(
             item.parent, item.name, Path(path).read_bytes(), self.id
         )
+        if lost_response:
+            raise RuntimeError("committed update response was lost")
+        return stored
+
+    def rename(self, name):
+        item = self.client.items[self.id]
+        if self.client._fail_probe("rename", item.name):
+            raise RuntimeError("probe rename denied")
+        lost_response = self.client._fail_probe("rename-response", item.name)
+        previous = item.name
+        item.name = name
+        self.client.events.append(("rename", previous))
+        if lost_response:
+            raise RuntimeError("committed rename response was lost")
+        return item
 
     def get_chunked_uploader(self, path):
         item = self.client.items[self.id]
@@ -788,9 +813,15 @@ class _File:
         handle.write(self.client.items[self.id].content)
 
     def delete(self):
+        item = self.client.items[self.id]
+        if self.client._fail_probe("delete", item.name):
+            raise RuntimeError("probe delete denied")
+        lost_response = self.client._fail_probe("delete-response", item.name)
         item = self.client.items.pop(self.id)
         self.client.children[item.parent].remove(self.id)
         self.client.events.append(("delete", item.name))
+        if lost_response:
+            raise RuntimeError("committed delete response was lost")
 
 
 class _Client:
@@ -801,6 +832,7 @@ class _Client:
         permissions=None,
         fail_after_store_name=None,
         corrupt_after_ready=False,
+        fail_probe_action=None,
     ):
         self.items = {"0": _Item("0", "root", "folder")}
         self.permissions = permissions or SimpleNamespace(
@@ -816,6 +848,20 @@ class _Client:
         self.chunk_start_mode = chunk_start_mode
         self.fail_after_store_name = fail_after_store_name
         self.corrupt_after_ready = corrupt_after_ready
+        self.fail_probe_action = fail_probe_action
+
+    def _fail_probe(self, action, name):
+        is_probe = name.startswith(".xview3-handoff-preflight-")
+        if (
+            self.fail_probe_action == "delete-always"
+            and action == "delete"
+            and is_probe
+        ):
+            return True
+        if self.fail_probe_action == action and is_probe:
+            self.fail_probe_action = None
+            return True
+        return False
 
     def _new(self, name, kind, parent, content=b""):
         item_id = str(self.counter)
@@ -891,6 +937,7 @@ def test_box_mock_chunk_resume_ready_last_download_and_extract(tmp_path):
     assert receipt_payload["remote_file_count"] == len(_files(package))
     assert "folder_id" not in receipt_payload
     second_receipt = tmp_path / "upload-receipt-second.json"
+    events_before_second_upload = list(client.events)
     assert _upload_fixture_package(
         client,
         "0",
@@ -898,6 +945,7 @@ def test_box_mock_chunk_resume_ready_last_download_and_extract(tmp_path):
         repo_root=options.repo_root,
         receipt_path=second_receipt,
     )["uploaded"] == 0
+    assert client.events == events_before_second_upload
 
     ready = json.loads((package / "READY.json").read_text())
     download_kwargs = {
@@ -967,14 +1015,122 @@ def test_box_mock_chunk_resume_ready_last_download_and_extract(tmp_path):
     assert not list(tmp_path.glob(".failed-download.downloading-*"))
 
 
-def test_box_preflight_requires_mutation_permissions():
+def test_box_preflight_accepts_collaborated_root_and_probes_child():
     permissions = SimpleNamespace(
         can_upload=True,
         can_delete=False,
-        can_rename=True,
+        can_rename=False,
     )
-    with pytest.raises(BoxTransferError, match="permissions"):
-        preflight_box(_Client(permissions=permissions), "0", minimum_free_bytes=0)
+    client = _Client(permissions=permissions)
+    preflight_box(client, "0", minimum_free_bytes=0)
+    actions = [action for action, _name in client.events]
+    assert actions == ["direct", "stored", "update", "stored", "rename", "delete"]
+    assert client.children["0"] == []
+
+
+def test_box_preflight_requires_root_child_upload_permission():
+    permissions = SimpleNamespace(
+        can_upload=False,
+        can_delete=False,
+        can_rename=False,
+    )
+    client = _Client(permissions=permissions)
+    with pytest.raises(BoxTransferError, match="child upload"):
+        preflight_box(client, "0", minimum_free_bytes=0)
+    assert client.events == []
+
+
+@pytest.mark.parametrize(
+    "action",
+    [
+        "upload-response",
+        "update",
+        "update-response",
+        "rename",
+        "rename-response",
+        "delete",
+        "delete-response",
+    ],
+)
+def test_box_preflight_child_probe_failure_is_cleaned_up(action):
+    client = _Client(fail_probe_action=action)
+    with pytest.raises(BoxTransferError, match="child-mutation probe failed"):
+        preflight_box(client, "0", minimum_free_bytes=0)
+    assert client.children["0"] == []
+
+
+def test_box_preflight_sanitizes_initial_listing_failure():
+    client = _Client(fail_probe_action="list")
+    with pytest.raises(
+        BoxTransferError, match="could not inspect destination"
+    ):
+        preflight_box(client, "0", minimum_free_bytes=0)
+    assert client.events == []
+    assert client.children["0"] == []
+
+
+def test_box_preflight_fails_closed_when_cleanup_cannot_delete():
+    client = _Client(fail_probe_action="delete-always")
+    with pytest.raises(BoxTransferError, match="cleanup could not be verified"):
+        preflight_box(client, "0", minimum_free_bytes=0)
+    remaining = [client.items[item_id] for item_id in client.children["0"]]
+    assert len(remaining) == 1
+    assert remaining[0].name.startswith(".xview3-handoff-preflight-")
+
+
+def test_box_preflight_refuses_to_probe_beside_ready():
+    client = _Client()
+    client._store("0", "READY.json", b"{}")
+    events_before = list(client.events)
+    with pytest.raises(BoxTransferError, match="READY.json"):
+        preflight_box(client, "0", minimum_free_bytes=0)
+    assert client.events == events_before
+    assert [client.items[item_id].name for item_id in client.children["0"]] == [
+        "READY.json"
+    ]
+
+
+def test_box_repair_invalidates_ready_before_child_probe(tmp_path):
+    options, _ = _fixture_source(tmp_path)
+    package = build_package(options)
+    client = _Client()
+    _upload_fixture_package(
+        client,
+        "0",
+        package,
+        repo_root=options.repo_root,
+        receipt_path=tmp_path / "first-upload-receipt.json",
+    )
+    target = next(
+        item
+        for item in client.items.values()
+        if item.object_type == "file"
+        and item.name not in {"READY.json", "manifest.json", "SHA256SUMS"}
+    )
+    target.content += b"remote-corruption"
+    target.size = len(target.content)
+    target.sha1 = hashlib.sha1(target.content).hexdigest()
+
+    event_offset = len(client.events)
+    _upload_fixture_package(
+        client,
+        "0",
+        package,
+        repo_root=options.repo_root,
+        receipt_path=tmp_path / "repair-upload-receipt.json",
+    )
+    repair_events = client.events[event_offset:]
+    ready_delete = next(
+        index
+        for index, event in enumerate(repair_events)
+        if event == ("delete", "READY.json")
+    )
+    probe_upload = next(
+        index
+        for index, (action, name) in enumerate(repair_events)
+        if action == "direct" and name.startswith(".xview3-handoff-preflight-")
+    )
+    assert ready_delete < probe_upload
 
 
 def test_box_preflight_uses_destination_owner_quota():

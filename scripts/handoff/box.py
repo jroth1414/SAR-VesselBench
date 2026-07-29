@@ -14,6 +14,7 @@ import re
 import shutil
 import stat
 import tempfile
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -134,13 +135,132 @@ def _object_type(item: object) -> str:
     return str(value or "")
 
 
+def _probe_child_mutations(client: object, folder_id: str) -> None:
+    """Prove create/update/rename/delete on a disposable child file."""
+
+    stem = f".xview3-handoff-preflight-{uuid.uuid4().hex}"
+    original_name = f"{stem}.txt"
+    renamed_name = f"{stem}-renamed.txt"
+    probe_names = {original_name, renamed_name}
+    try:
+        folder = client.folder(folder_id)  # type: ignore[attr-defined]
+        initial_items = _list_items(folder)
+    except Exception as exc:
+        raise BoxTransferError(
+            "Box child-mutation probe could not inspect destination"
+        ) from exc
+
+    def probe_items() -> list[object]:
+        matches = []
+        for item in _list_items(folder):
+            name = str(_attribute(item, "name") or "")
+            if name in probe_names:
+                if _object_type(item) != "file":
+                    raise BoxTransferError(
+                        "Box child-mutation probe name is not a file"
+                    )
+                matches.append(item)
+        return matches
+
+    if any(
+        str(_attribute(item, "name") or "") == "READY.json"
+        for item in initial_items
+    ):
+        raise BoxTransferError(
+            "Box child-mutation probe refuses to run beside READY.json"
+        )
+    if any(
+        str(_attribute(item, "name") or "") in probe_names
+        for item in initial_items
+    ):
+        raise BoxTransferError("Box child-mutation probe name collision")
+
+    item_id = ""
+    delete_completed = False
+    failure: BaseException | None = None
+    try:
+        with tempfile.TemporaryDirectory(
+            prefix="xview3-box-preflight-"
+        ) as temporary:
+            local = Path(temporary) / "probe.txt"
+            local.write_bytes(b"xview3-box-capability-probe-v1\n")
+            uploaded = folder.upload(str(local), original_name)
+            item_id = str(_attribute(uploaded, "id") or "")
+            if not item_id:
+                raise BoxTransferError(
+                    "Box child-mutation probe returned no file ID"
+                )
+
+            remote_file = client.file(item_id)  # type: ignore[attr-defined]
+            local.write_bytes(b"xview3-box-capability-probe-v2\n")
+            remote_file.update_contents(str(local))
+            updated = _refresh_file(client, item_id)
+            if not _remote_matches(updated, local):
+                raise BoxTransferError(
+                    "Box child-mutation probe update verification failed"
+                )
+
+            remote_file.rename(renamed_name)
+            renamed = remote_file.get(fields=["id", "name"])
+            if str(_attribute(renamed, "name") or "") != renamed_name:
+                raise BoxTransferError(
+                    "Box child-mutation probe rename verification failed"
+                )
+
+            remote_file.delete()
+            delete_completed = True
+    except BaseException as exc:
+        failure = exc
+
+    def cleanup() -> None:
+        identifiers = {item_id} if item_id and not delete_completed else set()
+        for _attempt in range(2):
+            try:
+                identifiers.update(
+                    str(_attribute(item, "id") or "")
+                    for item in probe_items()
+                )
+            except Exception:
+                if not identifiers:
+                    continue
+            identifiers.discard("")
+            for identifier in identifiers:
+                try:
+                    client.file(identifier).delete()  # type: ignore[attr-defined]
+                except Exception:
+                    # A lost successful DELETE response is acceptable only if
+                    # the authoritative follow-up listing proves absence.
+                    pass
+            remaining = probe_items()
+            if not remaining:
+                return
+            identifiers = {
+                str(_attribute(item, "id") or "") for item in remaining
+            }
+        raise BoxTransferError(
+            "Box child-mutation probe cleanup could not be verified"
+        )
+
+    try:
+        cleanup()
+    except BaseException as cleanup_exc:
+        raise BoxTransferError(
+            "Box child-mutation probe failed and cleanup could not be verified"
+        ) from cleanup_exc
+    if failure is not None:
+        if isinstance(failure, Exception):
+            raise BoxTransferError("Box child-mutation probe failed") from failure
+        raise failure
+
+
 def preflight_box(
     client: object,
     folder_id: str,
     *,
     minimum_free_bytes: int = MINIMUM_BOX_FREE_BYTES,
+    probe_mutations: bool = True,
 ) -> BoxPreflight:
-    """Validate destination access, quota, and the account file-size ceiling."""
+    """Validate destination access, quota, file-size ceiling, and child rights."""
 
     try:
         folder = client.folder(folder_id).get(  # type: ignore[attr-defined]
@@ -170,17 +290,14 @@ def preflight_box(
     if maximum <= 0:
         raise BoxTransferError("Box did not report a positive maximum upload size")
     permissions = _attribute(folder, "permissions")
-    required_permissions = ("can_upload", "can_delete", "can_rename")
-    missing_permissions = [
-        name
-        for name in required_permissions
-        if _attribute(permissions or {}, name) is not True
-    ]
-    if missing_permissions:
+    if _attribute(permissions or {}, "can_upload") is not True:
         raise BoxTransferError(
-            "Box folder lacks required upload/update/delete permissions: "
-            + ", ".join(missing_permissions)
+            "Box folder lacks required child upload permission"
         )
+    # Root can_delete/can_rename describe the collaborated root itself. A
+    # co-owner cannot delete that root, so prove the required child rights.
+    if probe_mutations:
+        _probe_child_mutations(client, folder_id)
     return BoxPreflight(
         folder_id=folder_id,
         quota_bytes=quota,
@@ -437,7 +554,10 @@ def _upload_package(
     package_root = _absolute_path(package_root)
     receipt = _receipt_destination(receipt_path, repo_root)
     preflight = preflight_box(
-        client, folder_id, minimum_free_bytes=minimum_free_bytes
+        client,
+        folder_id,
+        minimum_free_bytes=minimum_free_bytes,
+        probe_mutations=False,
     )
     local = _local_files(package_root)
     remote = list_remote_files(client, folder_id)
@@ -475,6 +595,11 @@ def _upload_package(
             f"upload: need {required_upload_bytes} bytes, "
             f"have {preflight.free_bytes}"
         )
+    # Never add a probe beside a valid READY marker. Mutation-needed uploads
+    # have already invalidated READY above; exact idempotent uploads need no
+    # mutation rights at all.
+    if mutation_needed:
+        _probe_child_mutations(client, folder_id)
 
     uploaded = 0
     skipped = 0
@@ -496,6 +621,7 @@ def _upload_package(
                 ready_cleanup_required = True
                 _delete_remote_ready(client, folder_id)
                 remote.pop("READY.json", None)
+                _probe_child_mutations(client, folder_id)
                 existing = remote.get(relative)
             parent_id = _ensure_remote_parent(
                 client, folder_id, PurePosixPath(relative), folder_cache
