@@ -76,4 +76,6 @@ the policy/documentation amendment. A fifth operational-hardening commit
 corrects the Box co-owner root-permission preflight without changing the
 package contract. A sixth resolver-hardening commit limits the wheelhouse to
 the fully enumerated lock; bootstrap tooling remains supplied only by the
-pinned OCI base. Review and merge remain human gates.
+pinned OCI base. A seventh source-host hardening commit scopes Git's
+`safe.directory` exception to the temporary bare bundle verifier for
+root-squashed NFS staging. Review and merge remain human gates.

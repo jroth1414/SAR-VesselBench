@@ -42,7 +42,11 @@ python -m scripts.handoff upload --repo "$PWD" \
 The wheelhouse resolver uses binary-only, no-dependency downloads because the
 lock already enumerates every non-bootstrap distribution. `pip`, `setuptools`,
 and `wheel` come only from the digest-pinned Python base and are the sole
-normalized-freeze extras accepted on the H100 target.
+normalized-freeze extras accepted on the H100 target. Set `TMPDIR` to
+outside-repository scratch with at least the wheelhouse size free; environment
+assembly and the exact Git-bundle round trip use it. The verifier scopes Git's
+`safe.directory` exception to its one temporary bare repository, which keeps
+root-squashed NFS staging compatible without changing global Git policy.
 
 `--repo` must be the clean isolated Sprint-7d worktree. `--data-root` may be
 the live V100 checkout's untracked data tree (or an equivalent read-only

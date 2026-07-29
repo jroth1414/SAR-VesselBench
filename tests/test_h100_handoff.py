@@ -475,6 +475,40 @@ def _production_options(
     )
 
 
+def test_git_bundle_verifier_marks_temporary_bare_repo_safe(
+    tmp_path, monkeypatch
+):
+    options, commit = _fixture_source(tmp_path)
+    bundle = tmp_path / "source.bundle"
+    _run(
+        "git",
+        "bundle",
+        "create",
+        str(bundle),
+        "refs/heads/sprint-7d-h100-fp32",
+        cwd=options.repo_root,
+    )
+    real_run = handoff_package._run
+    verify_commands = []
+
+    def checked_run(argv, **kwargs):
+        command = list(argv)
+        if "bundle" in command and "verify" in command:
+            verifier = command[command.index("-C") + 1]
+            assert f"safe.directory={verifier}" in command
+            verify_commands.append(command)
+        return real_run(argv, **kwargs)
+
+    monkeypatch.setattr(handoff_package, "_run", checked_run)
+    verified = handoff_package._verify_git_bundle(
+        bundle,
+        "sprint-7d-h100-fp32",
+        commit,
+    )
+    assert verify_commands
+    assert verified["chips"] == ["dev-scene", "train-scene"]
+
+
 def test_target_facing_verify_and_extract_reject_fixture_package(tmp_path):
     options, _ = _fixture_source(tmp_path)
     package = build_package(options)

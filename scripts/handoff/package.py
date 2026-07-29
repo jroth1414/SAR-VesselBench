@@ -892,7 +892,18 @@ def _verify_git_bundle(
         temporary_root = Path(temporary)
         verifier = temporary_root / "verifier.git"
         _run(["git", "init", "--quiet", "--bare", str(verifier)])
-        _run(["git", "-C", str(verifier), "bundle", "verify", str(bundle)])
+        _run(
+            [
+                "git",
+                "-c",
+                f"safe.directory={verifier}",
+                "-C",
+                str(verifier),
+                "bundle",
+                "verify",
+                str(bundle),
+            ]
+        )
         checkout = temporary_root / "checkout"
         _run(
             [
