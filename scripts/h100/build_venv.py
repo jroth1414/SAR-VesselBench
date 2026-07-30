@@ -24,7 +24,10 @@ from packaging.utils import canonicalize_name
 
 from scripts.h100.contracts import atomic_write_json, atomic_write_text, sha256_file
 
-EXPECTED_PYTHON_VERSION = "3.11.15"
+# Judy provides this site-managed CPython module. It is intentionally pinned
+# as part of the native-runtime amendment; the historical Sprint 7d payload's
+# 3.11.15 OCI metadata remains immutable base-payload provenance.
+EXPECTED_PYTHON_VERSION = "3.11.13"
 RECEIPT_SCHEMA = 1
 RECEIPT_KIND = "xview3-h100-native-venv"
 TREE_DIGEST_ALGORITHM = "xview3-venv-tree-v1"

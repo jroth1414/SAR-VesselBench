@@ -22,9 +22,9 @@ def _write_executable(path: Path, content: bytes) -> None:
 def _metadata(path: Path, *, prefix: str, base_prefix: str) -> dict[str, object]:
     resolved = path.resolve(strict=True)
     return {
-        "version": "3.11.15",
+        "version": "3.11.13",
         "implementation": "cpython",
-        "implementation_version": [3, 11, 15, "final", 0],
+        "implementation_version": [3, 11, 13, "final", 0],
         "soabi": "cpython-311-x86_64-linux-gnu",
         "platform": "Linux-fixture-x86_64",
         "libc": ["glibc", "2.36"],

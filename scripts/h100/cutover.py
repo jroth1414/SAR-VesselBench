@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Mapping
 
 from scripts.h100.acceptance import EXPECTED_FRACTION_WORKLOAD
+from scripts.h100.build_venv import EXPECTED_PYTHON_VERSION
 from scripts.h100.contracts import (
     FROZEN_PATHS,
     atomic_write_json,
@@ -228,7 +229,7 @@ def validate_h100_ready(
     base_python = accepted_venv.get("base_python")
     if (
         not isinstance(base_python, Mapping)
-        or base_python.get("version") != "3.11.15"
+        or base_python.get("version") != EXPECTED_PYTHON_VERSION
         or base_python.get("executable_sha256") != expected_base_python_sha256
     ):
         raise RuntimeError("H100-ready base-Python identity mismatch")

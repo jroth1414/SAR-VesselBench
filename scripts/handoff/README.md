@@ -171,7 +171,7 @@ but are never the Judy execution checkout or runtime.
 
 ## Build the final-path native H100 venv
 
-Provide the exact Python 3.11.15 executable on Judy and build directly at the
+Provide the exact Python 3.11.13 executable on Judy and build directly at the
 permanent path. The build is offline and consumes the verified Sprint 7d
 wheelhouse:
 
@@ -180,7 +180,7 @@ cd /scratch/xview3-sprint7e
 /path/to/bootstrap-python -m scripts.h100.build_venv build \
   --repo "$PWD" \
   --wheelhouse /scratch/xview3-base-extracted/environment/wheelhouse \
-  --base-python /path/to/python-3.11.15/bin/python3.11 \
+  --base-python /path/to/python-3.11.13/bin/python3.11 \
   --output /persistent/venvs/xview3-h100-fp32
 ```
 
@@ -203,7 +203,7 @@ cd /scratch/xview3-sprint7e
 /path/to/bootstrap-python -m scripts.h100.build_venv verify \
   --repo "$PWD" \
   --venv-root /persistent/venvs/xview3-h100-fp32 \
-  --base-python /path/to/python-3.11.15/bin/python3.11 \
+  --base-python /path/to/python-3.11.13/bin/python3.11 \
   --expected-venv-sha256 VENV_TREE_64HEX \
   --expected-receipt-sha256 VENV_BUILD_JSON_64HEX \
   --expected-base-python-sha256 BASE_PYTHON_EXECUTABLE_64HEX

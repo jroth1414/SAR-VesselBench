@@ -16,7 +16,7 @@ live V100 campaign remains untouched until every H100 and cutover gate passes.
 - Native `python -m venv --copies` is the H100 runtime. Apptainer, Enroot,
   Pyxis, SIF, OCI, BF16, TF32, FP16, DDP, and per-arm exceptions are not part
   of the Sprint-7e H100 execution path.
-- The base interpreter is exactly Python 3.11.15. Packages install entirely
+- The base interpreter is exactly Judy's site-managed Python 3.11.13. Packages install entirely
   offline from Sprint 7d's verified wheelhouse; torch remains
   `2.11.0+cu126` and the normalized freeze must match the exact lock.
 - The venv is built at its final persistent path, bytecode-cleaned, sealed

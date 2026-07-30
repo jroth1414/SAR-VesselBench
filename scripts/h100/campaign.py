@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Mapping
 
+from scripts.h100.build_venv import EXPECTED_PYTHON_VERSION
 from scripts.h100.contracts import (
     EFFECTIVE_BATCH,
     EXPECTED_GPU_COUNT,
@@ -537,7 +538,10 @@ class Controller:
         ):
             raise RuntimeError("campaign native venv differs from acceptance")
         self.base_python = dict(accepted_venv.get("base_python", {}))
-        if not self.base_python or self.base_python.get("version") != "3.11.15":
+        if (
+            not self.base_python
+            or self.base_python.get("version") != EXPECTED_PYTHON_VERSION
+        ):
             raise RuntimeError("campaign accepted base-Python identity is invalid")
         self.base_payload = dict(self.acceptance.get("base_payload", {}))
         self.runtime_amendment = dict(self.acceptance.get("runtime_amendment", {}))

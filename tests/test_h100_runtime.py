@@ -74,9 +74,9 @@ def runtime_amendment() -> dict[str, str]:
 
 def base_python() -> dict[str, object]:
     return {
-        "version": "3.11.15",
+        "version": "3.11.13",
         "implementation": "cpython",
-        "resolved_path": "/opt/python-3.11.15/bin/python3.11",
+        "resolved_path": "/opt/python-3.11.13/bin/python3.11",
         "executable_sha256": BASE_PYTHON_SHA256,
     }
 
@@ -914,7 +914,7 @@ def test_slurm_smoke_binding_lock_distinguishes_both_transfers(tmp_path):
 
 def test_native_venv_builder_is_final_path_offline_and_copies_python():
     source = (REPO / "scripts/h100/build_venv.py").read_text()
-    assert 'EXPECTED_PYTHON_VERSION = "3.11.15"' in source
+    assert 'EXPECTED_PYTHON_VERSION = "3.11.13"' in source
     assert '"venv",\n                "--copies"' in source
     assert '"--no-index"' in source
     assert '"--only-binary=:all:"' in source

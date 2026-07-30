@@ -382,7 +382,7 @@ identically to every arm. This committed log lives here; `runs/` is gitignored a
   no data, weights, wheelhouse, run, cache, venv, reference, eval-final, or
   secret material and uses a separate initially empty Box folder so a base
   payload transfer is never mutated or interrupted.
-- **Native environment:** require a regular exact Python 3.11.15 executable;
+- **Native environment:** owner-approved on 2026-07-30, require Judy's site-managed exact Python 3.11.13 executable; the historical Sprint-7d OCI Python-3.11.15 metadata remains immutable base-payload provenance only;
   build `python -m venv --copies` at the final persistent path; install entirely
   offline with `--no-index` from the verified wheelhouse; require `pip check`,
   exact normalized freeze, safe relative links, bytecode removal, read-only
