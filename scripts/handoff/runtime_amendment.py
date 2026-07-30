@@ -76,6 +76,7 @@ _REQUIRED_RUNTIME_FILES = (
     "slurm/h100/campaign.sbatch",
     "slurm/h100/smoke.sbatch",
     "slurm/h100/submit.sh",
+    "slurm/h100/shims/scontrol",
 )
 _LAUNCH_FILES = _REQUIRED_RUNTIME_FILES[1:]
 _FORBIDDEN_CONTAINER_TOKENS = re.compile(

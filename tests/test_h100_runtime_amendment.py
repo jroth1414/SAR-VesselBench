@@ -38,6 +38,7 @@ def _fixture_repo(root: Path) -> tuple[Path, str, str]:
         "slurm/h100/campaign.sbatch": "#!/bin/bash\n# native venv campaign\n",
         "slurm/h100/smoke.sbatch": "#!/bin/bash\n# native venv smoke\n",
         "slurm/h100/submit.sh": "#!/bin/bash\n# native venv submit\n",
+        "slurm/h100/shims/scontrol": "#!/bin/bash\n# child requeue defer shim\n",
     }
     for relative, content in files.items():
         path = repo / relative
