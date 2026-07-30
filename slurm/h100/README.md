@@ -5,41 +5,60 @@ unchanged `src.train.finetune` entrypoint with shared `32-true`, micro-batch
 16, accumulation 1, and effective batch 16. No script here stops, signals, or
 otherwise mutates the live V100 campaign.
 
-## 1. Verify and stage the handoff package
+## 1. Verify the two-layer Box handoff
 
-The package is owned by `scripts.handoff`; this lane does not define another
-archive format. On the target, first verify the out-of-band hashes for
-`manifest.json`, `SHA256SUMS`, `READY.json`, and `code/xview3.bundle`. Clone
-the bundle, then use:
+Keep the completed Sprint 7d data/wheelhouse payload immutable. The smaller
+Sprint 7e runtime amendment is a separate content-addressed package. For each,
+verify its out-of-band package id, source Git SHA, `manifest.json`,
+`SHA256SUMS`, and `READY.json` before use:
 
 ```bash
-python3 -m scripts.handoff verify --package-root /path/to/package
+python3 -m scripts.handoff verify --package-root /path/to/sprint-7d-base-payload
+python3 -m scripts.handoff verify-runtime \
+  --package-root /path/to/sprint-7e-runtime-amendment \
+  --base-package-root /path/to/sprint-7d-base-payload
+python3 -m scripts.handoff extract-runtime \
+  --package-root /path/to/sprint-7e-runtime-amendment \
+  --base-package-root /path/to/sprint-7d-base-payload \
+  --destination /an/empty/runtime-amendment-directory
 python3 -m scripts.handoff extract \
-  --package-root /path/to/package \
-  --destination /an/empty/staging/directory
+  --package-root /path/to/sprint-7d-base-payload \
+  --destination /an/empty/data-staging-directory
 ```
 
-The batch job repeats those checks, clones to `$SLURM_TMPDIR/repo`, extracts
-to the separate empty `$SLURM_TMPDIR/payload`, and links only ignored
-`data/chips`, `data/raw`, and `data/weights` into the clone. Committed frozen
-data JSON files are never replaced.
+The historical bundle inside the base payload is independently rehashed but
+never cloned for H100. Only the runtime amendment bundle is cloned to
+`$SLURM_TMPDIR/repo`. The batch job extracts the base payload to the separate
+empty `$SLURM_TMPDIR/payload` and links only ignored `data/chips`, `data/raw`,
+and `data/weights` into the Sprint 7e clone. Committed frozen JSON is never
+replaced. Both transfer identities remain bound in every readiness receipt.
 
-## 2. Build the persistent SIF
+## 2. Build the persistent native venv
 
-Use the package's verified offline wheelhouse:
+Provide an executable Python 3.11.15 installation on Judy, record the SHA-256
+of its resolved executable, and build directly at the final persistent path
+from the base payload's verified offline wheelhouse:
 
 ```bash
-python -m scripts.h100.build_container \
+/path/to/requirements-transfer-python -m scripts.h100.build_venv build \
   --repo /path/to/cloned/repo \
   --wheelhouse /path/to/extracted/environment/wheelhouse \
-  --output /persistent/path/xview3-h100-fp32.sif
+  --base-python /path/to/python-3.11.15/bin/python3.11 \
+  --output /persistent/venvs/xview3-h100-fp32
 ```
 
-The definition pins Python 3.11.15 by OCI digest. The build performs a
-separate digest-pinned OCI access check, installs packages with `--no-index`,
-uses `apptainer build --fakeroot`, compares the normalized SIF freeze against
-the exact environment lock, and writes atomic `.sha256` and `.build.json`
-receipts.
+The builder uses `venv --copies`, installs only from the wheelhouse with
+`pip --no-index`, checks the normalized freeze against
+`locks/env-v100node.txt`, removes bytecode, seals the tree read-only, and
+writes `<venv>.sha256` plus `<venv>.build.json`; the build JSON is published
+last. The venv is non-relocatable. Every allocation rehashes and verifies the
+complete tree, receipt, exact base Python, environment lock, and `pip check`
+before running the exact `<venv>/bin/python` path. There is no activation.
+
+The native process starts under `env -i` with an allocation-local home/cache,
+offline package/model settings, `PYTHONNOUSERSITE=1`, and only enumerated CUDA
+and Slurm values. `NVIDIA_TF32_OVERRIDE=0` is exported before any CUDA-capable
+command. Box variables never enter the child process.
 
 ## 3. Configure the site
 
@@ -47,6 +66,8 @@ Copy `site.env.example` to ignored `site.env` and fill every hash/path.
 Keep H100 runs in a persistent root distinct from V100 runs. Account,
 partition, reservation, log directory, mail, project name, reference paths,
 Box JWT path/folder, and the preflight result-part limit are site interfaces.
+Submission uses exact `--export=NONE`; mode and site-file path are validated
+positional batch arguments, not exported environment variables.
 
 ## 4. Slurm smoke, acceptance, and cutover
 
@@ -56,12 +77,14 @@ Run the lightweight one-GPU Slurm acceptance first:
 slurm/h100/submit.sh smoke
 ```
 
-The first allocation handles a real `SIGUSR1`, writes and atomically promotes
-a synthetic HPC checkpoint, then exits with the reserved host-requeue code.
-The outer batch authorizes and performs exactly one real `scontrol requeue`;
-the requeued allocation resumes the same synthetic cell from `last.ckpt` and
-writes `runs/.h100/slurm-smoke/SLURM_SMOKE_READY.json`. That receipt binds the
-full source SHA, detector, SIF/build receipt, and package control hashes.
+The first allocation's exact venv Python publishes its PID. The outer batch
+verifies that direct-child identity, sends a real `SIGUSR1` across the
+batch-to-native-process boundary, and the child atomically promotes a
+synthetic HPC checkpoint before exiting with the reserved host-requeue code.
+The batch authorizes and performs exactly one real `scontrol requeue`; the
+requeued allocation resumes from `last.ckpt` and writes
+`runs/.h100/slurm-smoke/SLURM_SMOKE_READY.json`. That receipt binds source,
+detector, venv/build/base-Python, base-payload, and runtime-amendment identity.
 Acceptance and cutover reject an absent, stale, or modified smoke receipt.
 
 ```bash
@@ -70,8 +93,8 @@ slurm/h100/submit.sh acceptance
 
 Acceptance requires eight identical H100s at CC 9.0, at least 500 GB
 (500,000,000,000 bytes) of scratch before
-extraction, exact source/frozen/SIF/package hashes, all tests and six real
-checkpoint loads, strict IEEE FP32 in child processes, both backbone probes,
+extraction, exact source/frozen/venv/dual-package hashes, all tests and six
+real checkpoint loads, strict IEEE FP32 in child processes, both probes,
 and a 200-step CNN projection that conservatively beats the recorded
 remaining V100 wall time. The forecast includes the measured package
 verification/clone/extraction cost once per projected Slurm allocation. It
@@ -110,15 +133,15 @@ prevents new launches while already running cells finish. Fifteen minutes
 before the Slurm limit, USR1 is forwarded to every trainer; Lightning writes
 HPC checkpoints, deferred requeue waits for all eight, and each checkpoint is
 promoted atomically to `last.ckpt`. The controller exits with a reserved code
-and only the outer host batch calls real `scontrol`; the slim SIF never does.
+and only the outer host batch calls real `scontrol`; native children never do.
 
 After training, the per-GPU wrapper runs the existing frozen test-split scorer.
 A cell is complete only with finite test metrics, both checkpoints, and fully
 bound runtime provenance. Campaign completion additionally requires exactly
 32 `test_f1` rows and `monotonicity_ok=true` in `runs/summary/grid.csv`.
-Box credentials are removed at submission and compute-job boundaries,
-Apptainer uses `--cleanenv --containall`, and package/reference inputs are
-read-only.
+Box credentials are removed at submission and compute-job boundaries. The
+native child uses an explicit empty environment, and package/reference inputs
+remain immutable evidence.
 
 Static smoke checks:
 
@@ -143,5 +166,5 @@ python -m scripts.h100.reverse_results \
 ```
 
 This delegates to `scripts.handoff build-results`, which includes readiness,
-runtime, projection, container receipt, campaign provenance, and validated
+runtime, projection, venv receipt, campaign provenance, and validated
 cell outputs in the shared handoff format.

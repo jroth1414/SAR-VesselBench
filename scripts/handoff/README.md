@@ -1,143 +1,285 @@
-# Sprint 7d H100 Box handoff
+# Sprint 7e Judy native-venv handoff
 
-These commands build and transfer the core-only, full-SHA-addressed handoff.
-They never read Box credentials from arguments or repository files. A real
-wheelhouse/package build fails closed unless the Box JWT preflight reports at
-least 500 GB (500,000,000,000 bytes) free and a positive maximum file size.
+The Judy handoff has two immutable layers:
 
-The bootstrap host requires Python 3.11.15, `git`, and `zstd`. Create the
-transfer environment separately from training and install only the exact,
-read-only `requirements-transfer.txt` contract (`boxsdk[jwt]==4.13.0`,
-`packaging==26.2`, `PyYAML==6.0.3`, and `pytest==9.1.1`):
+1. the already uploaded and remotely verified Sprint 7d base payload, which
+   contains the data, six core checkpoint directories, offline cu126
+   wheelhouse, and historical source bundle; and
+2. a separate, small, content-addressed Sprint 7e runtime amendment containing
+   the current `sprint-7e-judy-venv` Git bundle.
+
+Judy executes only a native, final-path Python virtual environment. There is no
+container build, container launch, or venv activation in the Sprint 7e path.
+The Apptainer definition retained in the Sprint 7d package is historical,
+non-executed provenance; do not remove it from, rebuild, or otherwise mutate
+that verified package. This native venv applies to the H100 lane only; it
+does not change the live V100 environment, references, or fallback campaign.
+
+## Immutable Sprint 7d base identity
+
+These controls are fixed and must be checked out of band on every receiving
+host:
+
+```text
+package_id:       xview3-h100-fp32-2726199efcebbebc89156e708b89df2a3415468a
+source_git_sha:   2726199efcebbebc89156e708b89df2a3415468a
+READY.json:       b0d6ee18f9ddbd0d604cbea06610dcdbae6a9eb6d1f5ff3ea3431bd9e2d55f81
+manifest.json:    fccb0b505c89836a148afec709bb799f7af4908d955ea1b142e153154d830896
+SHA256SUMS:       21c83b2e3b1b9d67bf00b8abca3ce267a5efd9362c1206b8d29ab21ca3e2d396
+repository bundle:
+                  df21d64cd7ba2d884fcb4a454c46106b39a6c604459861681e2823ac460f2f4e
+environment lock: 7c651f762b84801fcdf50a48accca05911b2b7f6bc1c536cb1acce0d7fa22154
+remote inventory: 201 files, 294,278,292,176 bytes
+```
+
+The production runtime-amendment builder and verifier require that exact base
+package and run its complete Sprint 7d verifier. A look-alike package, changed
+control file, changed source bundle, or changed environment lock fails closed.
+
+## Transfer environment and Box isolation
+
+Use a transfer environment outside the repository. It is not the training
+venv:
 
 ```bash
 python3 -m venv /outside/repo/xview3-box-transfer
 /outside/repo/xview3-box-transfer/bin/pip install -r requirements-transfer.txt
 chmod 0600 /outside/repo/box-jwt.json
 export BOX_JWT_CONFIG=/outside/repo/box-jwt.json
-export BOX_FOLDER_ID=REPLACE_WITH_DEDICATED_BOX_FOLDER_ID
+export BOX_FOLDER_ID=REPLACE_WITH_NEW_EMPTY_RUNTIME_AMENDMENT_FOLDER_ID
 ```
 
-On the source host, run the quota gate before any expensive work, resolve the
-exact Python 3.11.15/cu126 lock, build, verify, and upload:
+`requirements-transfer.txt` pins the compatible `boxsdk[jwt]` v4 line and the
+other transfer-only dependencies. Keep the JWT outside the repository at mode
+`0600`; its path and contents must never be logged or archived.
+
+The Sprint 7e amendment must use its own newly created, initially empty Box
+folder. Do not point `BOX_FOLDER_ID` at the Sprint 7d base folder, an active
+Sprint 7d download, or a future result-package folder. The Box preflight
+performs a disposable write/update/rename/delete probe and discovers the
+current maximum file size. Physical files above 50,000,000 bytes use resumable
+chunked upload.
+
+## Build and upload the Sprint 7e amendment
+
+Build only from a clean, committed `sprint-7e-judy-venv` checkout. The output
+directory must be outside all repository worktrees:
 
 ```bash
-export XVIEW3_SOURCE_DATA_ROOT=/path/to/live/source-checkout/data
-python -m scripts.handoff preflight --repo "$PWD"
-python -m scripts.handoff wheelhouse \
-  --repo "$PWD" --python /path/to/python3.11.15 \
-  --output /outside/repo/wheelhouse-cu126
-python -m scripts.handoff build \
-  --repo "$PWD" --data-root "$XVIEW3_SOURCE_DATA_ROOT" \
-  --wheelhouse /outside/repo/wheelhouse-cu126 \
-  --apptainer-definition "$PWD/containers/h100-strict-fp32.def" \
+python -m scripts.handoff preflight --repo "$PWD" \
+  --minimum-free-bytes 0
+python -m scripts.handoff build-runtime \
+  --repo "$PWD" \
+  --base-package-root /path/to/xview3-h100-fp32-2726199efcebbebc89156e708b89df2a3415468a \
   --output-dir /outside/repo/handoff
-python -m scripts.handoff verify \
-  --package-root /outside/repo/handoff/xview3-h100-fp32-FULL40CHARSHA
-python -m scripts.handoff upload --repo "$PWD" \
-  --package-root /outside/repo/handoff/xview3-h100-fp32-FULL40CHARSHA \
-  --receipt /outside/repo/receipts/xview3-h100-fp32-FULL40CHARSHA.upload.json
 ```
 
-The wheelhouse resolver uses binary-only, no-dependency downloads because the
-lock already enumerates every non-bootstrap distribution. `pip`, `setuptools`,
-and `wheel` come only from the digest-pinned Python base and are the sole
-normalized-freeze extras accepted on the H100 target. Set `TMPDIR` to
-outside-repository scratch with at least the wheelhouse size free; environment
-assembly and the exact Git-bundle round trip use it. The verifier scopes Git's
-`safe.directory` exception to its one temporary bare repository, which keeps
-root-squashed NFS staging compatible without changing global Git policy.
+The resulting directory is named:
 
-`--repo` must be the clean isolated Sprint-7d worktree. `--data-root` may be
-the live V100 checkout's untracked data tree (or an equivalent read-only
-source) so the branch worktree does not need data duplication; the builder
-uses an exact allowlist and never writes that source tree.
+```text
+xview3-h100-runtime-<SPRINT7E_FULL_GIT_SHA>-<RUNTIME_IDENTITY_SHA256>
+```
 
-The target acceptance suite is deliberately split across its two exact
-environments. The Python 3.11.15 transfer environment runs the git/zstd/Box
-slice, `python -m pytest -q tests/test_h100_handoff.py
-tests/test_experiment_manifest.py`, and records a source-receipt-bound
-host-test receipt and log. The second file stays on the host because its legacy
-runner checks invoke `git`, which is intentionally absent from the slim SIF.
-The verified SIF then runs `python -m pytest -q
---ignore=tests/test_h100_handoff.py
---ignore=tests/test_experiment_manifest.py`. Acceptance combines the two
-non-overlapping slices in `runs/.h100/PYTEST_ACCEPTANCE.json` and requires
-their aggregate coverage to equal the entire repository test suite; neither
-slice alone is target acceptance.
-
-Production build accepts only the committed
-`containers/h100-strict-fp32.def`; a byte-identical copy at another path is
-rejected. Box preflight proves upload, update, rename, and delete on a
-disposable child file and verifies cleanup. It intentionally does not require
-`can_delete` on the collaborated root itself: Box reports that value as false
-for co-owners because only the owner can delete the shared root. The probe
-refuses to run beside a published `READY.json`. Files larger than the literal
-50,000,000-byte boundary use chunked upload.
-
-On the H100 host, use an outside-repository destination that does not yet
-exist. Download is built and fully verified in a private sibling staging
-directory, then the complete tree is atomically renamed into place; an
-incomplete final root can therefore never expose `READY.json`. Extraction
-streams verified split parts into `DEST/data`, `DEST/environment`, and
-`DEST/code/xview3.bundle`; the Slurm pack clones the bundle and symlinks the
-individual data roots:
+It contains only the current runtime Git bundle plus `manifest.json`,
+`SHA256SUMS`, and the `READY.json` written last. Its runtime identity binds the
+exact Sprint 7d controls, Sprint 7e commit and bundle, unchanged environment
+lock, and native strict-FP32 contract. Record the printed package ID and three
+control hashes through a trusted out-of-band channel, then verify and upload:
 
 ```bash
-python -m scripts.handoff download --repo /path/to/bootstrap/repo \
-  --package-root /scratch/xview3-h100-fp32-FULL40CHARSHA \
-  --expected-ready-sha256 READY64HEX \
-  --expected-manifest-sha256 MANIFEST64HEX \
-  --expected-sha256sums-sha256 SHA256SUMS64HEX \
-  --expected-package-id xview3-h100-fp32-FULL40CHARSHA
-python -m scripts.handoff verify \
-  --package-root /scratch/xview3-h100-fp32-FULL40CHARSHA
-python -m scripts.handoff extract \
-  --package-root /scratch/xview3-h100-fp32-FULL40CHARSHA \
-  --destination "$SLURM_TMPDIR/xview3-payload"
+python -m scripts.handoff verify-runtime \
+  --base-package-root /path/to/xview3-h100-fp32-2726199efcebbebc89156e708b89df2a3415468a \
+  --package-root /outside/repo/handoff/xview3-h100-runtime-FULL40CHARSHA-IDENTITY64HEX
+python -m scripts.handoff upload-runtime \
+  --repo "$PWD" \
+  --base-package-root /path/to/xview3-h100-fp32-2726199efcebbebc89156e708b89df2a3415468a \
+  --package-root /outside/repo/handoff/xview3-h100-runtime-FULL40CHARSHA-IDENTITY64HEX \
+  --receipt /outside/repo/receipts/xview3-h100-runtime-FULL40CHARSHA-IDENTITY64HEX.upload.json
 ```
 
-After all 32 H100 cells have valid completion markers, copy the container build
-receipt to `runs/.h100/container_build.json`, build the reverse package, then
-use the same verified upload command:
+`READY.json` is uploaded last. An ambiguous READY upload or failed final remote
+verification removes the remote marker and returns nonzero. Upload comparison
+uses Box SHA-1 plus size, not timestamps. The atomic receipt records package
+and control identities without recording the Box folder ID.
+
+## Download and extract on Judy
+
+Keep a verified local copy of the Sprint 7d base available to validate the
+amendment. If it is not already local, let any existing transfer finish or
+download it once from its dedicated base-payload Box folder into a destination
+that does not yet exist:
+
+```bash
+export BOX_JWT_CONFIG=/outside/repo/box-jwt.json
+export BOX_FOLDER_ID=SPRINT7D_BASE_FOLDER_ID
+python -m scripts.handoff download \
+  --repo /path/to/bootstrap/repo \
+  --package-root /scratch/xview3-h100-fp32-2726199efcebbebc89156e708b89df2a3415468a \
+  --expected-ready-sha256 b0d6ee18f9ddbd0d604cbea06610dcdbae6a9eb6d1f5ff3ea3431bd9e2d55f81 \
+  --expected-manifest-sha256 fccb0b505c89836a148afec709bb799f7af4908d955ea1b142e153154d830896 \
+  --expected-sha256sums-sha256 21c83b2e3b1b9d67bf00b8abca3ce267a5efd9362c1206b8d29ab21ca3e2d396 \
+  --expected-package-id xview3-h100-fp32-2726199efcebbebc89156e708b89df2a3415468a
+python -m scripts.handoff verify \
+  --package-root /scratch/xview3-h100-fp32-2726199efcebbebc89156e708b89df2a3415468a
+```
+
+Use the distinct, empty Sprint 7e Box folder for the amendment download:
+
+```bash
+export BOX_FOLDER_ID=RUNTIME_AMENDMENT_FOLDER_ID
+python -m scripts.handoff download-runtime \
+  --repo /path/to/bootstrap/repo \
+  --base-package-root /scratch/xview3-h100-fp32-2726199efcebbebc89156e708b89df2a3415468a \
+  --package-root /scratch/xview3-h100-runtime-FULL40CHARSHA-IDENTITY64HEX \
+  --expected-ready-sha256 RUNTIME_READY_64HEX \
+  --expected-manifest-sha256 RUNTIME_MANIFEST_64HEX \
+  --expected-sha256sums-sha256 RUNTIME_SHA256SUMS_64HEX \
+  --expected-package-id xview3-h100-runtime-FULL40CHARSHA-IDENTITY64HEX
+python -m scripts.handoff verify-runtime \
+  --base-package-root /scratch/xview3-h100-fp32-2726199efcebbebc89156e708b89df2a3415468a \
+  --package-root /scratch/xview3-h100-runtime-FULL40CHARSHA-IDENTITY64HEX
+python -m scripts.handoff extract-runtime \
+  --base-package-root /scratch/xview3-h100-fp32-2726199efcebbebc89156e708b89df2a3415468a \
+  --package-root /scratch/xview3-h100-runtime-FULL40CHARSHA-IDENTITY64HEX \
+  --destination /scratch/xview3-runtime-amendment
+```
+
+Downloads use private sibling staging and `.partial` files, validate Box SHA-1
+and size, verify package SHA-256 values and both package identities, then
+atomically rename the complete tree. Extraction atomically produces
+`code/xview3-runtime.bundle` and `RUNTIME_AMENDMENT_EXTRACTED.json`. Clone only
+that Sprint 7e bundle for H100 execution:
+
+```bash
+git clone --branch sprint-7e-judy-venv --single-branch \
+  /scratch/xview3-runtime-amendment/code/xview3-runtime.bundle \
+  /scratch/xview3-sprint7e
+```
+
+Verify and extract the Sprint 7d base separately for its data, checkpoints,
+and wheelhouse, with at least 500 GB (500,000,000,000 bytes) free before
+extraction:
+
+```bash
+python -m scripts.handoff extract \
+  --package-root /scratch/xview3-h100-fp32-2726199efcebbebc89156e708b89df2a3415468a \
+  --destination /scratch/xview3-base-extracted
+```
+
+Its historical Git bundle and Apptainer definition are rehashed as evidence
+but are never the Judy execution checkout or runtime.
+
+## Build the final-path native H100 venv
+
+Provide the exact Python 3.11.15 executable on Judy and build directly at the
+permanent path. The build is offline and consumes the verified Sprint 7d
+wheelhouse:
+
+```bash
+cd /scratch/xview3-sprint7e
+/path/to/bootstrap-python -m scripts.h100.build_venv build \
+  --repo "$PWD" \
+  --wheelhouse /scratch/xview3-base-extracted/environment/wheelhouse \
+  --base-python /path/to/python-3.11.15/bin/python3.11 \
+  --output /persistent/venvs/xview3-h100-fp32
+```
+
+The builder uses `venv --copies`, `pip --no-index`, and the exact
+`locks/env-v100node.txt` contract (`torch==2.11.0+cu126`). It checks the
+normalized freeze and `pip check`, removes bytecode, seals the venv read-only,
+and writes these read-only sidecars:
+
+```text
+/persistent/venvs/xview3-h100-fp32.sha256
+/persistent/venvs/xview3-h100-fp32.build.json
+```
+
+The venv is deliberately non-relocatable. Before every Slurm allocation,
+verify its complete tree, receipt, final path, environment lock, installed
+freeze, and exact base Python:
+
+```bash
+cd /scratch/xview3-sprint7e
+/path/to/bootstrap-python -m scripts.h100.build_venv verify \
+  --repo "$PWD" \
+  --venv-root /persistent/venvs/xview3-h100-fp32 \
+  --base-python /path/to/python-3.11.15/bin/python3.11 \
+  --expected-venv-sha256 VENV_TREE_64HEX \
+  --expected-receipt-sha256 VENV_BUILD_JSON_64HEX \
+  --expected-base-python-sha256 BASE_PYTHON_EXECUTABLE_64HEX
+```
+
+Jobs invoke `/persistent/venvs/xview3-h100-fp32/bin/python` directly under a
+clean environment. They never activate the venv and never execute a container.
+`NVIDIA_TF32_OVERRIDE=0` is set before CUDA initialization; Lightning remains
+`32-true`, micro-batch/effective-batch 16, one process per GPU, and no DDP.
+
+## Target test split and acceptance
+
+The complete test collection is partitioned between two exact environments:
+
+- The host transfer Python runs
+  `tests/test_h100_handoff.py tests/test_experiment_manifest.py`, which require
+  host `git`/`zstd`, and writes a source-receipt-bound host-test receipt.
+- The sealed venv runs the entire remaining pytest collection with those two
+  files ignored.
+
+The underlying commands are:
+
+```bash
+/path/to/transfer-python -m pytest -q \
+  tests/test_h100_handoff.py tests/test_experiment_manifest.py
+/persistent/venvs/xview3-h100-fp32/bin/python -m pytest -q \
+  --ignore=tests/test_h100_handoff.py \
+  --ignore=tests/test_experiment_manifest.py
+```
+
+The Slurm pack records the first command through
+`scripts.h100.host_test_gate`; do not substitute an unbound manual pass for its
+receipt. `slurm/h100/submit.sh acceptance` combines the non-overlapping
+receipts in `runs/.h100/PYTEST_ACCEPTANCE.json`; aggregate coverage must equal
+the entire repository test suite. It also requires eight H100s at compute
+capability 9.0,
+strict IEEE FP32 backend assertions in child processes, all six value-sensitive
+checkpoint loads, finite ViT/CNN train and full-scene inference probes, and the
+200-step throughput gate. V100 remains running until this acceptance, Slurm
+signal/requeue/resume smoke, current R2/R3 markers, and operator cutover gates
+all pass.
+
+See `slurm/h100/README.md` and the ignored `slurm/h100/site.env` interface for
+the full target commands and receipt fields.
+
+## Reverse result package
+
+After all 32 H100 cells have valid completion markers, retain the sealed venv
+build receipt as:
+
+```text
+runs/.h100/venv_build.json
+```
+
+Build and upload the reverse package to another dedicated, initially empty Box
+folder:
 
 ```bash
 python -m scripts.handoff build-results \
-  --repo "$PWD" --runs-root /persistent/runs \
-  --campaign-manifest /persistent/runs/.h100/campaign_manifest.json \
+  --repo "$PWD" \
+  --runs-root /persistent/h100-runs \
+  --campaign-manifest /persistent/h100-runs/.h100/campaign_manifest.json \
   --output /outside/repo/xview3-h100-results-FULL40CHARSHA-IDENTITY64HEX \
   --max-part-bytes BYTES_FROM_BOX_PREFLIGHT
-python -m scripts.handoff upload --repo "$PWD" \
+python -m scripts.handoff upload \
+  --repo "$PWD" \
   --package-root /outside/repo/xview3-h100-results-FULL40CHARSHA-IDENTITY64HEX \
   --receipt /outside/repo/receipts/xview3-h100-results-FULL40CHARSHA-IDENTITY64HEX.upload.json
 ```
 
-`READY.json` is written and uploaded last. If its upload response is
-ambiguous, or final remote verification fails, the uploader removes any
-remote `READY.json` before returning nonzero. The atomic upload receipt binds
-the package ID, the READY/manifest/SHA256SUMS SHA-256 values, remote file
-count/bytes, and UTC; it never records the Box folder ID. Preserve those
-control hashes through a trusted out-of-band channel for target receipt.
-Downloads use `.partial` files within their private staging tree and publish
-only after size, Box SHA-1, package SHA-256, production-contract, bundled
-source, and archive verification.
-The JWT path must remain outside the repository at mode `0600`; it is never
-printed, archived, or written into a manifest.
+The reverse package includes metrics, configs, logs, best/last checkpoints,
+campaign and cutover provenance, strict-FP32 hardware evidence,
+`venv_build.json`, and the dual base/runtime transfer identities.
 
-The public `verify`, `download`, and `extract` commands accept only
-`contract.production: true` packages and enforce the full source/count/base/
-checkpoint gates. Non-production packages exist only in tests and are
-accepted through underscored internal fixture helpers; they are not a target
-handoff interface.
-
-Use one dedicated, initially empty `BOX_FOLDER_ID` for each forward or reverse
-package; never mix two package trees in one Box folder. Large-file resume uses
-the Box SDK upload session within one running process. Across process restarts,
-already completed files are SHA-1/size verified and skipped, while an
-interrupted file starts a fresh chunk session.
-
-Status: deterministic fixture build/Box round-trip/extraction and the complete
-source-host handoff test slice are implemented and green. The real
-approximately 474 GB uncompressed source package, exact wheelhouse, Box quota
-query/upload/receipt, target SIF build, H100 tests and numerical probes,
-throughput decision, and manual cutover remain pending.
+Status: the immutable Sprint 7d base upload and its remote verification are
+complete. Sprint 7e native-venv code, fixture packaging, and source-host
+validation are green; the production runtime amendment has not yet been built
+or uploaded. Judy venv build, H100 acceptance, throughput decision, cutover,
+and training remain pending.

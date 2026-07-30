@@ -354,3 +354,56 @@ identically to every arm. This committed log lives here; `runs/` is gitignored a
   Exclude source data, weights, environments/caches, secrets, R2/R3, eval-final material, superseded results, and V100 core diagnostics; verify the remote receipt before declaring handback complete.
 - **Status discipline:** this decision authorizes implementation and fixture validation of transfer/runner tooling, but neither that tooling nor this documentation proves the real package was built/uploaded, the target accepted it, any H100 gate passed, cutover occurred, or any H100 run/result exists.
   Update the cold-start ledger only from recorded artifacts; until then, the H100 state is approved but gated and not launched.
+
+
+## Judy H100 native-venv runtime amendment (human decision, 2026-07-30)
+
+- **Decision:** use a native, sealed Python venv for the Judy H100 lane only.
+  This supersedes the Sprint-7d Apptainer/SIF launch plan and the subsequent
+  uncommitted Enroot/Pyxis adaptation discussion. It does not change the V100
+  environment, references, scientific recipe, frozen detector, or strict-FP32
+  cutover conditions.
+- **Branch/base:** implementation lives on `sprint-7e-judy-venv`, stacked on
+  clean Sprint-7d commit `2726199efcebbebc89156e708b89df2a3415468a`.
+  The exact Sprint-7d base payload and history remain immutable; Sprint 7e is a
+  separate runtime-only amendment and merges after Sprint 7d into `dev`.
+- **Immutable base-payload evidence:** the verified package is
+  `xview3-h100-fp32-2726199efcebbebc89156e708b89df2a3415468a`, 201 files and
+  294,278,292,176 bytes. Its control SHA-256 values are READY
+  `b0d6ee18f9ddbd0d604cbea06610dcdbae6a9eb6d1f5ff3ea3431bd9e2d55f81`,
+  manifest `fccb0b505c89836a148afec709bb799f7af4908d955ea1b142e153154d830896`,
+  and SHA256SUMS
+  `21c83b2e3b1b9d67bf00b8abca3ce267a5efd9362c1206b8d29ab21ca3e2d396`.
+  Its historical Apptainer definition remains byte-bound provenance only and
+  is not executed on Judy.
+- **Dual transfer contract:** Sprint 7e produces a small code-only package with
+  one exact `sprint-7e-judy-venv` Git bundle and manifest/checksum/READY controls.
+  Its content-addressed identity binds all base-payload controls. It contains
+  no data, weights, wheelhouse, run, cache, venv, reference, eval-final, or
+  secret material and uses a separate initially empty Box folder so a base
+  payload transfer is never mutated or interrupted.
+- **Native environment:** require a regular exact Python 3.11.15 executable;
+  build `python -m venv --copies` at the final persistent path; install entirely
+  offline with `--no-index` from the verified wheelhouse; require `pip check`,
+  exact normalized freeze, safe relative links, bytecode removal, read-only
+  tree modes, a deterministic tree digest, and build/base-Python hashes. Invoke
+  `venv/bin/python` directly under a clean environment. Activation, relocation,
+  user-site packages, and inherited Box credentials are forbidden.
+- **Numerical and scheduling recipe unchanged:** torch remains
+  `2.11.0+cu126`; every H100 core train and model-forward inference stays
+  Lightning `32-true`, CUDA-matmul/cuDNN TF32 off, no autocast/GradScaler,
+  batch 16, accumulation 1, one process/GPU, eight H100s, and no DDP. BF16,
+  FP16, TF32, reduced batches, shortened schedules, and per-arm exceptions
+  remain out of scope.
+- **Fail-closed evidence:** source, Slurm smoke, H100 acceptance, aggregate
+  tests, cutover, campaign, per-cell, external V100 archive, and reverse-result
+  receipts move to native schema 2 and separately bind the Sprint-7e source,
+  Sprint-7d base payload, Sprint-7e runtime amendment, venv tree/build/base
+  Python, strict backend, and hardware. Legacy schema-1 SIF evidence cannot
+  satisfy these gates. The Slurm smoke must prove external batch-shell to
+  native-Python-child `SIGUSR1`, requeue, and checkpoint resume.
+- **Status:** this amendment authorizes code, packaging, and validation work.
+  It does not claim the runtime amendment was uploaded, Judy built the venv,
+  any H100 gate passed, V100 was stopped, cutover occurred, or H100 training
+  started. V100 continues until all acceptance, throughput, R2/R3, and human
+  operator gates pass.
