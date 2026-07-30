@@ -92,9 +92,11 @@ def validate_runtime_provenance(
     campaign_id: str,
     git_sha: str,
     detector_sha256: str,
-    sif_sha256: str,
-    base_oci: str,
-    package: Mapping[str, str],
+    venv_sha256: str,
+    venv_build_sha256: str,
+    base_python: Mapping[str, object],
+    base_payload: Mapping[str, str],
+    runtime_amendment: Mapping[str, str],
     acceptance_uuid: str,
     source_validation_sha256: str,
     cutover_ready_sha256: str,
@@ -103,13 +105,16 @@ def validate_runtime_provenance(
     accepted_hardware_class: Mapping[str, object],
 ) -> None:
     expected = {
+        "schema": 2,
         "campaign_id": campaign_id,
         "exp_id": cell.exp_id,
         "git_sha": git_sha,
         "detector_sha256": detector_sha256,
-        "sif_sha256": sif_sha256,
-        "base_oci": base_oci,
-        "package": dict(package),
+        "venv_sha256": venv_sha256,
+        "venv_build_sha256": venv_build_sha256,
+        "base_python": dict(base_python),
+        "base_payload": dict(base_payload),
+        "runtime_amendment": dict(runtime_amendment),
         "acceptance_uuid": acceptance_uuid,
         "source_validation_sha256": source_validation_sha256,
         "cutover_ready_sha256": cutover_ready_sha256,
@@ -211,9 +216,11 @@ def existing_cell_state(
     campaign_id: str,
     git_sha: str,
     detector_sha256: str,
-    sif_sha256: str,
-    base_oci: str,
-    package: Mapping[str, str],
+    venv_sha256: str,
+    venv_build_sha256: str,
+    base_python: Mapping[str, object],
+    base_payload: Mapping[str, str],
+    runtime_amendment: Mapping[str, str],
     acceptance_uuid: str,
     source_validation_sha256: str,
     cutover_ready_sha256: str,
@@ -259,9 +266,11 @@ def existing_cell_state(
         campaign_id=campaign_id,
         git_sha=git_sha,
         detector_sha256=detector_sha256,
-        sif_sha256=sif_sha256,
-        base_oci=base_oci,
-        package=package,
+        venv_sha256=venv_sha256,
+        venv_build_sha256=venv_build_sha256,
+        base_python=base_python,
+        base_payload=base_payload,
+        runtime_amendment=runtime_amendment,
         acceptance_uuid=acceptance_uuid,
         source_validation_sha256=source_validation_sha256,
         cutover_ready_sha256=cutover_ready_sha256,
@@ -325,9 +334,11 @@ def validate_failed_namespace(
     campaign_id: str,
     git_sha: str,
     detector_sha256: str,
-    sif_sha256: str,
-    base_oci: str,
-    package: Mapping[str, str],
+    venv_sha256: str,
+    venv_build_sha256: str,
+    base_python: Mapping[str, object],
+    base_payload: Mapping[str, str],
+    runtime_amendment: Mapping[str, str],
     acceptance_uuid: str,
     source_validation_sha256: str,
     cutover_ready_sha256: str,
@@ -346,9 +357,11 @@ def validate_failed_namespace(
         campaign_id=campaign_id,
         git_sha=git_sha,
         detector_sha256=detector_sha256,
-        sif_sha256=sif_sha256,
-        base_oci=base_oci,
-        package=package,
+        venv_sha256=venv_sha256,
+        venv_build_sha256=venv_build_sha256,
+        base_python=base_python,
+        base_payload=base_payload,
+        runtime_amendment=runtime_amendment,
         acceptance_uuid=acceptance_uuid,
         source_validation_sha256=source_validation_sha256,
         cutover_ready_sha256=cutover_ready_sha256,
@@ -504,13 +517,32 @@ class Controller:
         self.cells = load_cells(self.repo)
         self.git_sha = args.expected_git_sha
         self.detector_sha256 = sha256_file(self.repo / "configs/detector.yaml")
-        self.sif_sha256 = args.sif_sha256
+        self.venv_sha256 = args.venv_sha256
+        self.venv_build_sha256 = args.venv_build_sha256
+        self.venv_root = args.venv_root.absolute()
+        expected_python = self.venv_root / "bin/python"
+        if (
+            Path(sys.prefix).resolve() != self.venv_root.resolve()
+            or Path(sys.executable).resolve() != expected_python.resolve()
+        ):
+            raise RuntimeError("campaign is not running under the accepted native venv")
         self.acceptance = json.loads(args.acceptance_json.read_text())
-        if self.acceptance.get("status") != "ready":
-            raise RuntimeError("campaign requires a ready H100 acceptance receipt")
-        self.package = dict(self.acceptance.get("package", {}))
-        if self.package.get("manifest_sha256") != args.package_manifest_sha256:
-            raise RuntimeError("campaign package manifest differs from acceptance")
+        if self.acceptance.get("schema") != 2 or self.acceptance.get("status") != "ready":
+            raise RuntimeError("campaign requires a schema-2 ready H100 acceptance receipt")
+        accepted_venv = self.acceptance.get("venv")
+        if not isinstance(accepted_venv, Mapping) or (
+            accepted_venv.get("path") != str(self.venv_root)
+            or accepted_venv.get("sha256") != self.venv_sha256
+            or accepted_venv.get("venv_build_sha256") != self.venv_build_sha256
+        ):
+            raise RuntimeError("campaign native venv differs from acceptance")
+        self.base_python = dict(accepted_venv.get("base_python", {}))
+        if not self.base_python or self.base_python.get("version") != "3.11.15":
+            raise RuntimeError("campaign accepted base-Python identity is invalid")
+        self.base_payload = dict(self.acceptance.get("base_payload", {}))
+        self.runtime_amendment = dict(self.acceptance.get("runtime_amendment", {}))
+        if not self.base_payload or not self.runtime_amendment:
+            raise RuntimeError("campaign transfer identities are absent")
         self.acceptance_uuid = str(self.acceptance.get("acceptance_uuid", ""))
         if not self.acceptance_uuid:
             raise RuntimeError("campaign acceptance UUID is absent")
@@ -529,7 +561,8 @@ class Controller:
             expected_sha256=self.source_validation_sha256,
             expected_git_sha=self.git_sha,
             expected_hashes=accepted_source["frozen_sha256"],
-            expected_package=self.package,
+            expected_base_payload=self.base_payload,
+            expected_runtime_amendment=self.runtime_amendment,
         )
         if self.acceptance.get("source_validation", {}).get("sha256") != (
             self.source_validation_sha256
@@ -586,8 +619,9 @@ class Controller:
         expected_h100 = {
             "acceptance_uuid": self.acceptance_uuid,
             "git_sha": self.git_sha,
-            "sif_sha256": self.sif_sha256,
-            "package": self.package,
+            "venv_sha256": self.venv_sha256,
+            "base_payload": self.base_payload,
+            "runtime_amendment": self.runtime_amendment,
         }
         if self.v100_core_archived.get("h100") != expected_h100:
             raise RuntimeError("operator archive receipt differs from accepted H100 identity")
@@ -647,7 +681,7 @@ class Controller:
 
     def write_manifest(self, status: str | None = None) -> None:
         payload = {
-            "schema": 1,
+            "schema": 2,
             "campaign_id": self.args.campaign_id,
             "status": status or ("failed" if self.failure_seen else "running"),
             "git_sha": self.git_sha,
@@ -656,13 +690,11 @@ class Controller:
             "micro_batch": MICRO_BATCH,
             "gradient_accumulation": GRADIENT_ACCUMULATION,
             "effective_batch": EFFECTIVE_BATCH,
-            "sif_sha256": self.sif_sha256,
-            "container_build_sha256": self.acceptance.get("sif", {}).get(
-                "container_build_sha256"
-            ),
-            "package_manifest_sha256": self.args.package_manifest_sha256,
-            "base_oci": self.args.base_oci,
-            "package": self.package,
+            "venv_sha256": self.venv_sha256,
+            "venv_build_sha256": self.venv_build_sha256,
+            "base_python": self.base_python,
+            "base_payload": self.base_payload,
+            "runtime_amendment": self.runtime_amendment,
             "acceptance_uuid": self.acceptance_uuid,
             "source_validation_sha256": self.source_validation_sha256,
             "cutover_ready_sha256": self.cutover_ready_sha256,
@@ -729,9 +761,11 @@ class Controller:
                 "campaign_id": self.args.campaign_id,
                 "git_sha": self.git_sha,
                 "detector_sha256": self.detector_sha256,
-                "sif_sha256": self.sif_sha256,
-                "base_oci": self.args.base_oci,
-                "package": self.package,
+                "venv_sha256": self.venv_sha256,
+                "venv_build_sha256": self.venv_build_sha256,
+                "base_python": self.base_python,
+                "base_payload": self.base_payload,
+                "runtime_amendment": self.runtime_amendment,
                 "acceptance_uuid": self.acceptance_uuid,
                 "source_validation_sha256": self.source_validation_sha256,
                 "cutover_ready_sha256": self.cutover_ready_sha256,
@@ -756,9 +790,11 @@ class Controller:
                     campaign_id=self.args.campaign_id,
                     git_sha=self.git_sha,
                     detector_sha256=self.detector_sha256,
-                    sif_sha256=self.sif_sha256,
-                    base_oci=self.args.base_oci,
-                    package=self.package,
+                    venv_sha256=self.venv_sha256,
+                    venv_build_sha256=self.venv_build_sha256,
+                    base_python=self.base_python,
+                    base_payload=self.base_payload,
+                    runtime_amendment=self.runtime_amendment,
                     acceptance_uuid=self.acceptance_uuid,
                     source_validation_sha256=self.source_validation_sha256,
                     cutover_ready_sha256=self.cutover_ready_sha256,
@@ -773,9 +809,11 @@ class Controller:
                 campaign_id=self.args.campaign_id,
                 git_sha=self.git_sha,
                 detector_sha256=self.detector_sha256,
-                sif_sha256=self.sif_sha256,
-                base_oci=self.args.base_oci,
-                package=self.package,
+                venv_sha256=self.venv_sha256,
+                venv_build_sha256=self.venv_build_sha256,
+                base_python=self.base_python,
+                base_payload=self.base_payload,
+                runtime_amendment=self.runtime_amendment,
                 acceptance_uuid=self.acceptance_uuid,
                 source_validation_sha256=self.source_validation_sha256,
                 cutover_ready_sha256=self.cutover_ready_sha256,
@@ -828,7 +866,7 @@ class Controller:
         )
         provenance = {
             **prior,
-            "schema": 1,
+            "schema": 2,
             "campaign_id": self.args.campaign_id,
             "exp_id": cell.exp_id,
             "git_sha": self.git_sha,
@@ -837,10 +875,11 @@ class Controller:
             "micro_batch": MICRO_BATCH,
             "gradient_accumulation": GRADIENT_ACCUMULATION,
             "effective_batch": EFFECTIVE_BATCH,
-            "sif_sha256": self.sif_sha256,
-            "base_oci": self.args.base_oci,
-            "package_manifest_sha256": self.args.package_manifest_sha256,
-            "package": self.package,
+            "venv_sha256": self.venv_sha256,
+            "venv_build_sha256": self.venv_build_sha256,
+            "base_python": self.base_python,
+            "base_payload": self.base_payload,
+            "runtime_amendment": self.runtime_amendment,
             "acceptance_uuid": self.acceptance_uuid,
             "source_validation_sha256": self.source_validation_sha256,
             "cutover_ready_sha256": self.cutover_ready_sha256,
@@ -930,9 +969,11 @@ class Controller:
                         campaign_id=self.args.campaign_id,
                         git_sha=self.git_sha,
                         detector_sha256=self.detector_sha256,
-                        sif_sha256=self.sif_sha256,
-                        base_oci=self.args.base_oci,
-                        package=self.package,
+                        venv_sha256=self.venv_sha256,
+                        venv_build_sha256=self.venv_build_sha256,
+                        base_python=self.base_python,
+                        base_payload=self.base_payload,
+                        runtime_amendment=self.runtime_amendment,
                         acceptance_uuid=self.acceptance_uuid,
                         source_validation_sha256=self.source_validation_sha256,
                         cutover_ready_sha256=self.cutover_ready_sha256,
@@ -1126,9 +1167,9 @@ def main() -> int:
     parser.add_argument("--runs-root", type=Path, required=True)
     parser.add_argument("--campaign-id", required=True)
     parser.add_argument("--expected-git-sha", required=True)
-    parser.add_argument("--sif-sha256", required=True)
-    parser.add_argument("--base-oci", required=True)
-    parser.add_argument("--package-manifest-sha256", required=True)
+    parser.add_argument("--venv-root", type=Path, required=True)
+    parser.add_argument("--venv-sha256", required=True)
+    parser.add_argument("--venv-build-sha256", required=True)
     parser.add_argument("--hardware-json", type=Path, required=True)
     parser.add_argument("--acceptance-json", type=Path, required=True)
     parser.add_argument("--source-validation-json", type=Path, required=True)

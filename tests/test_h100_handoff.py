@@ -1608,13 +1608,20 @@ def test_box_manifest_path_traversal_is_rejected():
 
 
 def _write_result_fixture(
-    repo: Path, runs: Path, campaign_path: Path
+    repo: Path,
+    runs: Path,
+    campaign_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> tuple[str, list[str]]:
     import csv
+    import signal
+    import threading
+    import time
     import uuid
 
     from scripts.h100 import slurm_smoke
     from scripts.h100.acceptance import EXPECTED_FRACTION_WORKLOAD
+    from scripts.h100.build_venv import RECEIPT_KIND
     from scripts.h100.campaign import hardware_class
     from scripts.h100.contracts import (
         frozen_hashes,
@@ -1648,8 +1655,9 @@ def _write_result_fixture(
     _write(repo / "src/eval/scorer.py", "# frozen fixture scorer\n")
     _write(repo / "data/stats.json", "{}\n")
     _write(repo / "data/lsssdd_split.json", "{}\n")
+    _run("git", "branch", "-m", "sprint-7e-judy-venv", cwd=repo)
     _run("git", "add", ".", cwd=repo)
-    _run("git", "commit", "-q", "-m", "P7d: result fixture", cwd=repo)
+    _run("git", "commit", "-q", "-m", "P7e: result fixture", cwd=repo)
     git_sha = _run("git", "rev-parse", "HEAD", cwd=repo)
     detector = hashlib.sha256((repo / "configs/detector.yaml").read_bytes()).hexdigest()
     cells = load_cells(repo)
@@ -1659,16 +1667,71 @@ def _write_result_fixture(
         "cudnn_conv_fp32_precision": "ieee",
         "cudnn_rnn_fp32_precision": "ieee",
     }
-    base_oci = "python:3.11.15@sha256:" + "a" * 64
-    sif_sha256 = "b" * 64
-    package = {
+    base_payload = {
+        "package_id": (
+            "xview3-h100-fp32-"
+            "2726199efcebbebc89156e708b89df2a3415468a"
+        ),
+        "git_sha": "2726199efcebbebc89156e708b89df2a3415468a",
         "manifest_sha256": "c" * 64,
         "ready_sha256": "d" * 64,
         "sha256sums_sha256": "e" * 64,
         "repo_bundle_sha256": "f" * 64,
     }
+    runtime_amendment = {
+        "package_id": f"xview3-h100-runtime-{git_sha}-{'5' * 64}",
+        "git_sha": git_sha,
+        "manifest_sha256": "1" * 64,
+        "ready_sha256": "2" * 64,
+        "sha256sums_sha256": "3" * 64,
+        "runtime_bundle_sha256": "4" * 64,
+    }
     acceptance_uuid = str(uuid.uuid4())
     meta = campaign_path.parent
+
+    base_python_path = meta / "python311/bin/python3.11"
+    _write(base_python_path, b"fixture Python 3.11.15\n")
+    base_python = {
+        "version": "3.11.15",
+        "requested_path": str(base_python_path),
+        "resolved_path": str(base_python_path.resolve()),
+        "executable_sha256": sha256_file(base_python_path),
+    }
+    venv_root = meta / "native-venv"
+    _write(venv_root / "bin/python", b"fixture copied native Python\n")
+    venv_sha256 = "b" * 64
+    venv_build = {
+        "schema": 1,
+        "kind": RECEIPT_KIND,
+        "status": "ready",
+        "base_python": base_python,
+        "venv": {
+            "path": str(venv_root),
+            "tree": {"sha256": venv_sha256},
+        },
+    }
+    venv_build_path = meta / "venv_build.json"
+    _write(venv_build_path, json.dumps(venv_build))
+    _write(Path(f"{venv_root}.build.json"), json.dumps(venv_build))
+    venv_build_sha256 = sha256_file(venv_build_path)
+
+    def fake_verify_native_venv(**kwargs):
+        assert kwargs == {
+            "repo": repo,
+            "venv_root": venv_root,
+            "base_python": base_python_path,
+            "expected_venv_sha256": venv_sha256,
+            "expected_receipt_sha256": venv_build_sha256,
+            "expected_base_python_sha256": base_python[
+                "executable_sha256"
+            ],
+        }
+        return venv_build
+
+    monkeypatch.setattr(
+        "scripts.handoff.results.verify_native_venv",
+        fake_verify_native_venv,
+    )
 
     def hardware(prefix: str) -> dict:
         return {
@@ -1694,39 +1757,48 @@ def _write_result_fixture(
     _write(meta / "h100_runtime-9001-r0.json", json.dumps(allocation_zero))
     _write(meta / "h100_runtime-9001-r1.json", json.dumps(allocation_one))
 
-    container_build = {
-        "schema": 1,
-        "base_oci": base_oci,
-        "environment_lock_sha256": sha256_file(
-            repo / "locks/env-v100node.txt"
-        ),
-        "python_version": "3.11.15",
-        "sif": {"sha256": sif_sha256, "bytes": 123},
-        "build_mode": "apptainer build --fakeroot",
-    }
-    _write(meta / "container_build.json", json.dumps(container_build))
-    container_build_sha256 = sha256_file(meta / "container_build.json")
-
     smoke_bindings = slurm_smoke.make_bindings(
         git_sha=git_sha,
         detector_sha256=detector,
-        sif_sha256=sif_sha256,
-        container_build_sha256=container_build_sha256,
-        package_manifest_sha256=package["manifest_sha256"],
-        package_ready_sha256=package["ready_sha256"],
-        package_sha256sums_sha256=package["sha256sums_sha256"],
-        package_repo_bundle_sha256=package["repo_bundle_sha256"],
+        venv_sha256=venv_sha256,
+        venv_build_sha256=venv_build_sha256,
+        base_python_sha256=base_python["executable_sha256"],
+        base_payload=base_payload,
+        runtime_amendment=runtime_amendment,
     )
+    smoke_root = slurm_smoke.smoke_root(runs)
+    signal_ready = smoke_root / slurm_smoke.SIGNAL_READY_NAME
+    signal_errors: list[BaseException] = []
+
+    def deliver_external_usr1() -> None:
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            try:
+                pid = int(signal_ready.read_text().strip())
+            except (FileNotFoundError, ValueError):
+                time.sleep(0.005)
+                continue
+            os.kill(pid, signal.SIGUSR1)
+            return
+        signal_errors.append(TimeoutError("smoke PID file was not published"))
+
+    signal_thread = threading.Thread(target=deliver_external_usr1)
+    signal_thread.start()
     assert (
         slurm_smoke.run_allocation(
             runs_root=runs,
             bindings=smoke_bindings,
             job_id="smoke-1",
             restart_count=0,
+            external_signal_ready=signal_ready,
+            signal_timeout_seconds=5.0,
         )
         == slurm_smoke.HOST_REQUEUE_EXIT_CODE
     )
-    smoke_root = slurm_smoke.smoke_root(runs)
+    signal_thread.join(timeout=5.0)
+    assert not signal_thread.is_alive()
+    if signal_errors:
+        raise signal_errors[0]
     slurm_smoke.authorize_host_requeue(
         root=smoke_root,
         bindings=smoke_bindings,
@@ -1750,7 +1822,8 @@ def _write_result_fixture(
     source_validation = expected_receipt(
         git_sha=git_sha,
         frozen_sha256=frozen,
-        package=package,
+        base_payload=base_payload,
+        runtime_amendment=runtime_amendment,
     )
     _write(source_validation_path, json.dumps(source_validation))
     source_validation_sha256 = sha256_file(source_validation_path)
@@ -1771,16 +1844,22 @@ def _write_result_fixture(
     }
     _write(host_test_receipt_path, json.dumps(host_test_receipt))
     host_test_receipt_sha256 = sha256_file(host_test_receipt_path)
-    sif_test_log_path = meta / "acceptance-logs/pytest-sif-remaining.log"
-    _write(sif_test_log_path, "remaining tests passed\n")
+    venv_test_log_path = meta / "acceptance-logs/pytest-venv-remaining.log"
+    _write(venv_test_log_path, "remaining tests passed in native venv\n")
     test_suite_path = meta / "PYTEST_ACCEPTANCE.json"
+    venv_test_command = [
+        "-m",
+        "pytest",
+        "-q",
+        *(f"--ignore={path}" for path in HOST_TESTS),
+    ]
     test_suite = {
-        "schema": 1,
+        "schema": 2,
         "status": "passed",
         "source_validation_sha256": source_validation_sha256,
         "coverage": {
             "host": HOST_TESTS,
-            "sif": "all pytest collection except the two host-only files",
+            "venv": "all pytest collection except the two host-only files",
             "aggregate": "entire repository pytest suite",
         },
         "host_handoff": {
@@ -1788,18 +1867,12 @@ def _write_result_fixture(
             "receipt_sha256": host_test_receipt_sha256,
             "receipt": host_test_receipt,
         },
-        "sif_remaining": {
-            "command": [
-                "-m",
-                "pytest",
-                "-q",
-                "--ignore=tests/test_h100_handoff.py",
-                "--ignore=tests/test_experiment_manifest.py",
-            ],
+        "venv_remaining": {
+            "command": venv_test_command,
             "duration_seconds": 1.0,
             "log": {
-                "path": str(sif_test_log_path),
-                "sha256": sha256_file(sif_test_log_path),
+                "path": str(venv_test_log_path),
+                "sha256": sha256_file(venv_test_log_path),
             },
         },
         "aggregate_duration_seconds": 2.0,
@@ -1840,7 +1913,7 @@ def _write_result_fixture(
         "cnn_200step_seconds": 1.0,
     }
     ready = {
-        "schema": 1,
+        "schema": 2,
         "status": "ready",
         "acceptance_uuid": acceptance_uuid,
         "created_utc": "2026-07-27T00:00:00+00:00",
@@ -1855,12 +1928,14 @@ def _write_result_fixture(
         },
         "strict_fp32": strict_fp32,
         "hardware": accepted_hardware,
-        "sif": {
-            "sha256": sif_sha256,
-            "container_build_sha256": container_build_sha256,
-            "base_oci": base_oci,
+        "venv": {
+            "path": str(venv_root),
+            "sha256": venv_sha256,
+            "venv_build_sha256": venv_build_sha256,
+            "base_python": base_python,
         },
-        "package": package,
+        "base_payload": base_payload,
+        "runtime_amendment": runtime_amendment,
         "slurm_smoke": {
             "sha256": sha256_file(smoke_ready_path),
             "receipt": smoke_receipt,
@@ -1877,7 +1952,7 @@ def _write_result_fixture(
     _write(meta / "H100_READY.json", json.dumps(ready))
     _write(meta / "throughput_projection.json", json.dumps(projection))
     cutover = {
-        "schema": 1,
+        "schema": 2,
         "status": "cutover-ready",
         "created_utc": "2026-07-27T00:30:00+00:00",
         "h100_ready": ready,
@@ -1930,7 +2005,7 @@ def _write_result_fixture(
     archive_manifest_sha256 = sha256_file(archive_manifest_path)
     archived_receipt_path = meta / "V100_CORE_ARCHIVED.json"
     archived_receipt = {
-        "schema": 1,
+        "schema": 2,
         "status": "v100-core-archived",
         "created_utc": "2026-07-27T03:00:00+00:00",
         "attestation": "external-human-operator",
@@ -1938,8 +2013,9 @@ def _write_result_fixture(
         "h100": {
             "acceptance_uuid": acceptance_uuid,
             "git_sha": git_sha,
-            "sif_sha256": sif_sha256,
-            "package": package,
+            "venv_sha256": venv_sha256,
+            "base_payload": base_payload,
+            "runtime_amendment": runtime_amendment,
         },
         "v100": {
             "git_sha": "4" * 40,
@@ -2018,7 +2094,7 @@ def _write_result_fixture(
             attempts.append(attempt)
         final_device = attempt_specs[-1][0]["devices"][attempt_specs[-1][1]]
         provenance = {
-            "schema": 1,
+            "schema": 2,
             "campaign_id": "fixture-h100",
             "exp_id": cell.exp_id,
             "git_sha": git_sha,
@@ -2027,10 +2103,11 @@ def _write_result_fixture(
             "micro_batch": 16,
             "gradient_accumulation": 1,
             "effective_batch": 16,
-            "sif_sha256": sif_sha256,
-            "base_oci": base_oci,
-            "package_manifest_sha256": package["manifest_sha256"],
-            "package": package,
+            "venv_sha256": venv_sha256,
+            "venv_build_sha256": venv_build_sha256,
+            "base_python": base_python,
+            "base_payload": base_payload,
+            "runtime_amendment": runtime_amendment,
             "acceptance_uuid": acceptance_uuid,
             "source_validation_sha256": source_validation_sha256,
             "cutover_ready_sha256": cutover_sha256,
@@ -2117,7 +2194,7 @@ def _write_result_fixture(
                 )
 
     campaign = {
-        "schema": 1,
+        "schema": 2,
         "campaign_id": "fixture-h100",
         "status": "complete",
         "git_sha": git_sha,
@@ -2126,11 +2203,11 @@ def _write_result_fixture(
         "micro_batch": 16,
         "gradient_accumulation": 1,
         "effective_batch": 16,
-        "sif_sha256": sif_sha256,
-        "container_build_sha256": container_build_sha256,
-        "package_manifest_sha256": package["manifest_sha256"],
-        "base_oci": base_oci,
-        "package": package,
+        "venv_sha256": venv_sha256,
+        "venv_build_sha256": venv_build_sha256,
+        "base_python": base_python,
+        "base_payload": base_payload,
+        "runtime_amendment": runtime_amendment,
         "acceptance_uuid": acceptance_uuid,
         "source_validation_sha256": source_validation_sha256,
         "cutover_ready_sha256": cutover_sha256,
@@ -2250,12 +2327,16 @@ def test_reverse_attempt_accepts_uuid_reordered_across_requeue_inventories():
     ) == ["GPU-REQUEUE-0"]
 
 
-def test_reverse_campaign_job_and_hardware_require_same_allocation(tmp_path):
+def test_reverse_campaign_job_and_hardware_require_same_allocation(
+    tmp_path, monkeypatch
+):
     options, _ = _fixture_source(tmp_path)
     repo = options.repo_root
     runs = tmp_path / "runs"
     campaign_path = runs / ".h100/campaign_manifest.json"
-    _git_sha, _ids = _write_result_fixture(repo, runs, campaign_path)
+    _git_sha, _ids = _write_result_fixture(
+        repo, runs, campaign_path, monkeypatch
+    )
     campaign = json.loads(campaign_path.read_text())
 
     unrelated_job_hardware = json.loads(
@@ -2279,12 +2360,16 @@ def test_reverse_campaign_job_and_hardware_require_same_allocation(tmp_path):
         )
 
 
-def test_reverse_results_requires_and_packages_exact_32_cells(tmp_path):
+def test_reverse_results_requires_and_packages_exact_32_cells(
+    tmp_path, monkeypatch
+):
     options, _ = _fixture_source(tmp_path)
     repo = options.repo_root
     runs = tmp_path / "runs"
     campaign = runs / ".h100/campaign_manifest.json"
-    git_sha, ids = _write_result_fixture(repo, runs, campaign)
+    git_sha, ids = _write_result_fixture(
+        repo, runs, campaign, monkeypatch
+    )
     campaign_payload = json.loads(campaign.read_text())
     output = tmp_path / _result_package_id(campaign_payload)
     built = build_results_package(
@@ -2302,8 +2387,15 @@ def test_reverse_results_requires_and_packages_exact_32_cells(tmp_path):
         "provenance_archives": 1,
     }
     identity = manifest["source"]["result_identity"]
-    assert identity["base_oci"] == campaign_payload["base_oci"]
-    assert identity["package"] == campaign_payload["package"]
+    assert identity["venv_sha256"] == campaign_payload["venv_sha256"]
+    assert identity["venv_build_sha256"] == campaign_payload[
+        "venv_build_sha256"
+    ]
+    assert identity["base_python"] == campaign_payload["base_python"]
+    assert identity["base_payload"] == campaign_payload["base_payload"]
+    assert identity["runtime_amendment"] == campaign_payload[
+        "runtime_amendment"
+    ]
     assert identity["acceptance_uuid"] == campaign_payload["acceptance"]["uuid"]
     assert identity["strict_fp32"] == campaign_payload["strict_fp32"]
     assert identity["accepted_hardware_class"] == campaign_payload[
@@ -2323,7 +2415,7 @@ def test_reverse_results_requires_and_packages_exact_32_cells(tmp_path):
         "results/provenance/H100_READY.json",
         "results/provenance/h100_runtime.json",
         "results/provenance/throughput_projection.json",
-        "results/provenance/container_build.json",
+        "results/provenance/venv_build.json",
         "results/provenance/CUTOVER_READY.json",
         "results/provenance/SOURCE_VALIDATED.json",
         "results/provenance/HOST_HANDOFF_TESTS.json",
@@ -2334,7 +2426,7 @@ def test_reverse_results_requires_and_packages_exact_32_cells(tmp_path):
         "results/provenance/slurm-smoke/SLURM_SMOKE_STATE.json",
         "results/provenance/summary/grid.csv",
         "results/provenance/acceptance-logs/pytest-handoff-host.log",
-        "results/provenance/acceptance-logs/pytest-sif-remaining.log",
+        "results/provenance/acceptance-logs/pytest-venv-remaining.log",
         "results/provenance/acceptance-logs/vit-fp32.log",
         "results/provenance/acceptance-logs/cnn-200step-fp32.log",
         "results/provenance/slurm/campaign-9001.out",
@@ -2391,14 +2483,18 @@ def test_reverse_results_requires_and_packages_exact_32_cells(tmp_path):
         )
 
 
-def test_reverse_results_rejects_unbound_grid_gpu_and_inside_repo(tmp_path):
+def test_reverse_results_rejects_unbound_grid_gpu_and_inside_repo(
+    tmp_path, monkeypatch
+):
     import csv
 
     options, _ = _fixture_source(tmp_path)
     repo = options.repo_root
     runs = tmp_path / "runs"
     campaign = runs / ".h100/campaign_manifest.json"
-    _git_sha, ids = _write_result_fixture(repo, runs, campaign)
+    _git_sha, ids = _write_result_fixture(
+        repo, runs, campaign, monkeypatch
+    )
     campaign_payload = json.loads(campaign.read_text())
     package_id = _result_package_id(campaign_payload)
     output = tmp_path / package_id

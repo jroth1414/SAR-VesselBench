@@ -1,17 +1,19 @@
-"""Exercise the Slurm SIGUSR1/checkpoint/requeue/resume contract cheaply.
+"""Exercise the native-venv Slurm SIGUSR1/requeue/resume contract cheaply.
 
 The synthetic cell never uses a reportable experiment namespace.  Its first
-allocation takes a real SIGUSR1, writes a Lightning-shaped HPC checkpoint,
-and atomically promotes it to ``last.ckpt``.  It then exits with a reserved
-code so the *host* batch script can perform exactly one real ``scontrol
-requeue``.  The requeued allocation resumes the same synthetic cell and
-writes a persistent, provenance-bound readiness receipt.
+allocation publishes its PID and waits boundedly for a real SIGUSR1 from the
+host batch script.  The signal handler writes a Lightning-shaped HPC
+checkpoint and atomically promotes it to ``last.ckpt``.  The process then
+exits with a reserved code so the host can perform exactly one real
+``scontrol requeue``.  The requeued allocation resumes the same synthetic
+cell and writes a persistent, provenance-bound readiness receipt.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import signal
@@ -20,21 +22,34 @@ from pathlib import Path
 from typing import Mapping
 
 from scripts.h100.campaign import promote_hpc_checkpoint
-from scripts.h100.contracts import atomic_write_json, sha256_file
+from scripts.h100.contracts import atomic_write_json, atomic_write_text, sha256_file
 
-SCHEMA = 1
-SYNTHETIC_CELL_ID = "h100-slurm-smoke-synthetic-v1"
+SCHEMA = 2
+SYNTHETIC_CELL_ID = "h100-slurm-smoke-native-venv-synthetic-v2"
 HOST_REQUEUE_EXIT_CODE = 75
 STATE_NAME = "SLURM_SMOKE_STATE.json"
 READY_NAME = "SLURM_SMOKE_READY.json"
 HEX40 = re.compile(r"^[0-9a-f]{40}$")
+SIGNAL_READY_NAME = "SLURM_SMOKE_SIGNAL_READY.pid"
+SIGNAL_ORIGIN = "slurm-batch-to-native-venv-child"
+DEFAULT_SIGNAL_TIMEOUT_SECONDS = 30.0
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
-PACKAGE_HASH_KEYS = (
+BASE_TRANSFER_KEYS = {
+    "package_id",
+    "git_sha",
     "manifest_sha256",
     "ready_sha256",
     "sha256sums_sha256",
     "repo_bundle_sha256",
-)
+}
+RUNTIME_TRANSFER_KEYS = {
+    "package_id",
+    "git_sha",
+    "manifest_sha256",
+    "ready_sha256",
+    "sha256sums_sha256",
+    "runtime_bundle_sha256",
+}
 
 
 def utc_now() -> str:
@@ -49,43 +64,112 @@ def make_bindings(
     *,
     git_sha: str,
     detector_sha256: str,
-    sif_sha256: str,
-    container_build_sha256: str,
-    package_manifest_sha256: str,
-    package_ready_sha256: str,
-    package_sha256sums_sha256: str,
-    package_repo_bundle_sha256: str,
+    venv_sha256: str,
+    venv_build_sha256: str,
+    base_python_sha256: str,
+    base_payload: Mapping[str, str],
+    runtime_amendment: Mapping[str, str],
 ) -> dict:
     bindings = {
         "source": {
             "git_sha": git_sha,
             "detector_sha256": detector_sha256,
         },
-        "sif": {
-            "sha256": sif_sha256,
-            "container_build_sha256": container_build_sha256,
+        "venv": {
+            "sha256": venv_sha256,
+            "build_receipt_sha256": venv_build_sha256,
+            "base_python_sha256": base_python_sha256,
         },
-        "package": {
-            "manifest_sha256": package_manifest_sha256,
-            "ready_sha256": package_ready_sha256,
-            "sha256sums_sha256": package_sha256sums_sha256,
-            "repo_bundle_sha256": package_repo_bundle_sha256,
-        },
+        "base_payload": dict(base_payload),
+        "runtime_amendment": dict(runtime_amendment),
     }
-    if not HEX40.fullmatch(git_sha):
-        raise RuntimeError("Slurm smoke requires the full 40-hex source git SHA")
-    hash_values = [
-        detector_sha256,
-        sif_sha256,
-        container_build_sha256,
-        package_manifest_sha256,
-        package_ready_sha256,
-        package_sha256sums_sha256,
-        package_repo_bundle_sha256,
-    ]
-    if any(not HEX64.fullmatch(value) for value in hash_values):
-        raise RuntimeError("Slurm smoke bindings require lowercase 64-hex SHA-256 values")
+    _validate_bindings(bindings)
     return bindings
+
+
+def _validate_transfer_binding(
+    value: object,
+    *,
+    label: str,
+    keys: set[str],
+    bundle_key: str,
+) -> None:
+    if not isinstance(value, Mapping) or set(value) != keys:
+        raise RuntimeError(f"Slurm smoke {label} binding keys are invalid")
+    git_sha = value["git_sha"]
+    package_id = value["package_id"]
+    if not isinstance(git_sha, str) or not HEX40.fullmatch(git_sha):
+        raise RuntimeError(f"Slurm smoke {label} Git SHA is invalid")
+    expected_id = (
+        f"xview3-h100-fp32-{git_sha}"
+        if label == "base-payload"
+        else rf"xview3-h100-runtime-{git_sha}-[0-9a-f]{{64}}"
+    )
+    if not isinstance(package_id, str) or (
+        package_id != expected_id
+        if label == "base-payload"
+        else re.fullmatch(expected_id, package_id) is None
+    ):
+        raise RuntimeError(f"Slurm smoke {label} package ID is invalid")
+    hash_keys = keys - {"package_id", "git_sha"}
+    if bundle_key not in hash_keys or any(
+        not isinstance(value[key], str) or not HEX64.fullmatch(value[key])
+        for key in hash_keys
+    ):
+        raise RuntimeError(
+            f"Slurm smoke {label} bindings require lowercase 64-hex SHA-256 values"
+        )
+
+
+def _validate_bindings(bindings: object) -> None:
+    if not isinstance(bindings, Mapping) or set(bindings) != {
+        "source",
+        "venv",
+        "base_payload",
+        "runtime_amendment",
+    }:
+        raise RuntimeError("Slurm smoke binding groups are invalid")
+    source = bindings["source"]
+    venv = bindings["venv"]
+    if not isinstance(source, Mapping) or set(source) != {
+        "git_sha",
+        "detector_sha256",
+    }:
+        raise RuntimeError("Slurm smoke source binding keys are invalid")
+    if not isinstance(venv, Mapping) or set(venv) != {
+        "sha256",
+        "build_receipt_sha256",
+        "base_python_sha256",
+    }:
+        raise RuntimeError("Slurm smoke native-venv binding keys are invalid")
+    git_sha = source["git_sha"]
+    detector_sha256 = source["detector_sha256"]
+    if not isinstance(git_sha, str) or not HEX40.fullmatch(git_sha):
+        raise RuntimeError("Slurm smoke requires the full 40-hex source Git SHA")
+    hash_values = [detector_sha256, *venv.values()]
+    if any(
+        not isinstance(value, str) or not HEX64.fullmatch(value)
+        for value in hash_values
+    ):
+        raise RuntimeError(
+            "Slurm smoke bindings require lowercase 64-hex SHA-256 values"
+        )
+    _validate_transfer_binding(
+        bindings["base_payload"],
+        label="base-payload",
+        keys=BASE_TRANSFER_KEYS,
+        bundle_key="repo_bundle_sha256",
+    )
+    _validate_transfer_binding(
+        bindings["runtime_amendment"],
+        label="runtime-amendment",
+        keys=RUNTIME_TRANSFER_KEYS,
+        bundle_key="runtime_bundle_sha256",
+    )
+    if bindings["base_payload"]["git_sha"] == git_sha:
+        raise RuntimeError("base payload and runtime amendment must have distinct Git SHAs")
+    if bindings["runtime_amendment"]["git_sha"] != git_sha:
+        raise RuntimeError("runtime amendment must bind the executing source Git SHA")
 
 
 def _read_json(path: Path) -> dict:
@@ -99,7 +183,9 @@ def _read_json(path: Path) -> dict:
 
 
 def _require_bindings(payload: Mapping[str, object], expected: Mapping[str, object]) -> None:
+    _validate_bindings(expected)
     actual = payload.get("bindings")
+    _validate_bindings(actual)
     if actual != expected:
         raise RuntimeError("Slurm smoke provenance bindings mismatch")
 
@@ -112,6 +198,7 @@ def validate_smoke_receipt(path: Path, *, expected_bindings: Mapping[str, object
     if payload.get("schema") != SCHEMA or payload.get("status") != "ready":
         raise RuntimeError("Slurm smoke receipt is not ready")
     if payload.get("signal") != {
+        "origin": SIGNAL_ORIGIN,
         "name": "SIGUSR1",
         "count": 1,
         "handled": True,
@@ -188,6 +275,68 @@ def _write_synthetic_checkpoint(run_dir: Path, step: int) -> Path:
     return checkpoint
 
 
+def _signal_ready_path(root: Path, requested: Path) -> Path:
+    expected = Path(os.path.abspath(root / SIGNAL_READY_NAME))
+    path = Path(os.path.abspath(requested))
+    if path != expected:
+        raise RuntimeError(f"external signal PID file must be exactly {expected}")
+    if os.path.lexists(path):
+        raise RuntimeError(
+            f"external signal PID file already exists; refusing to replace it: {path}"
+        )
+    if path.parent.is_symlink() or not path.parent.is_dir():
+        raise RuntimeError(
+            "external signal PID file parent must be an existing non-symlink directory"
+        )
+    return path
+
+
+def _wait_for_external_usr1(
+    *,
+    signal_ready: Path,
+    run_dir: Path,
+    trigger_step: int,
+    timeout_seconds: float,
+) -> dict[str, object]:
+    if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+        raise RuntimeError("external SIGUSR1 timeout must be finite and positive")
+
+    handled: list[int] = []
+    prior_usr1 = signal.getsignal(signal.SIGUSR1)
+    prior_alarm = signal.getsignal(signal.SIGALRM)
+
+    def on_usr1(signum, _frame) -> None:
+        handled.append(signum)
+        _write_synthetic_checkpoint(run_dir, trigger_step)
+
+    def on_alarm(_signum, _frame) -> None:
+        raise TimeoutError(
+            f"timed out after {timeout_seconds:g}s waiting for external SIGUSR1"
+        )
+
+    signal.signal(signal.SIGUSR1, on_usr1)
+    signal.signal(signal.SIGALRM, on_alarm)
+    try:
+        atomic_write_text(signal_ready, f"{os.getpid()}\n")
+        signal.setitimer(signal.ITIMER_REAL, timeout_seconds)
+        while not handled:
+            signal.pause()
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0.0)
+        signal.signal(signal.SIGALRM, prior_alarm)
+        signal.signal(signal.SIGUSR1, prior_usr1)
+        signal_ready.unlink(missing_ok=True)
+
+    if handled != [signal.SIGUSR1]:
+        raise RuntimeError("synthetic cell did not handle exactly one external SIGUSR1")
+    return {
+        "name": "SIGUSR1",
+        "count": 1,
+        "handled": True,
+        "origin": SIGNAL_ORIGIN,
+    }
+
+
 def _first_allocation(
     *,
     root: Path,
@@ -195,12 +344,18 @@ def _first_allocation(
     job_id: str,
     restart_count: int,
     trigger_step: int,
+    external_signal_ready: Path,
+    signal_timeout_seconds: float,
 ) -> int:
     state_path = root / STATE_NAME
     if state_path.exists():
         raise RuntimeError(
             "Slurm smoke state already exists; refusing a duplicate first allocation"
         )
+    signal_ready = _signal_ready_path(root, external_signal_ready)
+    if not math.isfinite(signal_timeout_seconds) or signal_timeout_seconds <= 0:
+        raise RuntimeError("external SIGUSR1 timeout must be finite and positive")
+
     run_dir = root / "synthetic-cell"
     allocation = _allocation(job_id, restart_count)
     state = {
@@ -217,22 +372,12 @@ def _first_allocation(
     }
     atomic_write_json(state_path, state)
 
-    handled: list[int] = []
-    prior_handler = signal.getsignal(signal.SIGUSR1)
-
-    def on_usr1(signum, _frame) -> None:
-        handled.append(signum)
-        _write_synthetic_checkpoint(run_dir, trigger_step)
-
-    signal.signal(signal.SIGUSR1, on_usr1)
-    try:
-        # This is a real POSIX signal and the checkpoint is written by its
-        # handler, matching the interruption path rather than a direct call.
-        os.kill(os.getpid(), signal.SIGUSR1)
-    finally:
-        signal.signal(signal.SIGUSR1, prior_handler)
-    if handled != [signal.SIGUSR1]:
-        raise RuntimeError("synthetic cell did not handle exactly one SIGUSR1")
+    signal_record = _wait_for_external_usr1(
+        signal_ready=signal_ready,
+        run_dir=run_dir,
+        trigger_step=trigger_step,
+        timeout_seconds=signal_timeout_seconds,
+    )
 
     hpc = run_dir / "lightning/hpc_ckpt_1.ckpt"
     promoted = promote_hpc_checkpoint(run_dir)
@@ -244,7 +389,7 @@ def _first_allocation(
     state.update(
         {
             "status": "host-requeue-required",
-            "signal": {"name": "SIGUSR1", "count": 1, "handled": True},
+            "signal": signal_record,
             "checkpoint": {
                 "step": trigger_step,
                 "hpc_sha256": hpc_sha,
@@ -270,6 +415,8 @@ def authorize_host_requeue(
     state_path = root / STATE_NAME
     state = _read_json(state_path)
     _require_bindings(state, bindings)
+    if state.get("schema") != SCHEMA:
+        raise RuntimeError("Slurm smoke state schema is unsupported")
     if state.get("status") != "host-requeue-required":
         raise RuntimeError("host requeue is not in the one-shot required state")
     allocation = state.get("allocations", [{}])[0]
@@ -303,6 +450,8 @@ def _second_allocation(
     ready_path = root / READY_NAME
     state = _read_json(state_path)
     _require_bindings(state, bindings)
+    if state.get("schema") != SCHEMA:
+        raise RuntimeError("Slurm smoke state schema is unsupported")
     if state.get("status") != "host-requeue-authorized":
         raise RuntimeError("second allocation arrived without one host requeue authorization")
     if state.get("real_requeue_count") != 1:
@@ -383,7 +532,10 @@ def run_allocation(
     restart_count: int,
     trigger_step: int = 3,
     finish_step: int = 5,
+    external_signal_ready: Path | None = None,
+    signal_timeout_seconds: float = DEFAULT_SIGNAL_TIMEOUT_SECONDS,
 ) -> int:
+    _validate_bindings(bindings)
     root = smoke_root(runs_root)
     root.mkdir(parents=True, exist_ok=True)
     ready = root / READY_NAME
@@ -392,12 +544,18 @@ def run_allocation(
         return 0
     state_path = root / STATE_NAME
     if not state_path.exists():
+        if external_signal_ready is None:
+            raise RuntimeError(
+                "first Slurm smoke allocation requires an external signal PID file"
+            )
         return _first_allocation(
             root=root,
             bindings=bindings,
             job_id=job_id,
             restart_count=restart_count,
             trigger_step=trigger_step,
+            external_signal_ready=external_signal_ready,
+            signal_timeout_seconds=signal_timeout_seconds,
         )
     return _second_allocation(
         root=root,
@@ -411,24 +569,44 @@ def run_allocation(
 def _binding_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--git-sha", required=True)
     parser.add_argument("--detector-sha256", required=True)
-    parser.add_argument("--sif-sha256", required=True)
-    parser.add_argument("--container-build-sha256", required=True)
-    parser.add_argument("--package-manifest-sha256", required=True)
-    parser.add_argument("--package-ready-sha256", required=True)
-    parser.add_argument("--package-sha256sums-sha256", required=True)
-    parser.add_argument("--package-repo-bundle-sha256", required=True)
+    parser.add_argument("--venv-sha256", required=True)
+    parser.add_argument("--venv-build-sha256", required=True)
+    parser.add_argument("--base-python-sha256", required=True)
+    for prefix in ("base-payload", "runtime-amendment"):
+        parser.add_argument(f"--{prefix}-package-id", required=True)
+        parser.add_argument(f"--{prefix}-git-sha", required=True)
+        parser.add_argument(f"--{prefix}-manifest-sha256", required=True)
+        parser.add_argument(f"--{prefix}-ready-sha256", required=True)
+        parser.add_argument(f"--{prefix}-sha256sums-sha256", required=True)
+    parser.add_argument("--base-payload-repo-bundle-sha256", required=True)
+    parser.add_argument("--runtime-amendment-bundle-sha256", required=True)
 
 
 def _bindings_from_args(args: argparse.Namespace) -> dict:
+    base_payload = {
+        "package_id": args.base_payload_package_id,
+        "git_sha": args.base_payload_git_sha,
+        "manifest_sha256": args.base_payload_manifest_sha256,
+        "ready_sha256": args.base_payload_ready_sha256,
+        "sha256sums_sha256": args.base_payload_sha256sums_sha256,
+        "repo_bundle_sha256": args.base_payload_repo_bundle_sha256,
+    }
+    runtime_amendment = {
+        "package_id": args.runtime_amendment_package_id,
+        "git_sha": args.runtime_amendment_git_sha,
+        "manifest_sha256": args.runtime_amendment_manifest_sha256,
+        "ready_sha256": args.runtime_amendment_ready_sha256,
+        "sha256sums_sha256": args.runtime_amendment_sha256sums_sha256,
+        "runtime_bundle_sha256": args.runtime_amendment_bundle_sha256,
+    }
     return make_bindings(
         git_sha=args.git_sha,
         detector_sha256=args.detector_sha256,
-        sif_sha256=args.sif_sha256,
-        container_build_sha256=args.container_build_sha256,
-        package_manifest_sha256=args.package_manifest_sha256,
-        package_ready_sha256=args.package_ready_sha256,
-        package_sha256sums_sha256=args.package_sha256sums_sha256,
-        package_repo_bundle_sha256=args.package_repo_bundle_sha256,
+        venv_sha256=args.venv_sha256,
+        venv_build_sha256=args.venv_build_sha256,
+        base_python_sha256=args.base_python_sha256,
+        base_payload=base_payload,
+        runtime_amendment=runtime_amendment,
     )
 
 
@@ -444,6 +622,12 @@ def main() -> int:
     run_parser.add_argument("--restart-count", type=int, required=True)
     run_parser.add_argument("--trigger-step", type=int, default=3)
     run_parser.add_argument("--finish-step", type=int, default=5)
+    run_parser.add_argument("--external-signal-ready", type=Path, required=True)
+    run_parser.add_argument(
+        "--signal-timeout-seconds",
+        type=float,
+        default=DEFAULT_SIGNAL_TIMEOUT_SECONDS,
+    )
     authorize = subparsers.choices["authorize-requeue"]
     authorize.add_argument("--job-id", required=True)
     authorize.add_argument("--restart-count", type=int, required=True)
@@ -458,6 +642,8 @@ def main() -> int:
             restart_count=args.restart_count,
             trigger_step=args.trigger_step,
             finish_step=args.finish_step,
+            external_signal_ready=args.external_signal_ready,
+            signal_timeout_seconds=args.signal_timeout_seconds,
         )
     root = smoke_root(args.runs_root)
     if args.command == "authorize-requeue":

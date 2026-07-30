@@ -14,10 +14,16 @@
 
 set -euo pipefail
 
-# This must precede Python, nvidia-smi, Apptainer --nv, or any CUDA import.
+# This must precede Python, nvidia-smi, or any CUDA import.
 export NVIDIA_TF32_OVERRIDE=0
 
-site_env="${H100_SITE_ENV:?submit.sh must export H100_SITE_ENV}"
+H100_MODE="${1:?submit.sh must pass acceptance or campaign mode}"
+site_env="${2:?submit.sh must pass the untracked site.env path}"
+if [[ "$H100_MODE" != "acceptance" && "$H100_MODE" != "campaign" ]]; then
+  echo "campaign batch received invalid mode: $H100_MODE" >&2
+  exit 2
+fi
+readonly H100_MODE site_env
 # shellcheck disable=SC1090
 source "$site_env"
 # Transfer credentials are never needed by a compute allocation.
@@ -45,13 +51,20 @@ check_sha() {
 }
 
 staging_started_epoch="$(date +%s)"
-check_sha "$H100_REPO_BUNDLE_SHA256" "$H100_REPO_BUNDLE"
-check_sha "$H100_MANIFEST_SHA256" "$H100_PACKAGE_ROOT/manifest.json"
-check_sha "$H100_READY_SHA256" "$H100_PACKAGE_ROOT/READY.json"
-check_sha "$H100_SHA256SUMS_SHA256" "$H100_PACKAGE_ROOT/SHA256SUMS"
-(cd "$H100_PACKAGE_ROOT" && sha256sum --check SHA256SUMS)
-check_sha "$H100_SIF_SHA256" "$H100_SIF"
-check_sha "$H100_SIF_BUILD_SHA256" "$H100_SIF_BUILD_JSON"
+base_repo_bundle="$H100_BASE_PACKAGE_ROOT/code/xview3.bundle"
+check_sha "$H100_BASE_REPO_BUNDLE_SHA256" "$base_repo_bundle"
+check_sha "$H100_BASE_MANIFEST_SHA256" "$H100_BASE_PACKAGE_ROOT/manifest.json"
+check_sha "$H100_BASE_READY_SHA256" "$H100_BASE_PACKAGE_ROOT/READY.json"
+check_sha "$H100_BASE_SHA256SUMS_SHA256" "$H100_BASE_PACKAGE_ROOT/SHA256SUMS"
+# source_validation runs the complete immutable Sprint 7d verifier below; do
+# not add a redundant 294 GB checksum pass before that verifier.
+check_sha "$H100_RUNTIME_BUNDLE_SHA256" "$H100_RUNTIME_BUNDLE"
+check_sha "$H100_RUNTIME_MANIFEST_SHA256" "$H100_RUNTIME_PACKAGE_ROOT/manifest.json"
+check_sha "$H100_RUNTIME_READY_SHA256" "$H100_RUNTIME_PACKAGE_ROOT/READY.json"
+check_sha "$H100_RUNTIME_SHA256SUMS_SHA256" "$H100_RUNTIME_PACKAGE_ROOT/SHA256SUMS"
+(cd "$H100_RUNTIME_PACKAGE_ROOT" && sha256sum --check SHA256SUMS)
+check_sha "$H100_VENV_BUILD_SHA256" "$H100_VENV_BUILD_JSON"
+check_sha "$H100_BASE_PYTHON_SHA256" "$H100_BASE_PYTHON"
 if [[ "${H100_MODE:?H100_MODE missing}" == "campaign" ]]; then
   check_sha "$H100_CUTOVER_READY_SHA256" "$H100_CUTOVER_READY"
   check_sha "$H100_V100_CORE_ARCHIVED_SHA256" "$H100_V100_CORE_ARCHIVED"
@@ -70,9 +83,17 @@ payload="$scratch/payload"
   echo "scratch repo/payload destinations must start empty" >&2
   exit 1
 }
-git clone "$H100_REPO_BUNDLE" "$repo"
+git clone "$H100_RUNTIME_BUNDLE" "$repo"
 git -C "$repo" checkout --detach "$H100_EXPECTED_GIT_SHA"
 check_sha "$H100_ENV_LOCK_SHA256" "$repo/locks/env-v100node.txt"
+PYTHONNOUSERSITE=1 PYTHONPATH="$repo" "$H100_TRANSFER_PYTHON" \
+  "$repo/scripts/h100/build_venv.py" verify \
+  --repo "$repo" \
+  --venv-root "$H100_VENV_ROOT" \
+  --base-python "$H100_BASE_PYTHON" \
+  --expected-venv-sha256 "$H100_VENV_SHA256" \
+  --expected-receipt-sha256 "$H100_VENV_BUILD_SHA256" \
+  --expected-base-python-sha256 "$H100_BASE_PYTHON_SHA256"
 mkdir -p "$meta_root/acceptance-logs"
 frozen_args=(
   --frozen-sha256 "$H100_DETECTOR_SHA256"
@@ -86,11 +107,21 @@ frozen_args=(
   PYTHONPATH="$repo" "$H100_TRANSFER_PYTHON" -m scripts.h100.source_validation \
     --repo "$repo" \
     --expected-git-sha "$H100_EXPECTED_GIT_SHA" \
+    --base-payload-root "$H100_BASE_PACKAGE_ROOT" \
+    --runtime-amendment-root "$H100_RUNTIME_PACKAGE_ROOT" \
     "${frozen_args[@]}" \
-    --package-manifest-sha256 "$H100_MANIFEST_SHA256" \
-    --package-ready-sha256 "$H100_READY_SHA256" \
-    --package-sha256sums-sha256 "$H100_SHA256SUMS_SHA256" \
-    --package-repo-bundle-sha256 "$H100_REPO_BUNDLE_SHA256" \
+    --base-payload-package-id "$H100_BASE_PACKAGE_ID" \
+    --base-payload-git-sha "$H100_BASE_GIT_SHA" \
+    --base-payload-manifest-sha256 "$H100_BASE_MANIFEST_SHA256" \
+    --base-payload-ready-sha256 "$H100_BASE_READY_SHA256" \
+    --base-payload-sha256sums-sha256 "$H100_BASE_SHA256SUMS_SHA256" \
+    --base-payload-repo-bundle-sha256 "$H100_BASE_REPO_BUNDLE_SHA256" \
+    --runtime-amendment-package-id "$H100_RUNTIME_PACKAGE_ID" \
+    --runtime-amendment-git-sha "$H100_RUNTIME_GIT_SHA" \
+    --runtime-amendment-manifest-sha256 "$H100_RUNTIME_MANIFEST_SHA256" \
+    --runtime-amendment-ready-sha256 "$H100_RUNTIME_READY_SHA256" \
+    --runtime-amendment-sha256sums-sha256 "$H100_RUNTIME_SHA256SUMS_SHA256" \
+    --runtime-amendment-bundle-sha256 "$H100_RUNTIME_BUNDLE_SHA256" \
     --output "$source_validation"
 )
 source_validation_sha256="$(sha256sum "$source_validation" | awk '{print $1}')"
@@ -108,37 +139,16 @@ if [[ "${H100_MODE:?H100_MODE missing}" == "acceptance" ]]; then
   host_test_receipt_sha256="$(sha256sum "$host_test_receipt" | awk '{print $1}')"
 fi
 # Handoff owns archive verification/extraction and requires an empty target.
-# Run it on the host before strict runtime PYTHONPATH or Apptainer; the slim
-# SIF intentionally has neither git nor zstd tooling.
+# Run it on the host before entering the minimal native runtime environment.
+# The persistent venv intentionally has neither transfer credentials nor
+# authority to mutate either package.
 (
   cd "$repo"
-  PYTHONPATH="$repo" "$H100_TRANSFER_PYTHON" -m scripts.handoff verify --package-root "$H100_PACKAGE_ROOT"
   PYTHONPATH="$repo" "$H100_TRANSFER_PYTHON" -m scripts.handoff extract \
-    --package-root "$H100_PACKAGE_ROOT" \
+    --package-root "$H100_BASE_PACKAGE_ROOT" \
     --destination "$payload"
 )
 staging_seconds="$(( $(date +%s) - staging_started_epoch ))"
-
-apptainer_bin="${H100_APPTAINER:-apptainer}"
-binds="$scratch:$scratch,$H100_PACKAGE_ROOT:$H100_PACKAGE_ROOT:ro,$H100_RUNS_ROOT:$H100_RUNS_ROOT,$H100_SIF:$H100_SIF:ro,$source_validation:$source_validation:ro"
-if [[ "${H100_MODE:?H100_MODE missing}" == "campaign" ]]; then
-  binds="$binds,$H100_CUTOVER_READY:$H100_CUTOVER_READY:ro,$H100_V100_CORE_ARCHIVED:$H100_V100_CORE_ARCHIVED:ro,$H100_V100_ARCHIVE_MANIFEST:$H100_V100_ARCHIVE_MANIFEST:ro"
-fi
-run_sif() {
-  "$apptainer_bin" exec --cleanenv --containall --nv \
-    --bind "$binds" "$H100_SIF" "$@"
-}
-export PYTHONPATH="$repo/scripts/h100:$repo"
-export APPTAINERENV_PYTHONPATH="$PYTHONPATH"
-export APPTAINERENV_NVIDIA_TF32_OVERRIDE=0
-export APPTAINERENV_PYTHONDONTWRITEBYTECODE=1
-export APPTAINERENV_SLURM_JOB_ID="${SLURM_JOB_ID:?SLURM_JOB_ID is required}"
-export APPTAINERENV_SLURM_RESTART_COUNT="${SLURM_RESTART_COUNT:-0}"
-export APPTAINERENV_SLURM_CLUSTER_NAME="${SLURM_CLUSTER_NAME:-unknown}"
-export APPTAINERENV_SLURM_NTASKS="${SLURM_NTASKS:-1}"
-export APPTAINERENV_SLURM_PROCID="${SLURM_PROCID:-0}"
-export APPTAINERENV_SLURM_LOCALID="${SLURM_LOCALID:-0}"
-export APPTAINERENV_SLURM_NODEID="${SLURM_NODEID:-0}"
 
 # Preserve committed frozen data files; link only ignored payload subtrees.
 for relative in chips raw weights; do
@@ -159,34 +169,87 @@ done
 mkdir -p "$H100_RUNS_ROOT"
 ln -s "$H100_RUNS_ROOT" "$repo/runs"
 mkdir -p "$meta_root"
-receipt_tmp="$meta_root/.container_build.json.$$"
-cp "$H100_SIF_BUILD_JSON" "$receipt_tmp"
-check_sha "$H100_SIF_BUILD_SHA256" "$receipt_tmp"
-mv "$receipt_tmp" "$meta_root/container_build.json"
+receipt_tmp="$meta_root/.venv_build.json.$$"
+cp "$H100_VENV_BUILD_JSON" "$receipt_tmp"
+check_sha "$H100_VENV_BUILD_SHA256" "$receipt_tmp"
+mv "$receipt_tmp" "$meta_root/venv_build.json"
+
+# Execute the exact verified venv interpreter without activation or inherited
+# login/user-site state.  Only the CUDA/Slurm values needed by the native
+# runtime cross this boundary; Box credentials and submission-host state do
+# not.  Cache and HOME writes are confined to allocation scratch.
+runtime_home="$scratch/runtime-home"
+mkdir -m 700 "$runtime_home"
+mkdir -m 700 "$runtime_home/cache" "$runtime_home/torch" "$runtime_home/triton"
+native_env=(
+  /usr/bin/env -i
+  "HOME=$runtime_home"
+  "XDG_CACHE_HOME=$runtime_home/cache"
+  "TORCH_HOME=$runtime_home/torch"
+  "TRITON_CACHE_DIR=$runtime_home/triton"
+  "TMPDIR=$scratch"
+  "PATH=$H100_VENV_ROOT/bin:/usr/local/bin:/usr/bin:/bin"
+  "PYTHONPATH=$repo/scripts/h100:$repo"
+  "PYTHONNOUSERSITE=1"
+  "PYTHONDONTWRITEBYTECODE=1"
+  "PIP_NO_INDEX=1"
+  "HF_HUB_OFFLINE=1"
+  "TRANSFORMERS_OFFLINE=1"
+  "NVIDIA_TF32_OVERRIDE=0"
+  "CUDA_DEVICE_ORDER=PCI_BUS_ID"
+  "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-}"
+  "NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-}"
+  "LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}"
+  "SLURM_JOB_ID=${SLURM_JOB_ID:?SLURM_JOB_ID is required}"
+  "SLURM_RESTART_COUNT=${SLURM_RESTART_COUNT:-0}"
+  "SLURM_CLUSTER_NAME=${SLURM_CLUSTER_NAME:-unknown}"
+  "SLURM_NTASKS=${SLURM_NTASKS:-1}"
+  "SLURM_PROCID=${SLURM_PROCID:-0}"
+  "SLURM_LOCALID=${SLURM_LOCALID:-0}"
+  "SLURM_NODEID=${SLURM_NODEID:-0}"
+  "SLURM_JOB_GPUS=${SLURM_JOB_GPUS:-}"
+  "SLURM_GPUS_ON_NODE=${SLURM_GPUS_ON_NODE:-8}"
+  "SLURM_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-48}"
+  "SLURMD_NODENAME=${SLURMD_NODENAME:-unknown}"
+  "SLURM_JOB_NODELIST=${SLURM_JOB_NODELIST:-unknown}"
+)
+run_venv() {
+  "${native_env[@]}" "$H100_VENV_ROOT/bin/python" "$@"
+}
+
 if [[ "${H100_MODE:?H100_MODE missing}" == "acceptance" ]]; then
   (
     cd "$repo"
-    run_sif python -m scripts.h100.acceptance \
+    run_venv -m scripts.h100.acceptance \
       --repo "$repo" \
       --runs-root "$H100_RUNS_ROOT" \
       --scratch "$scratch" \
       --scratch-free-before-extraction "$scratch_free" \
       --ready "$H100_RUNS_ROOT/.h100/H100_READY.json" \
       --smoke-ready "$H100_RUNS_ROOT/.h100/slurm-smoke/SLURM_SMOKE_READY.json" \
-      --sif "$H100_SIF" \
-      --sif-sha256 "$H100_SIF_SHA256" \
-      --container-build-sha256 "$H100_SIF_BUILD_SHA256" \
-      --base-oci "$H100_BASE_OCI" \
+      --venv-root "$H100_VENV_ROOT" \
+      --venv-sha256 "$H100_VENV_SHA256" \
+      --venv-build-sha256 "$H100_VENV_BUILD_SHA256" \
+      --base-python "$H100_BASE_PYTHON" \
+      --base-python-sha256 "$H100_BASE_PYTHON_SHA256" \
       --expected-git-sha "$H100_EXPECTED_GIT_SHA" \
       --source-validation-json "$source_validation" \
       --source-validation-sha256 "$source_validation_sha256" \
       --host-test-receipt "$host_test_receipt" \
       --host-test-receipt-sha256 "$host_test_receipt_sha256" \
       "${frozen_args[@]}" \
-      --package-manifest-sha256 "$H100_MANIFEST_SHA256" \
-      --package-ready-sha256 "$H100_READY_SHA256" \
-      --package-sha256sums-sha256 "$H100_SHA256SUMS_SHA256" \
-      --package-repo-bundle-sha256 "$H100_REPO_BUNDLE_SHA256" \
+      --base-payload-package-id "$H100_BASE_PACKAGE_ID" \
+      --base-payload-git-sha "$H100_BASE_GIT_SHA" \
+      --base-payload-manifest-sha256 "$H100_BASE_MANIFEST_SHA256" \
+      --base-payload-ready-sha256 "$H100_BASE_READY_SHA256" \
+      --base-payload-sha256sums-sha256 "$H100_BASE_SHA256SUMS_SHA256" \
+      --base-payload-repo-bundle-sha256 "$H100_BASE_REPO_BUNDLE_SHA256" \
+      --runtime-amendment-package-id "$H100_RUNTIME_PACKAGE_ID" \
+      --runtime-amendment-git-sha "$H100_RUNTIME_GIT_SHA" \
+      --runtime-amendment-manifest-sha256 "$H100_RUNTIME_MANIFEST_SHA256" \
+      --runtime-amendment-ready-sha256 "$H100_RUNTIME_READY_SHA256" \
+      --runtime-amendment-sha256sums-sha256 "$H100_RUNTIME_SHA256SUMS_SHA256" \
+      --runtime-amendment-bundle-sha256 "$H100_RUNTIME_BUNDLE_SHA256" \
       --remaining-v100-wall-hours "$H100_REMAINING_V100_WALL_HOURS" \
       --staging-seconds "$staging_seconds"
   )
@@ -197,14 +260,14 @@ allocation_hardware="$H100_RUNS_ROOT/.h100/h100_runtime-${SLURM_JOB_ID}-r${SLURM
 allocation_hardware_tmp="${allocation_hardware}.tmp.$$"
 (
   cd "$repo"
-  run_sif python -m scripts.h100.strict_fp32_probe --expected-gpus 8 \
+  run_venv -m scripts.h100.strict_fp32_probe --expected-gpus 8 \
     > "$allocation_hardware_tmp"
 )
 mv "$allocation_hardware_tmp" "$allocation_hardware"
 
 (
   cd "$repo"
-  run_sif python -m scripts.h100.operator_cutover \
+  run_venv -m scripts.h100.operator_cutover \
     --cutover-ready "$H100_CUTOVER_READY" \
     --cutover-ready-sha256 "$H100_CUTOVER_READY_SHA256" \
     --receipt "$H100_V100_CORE_ARCHIVED" \
@@ -212,11 +275,19 @@ mv "$allocation_hardware_tmp" "$allocation_hardware"
     --archive-manifest "$H100_V100_ARCHIVE_MANIFEST" \
     --archive-manifest-sha256 "$H100_V100_ARCHIVE_MANIFEST_SHA256" \
     --expected-h100-git-sha "$H100_EXPECTED_GIT_SHA" \
-    --expected-sif-sha256 "$H100_SIF_SHA256" \
-    --expected-package-manifest-sha256 "$H100_MANIFEST_SHA256" \
-    --expected-package-ready-sha256 "$H100_READY_SHA256" \
-    --expected-package-sha256sums-sha256 "$H100_SHA256SUMS_SHA256" \
-    --expected-package-repo-bundle-sha256 "$H100_REPO_BUNDLE_SHA256" \
+    --expected-venv-sha256 "$H100_VENV_SHA256" \
+    --expected-base-payload-package-id "$H100_BASE_PACKAGE_ID" \
+    --expected-base-payload-git-sha "$H100_BASE_GIT_SHA" \
+    --expected-base-payload-manifest-sha256 "$H100_BASE_MANIFEST_SHA256" \
+    --expected-base-payload-ready-sha256 "$H100_BASE_READY_SHA256" \
+    --expected-base-payload-sha256sums-sha256 "$H100_BASE_SHA256SUMS_SHA256" \
+    --expected-base-payload-repo-bundle-sha256 "$H100_BASE_REPO_BUNDLE_SHA256" \
+    --expected-runtime-amendment-package-id "$H100_RUNTIME_PACKAGE_ID" \
+    --expected-runtime-amendment-git-sha "$H100_RUNTIME_GIT_SHA" \
+    --expected-runtime-amendment-manifest-sha256 "$H100_RUNTIME_MANIFEST_SHA256" \
+    --expected-runtime-amendment-ready-sha256 "$H100_RUNTIME_READY_SHA256" \
+    --expected-runtime-amendment-sha256sums-sha256 "$H100_RUNTIME_SHA256SUMS_SHA256" \
+    --expected-runtime-amendment-bundle-sha256 "$H100_RUNTIME_BUNDLE_SHA256" \
     --expected-reference-git-sha "$H100_EXPECTED_REFERENCE_GIT_SHA" \
     --expected-reference-campaign-id "$H100_REFERENCE_CAMPAIGN_ID"
 )
@@ -229,16 +300,15 @@ forward_usr1() {
 }
 trap forward_usr1 USR1
 
-(
-  cd "$repo"
-  run_sif python -m scripts.h100.campaign \
+cd "$repo"
+"${native_env[@]}" "$H100_VENV_ROOT/bin/python" -m scripts.h100.campaign \
     --repo "$repo" \
     --runs-root "$H100_RUNS_ROOT" \
     --campaign-id "$H100_CAMPAIGN_ID" \
     --expected-git-sha "$H100_EXPECTED_GIT_SHA" \
-    --sif-sha256 "$H100_SIF_SHA256" \
-    --base-oci "$H100_BASE_OCI" \
-    --package-manifest-sha256 "$H100_MANIFEST_SHA256" \
+    --venv-root "$H100_VENV_ROOT" \
+    --venv-sha256 "$H100_VENV_SHA256" \
+    --venv-build-sha256 "$H100_VENV_BUILD_SHA256" \
     --hardware-json "$allocation_hardware" \
     --acceptance-json "$H100_RUNS_ROOT/.h100/H100_READY.json" \
     --source-validation-json "$source_validation" \
@@ -249,8 +319,7 @@ trap forward_usr1 USR1
     --v100-core-archived-sha256 "$H100_V100_CORE_ARCHIVED_SHA256" \
     --v100-archive-manifest-json "$H100_V100_ARCHIVE_MANIFEST" \
     --v100-archive-manifest-sha256 "$H100_V100_ARCHIVE_MANIFEST_SHA256" \
-    --workers-per-gpu 6
-) &
+    --workers-per-gpu 6 &
 controller_pid="$!"
 controller_rc=0
 while true; do
@@ -264,7 +333,7 @@ while true; do
   break
 done
 if [[ "$controller_rc" -eq 75 ]]; then
-  # The SIF has no scontrol.  It reaches this host-only call only after every
+  # The native child never receives scontrol.  This host call occurs only after every
   # running cell has a promoted last.ckpt and the manifest requests requeue.
   "${H100_REAL_SCONTROL:-/usr/bin/scontrol}" requeue "$SLURM_JOB_ID"
   exit 0

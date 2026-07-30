@@ -25,12 +25,17 @@ fi
 source "$site_env"
 
 required=(
-  H100_PACKAGE_ROOT H100_REPO_BUNDLE H100_SIF H100_SIF_SHA256
-  H100_SIF_BUILD_JSON H100_SIF_BUILD_SHA256 H100_RUNS_ROOT
-  H100_EXPECTED_GIT_SHA H100_MANIFEST_SHA256 H100_READY_SHA256
-  H100_SHA256SUMS_SHA256 H100_REPO_BUNDLE_SHA256 H100_JOB_LOG_DIR
+  H100_BASE_PACKAGE_ROOT H100_BASE_PACKAGE_ID H100_BASE_GIT_SHA
+  H100_BASE_MANIFEST_SHA256 H100_BASE_READY_SHA256
+  H100_BASE_SHA256SUMS_SHA256 H100_BASE_REPO_BUNDLE_SHA256
+  H100_RUNTIME_PACKAGE_ROOT H100_RUNTIME_PACKAGE_ID H100_RUNTIME_GIT_SHA
+  H100_RUNTIME_BUNDLE H100_RUNTIME_BUNDLE_SHA256
+  H100_RUNTIME_MANIFEST_SHA256 H100_RUNTIME_READY_SHA256
+  H100_RUNTIME_SHA256SUMS_SHA256 H100_VENV_ROOT H100_VENV_SHA256
+  H100_VENV_BUILD_JSON H100_VENV_BUILD_SHA256 H100_RUNS_ROOT
+  H100_EXPECTED_GIT_SHA H100_JOB_LOG_DIR
   H100_PROJECT H100_PROJECT_ROOT H100_TRANSFER_PYTHON H100_ENV_LOCK_SHA256
-  H100_BASE_OCI H100_DETECTOR_SHA256 H100_SCORER_SHA256
+  H100_BASE_PYTHON H100_BASE_PYTHON_SHA256 H100_DETECTOR_SHA256 H100_SCORER_SHA256
   H100_SPLITS_SHA256 H100_STATS_SHA256 H100_LSSSDD_SHA256
 )
 if [[ "$mode" == "acceptance" || "$mode" == "cutover-check" ]]; then
@@ -55,8 +60,46 @@ for name in "${required[@]}"; do
     exit 2
   fi
 done
+if [[ "$H100_RUNTIME_GIT_SHA" != "$H100_EXPECTED_GIT_SHA" ]]; then
+  echo "H100_RUNTIME_GIT_SHA must equal H100_EXPECTED_GIT_SHA" >&2
+  exit 2
+fi
+for name in H100_BASE_GIT_SHA H100_RUNTIME_GIT_SHA H100_EXPECTED_GIT_SHA; do
+  if [[ ! "${!name}" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "$name must be a lowercase full 40-character Git SHA" >&2
+    exit 2
+  fi
+done
+hash_names=(
+  H100_BASE_MANIFEST_SHA256 H100_BASE_READY_SHA256
+  H100_BASE_SHA256SUMS_SHA256 H100_BASE_REPO_BUNDLE_SHA256
+  H100_RUNTIME_BUNDLE_SHA256 H100_RUNTIME_MANIFEST_SHA256
+  H100_RUNTIME_READY_SHA256 H100_RUNTIME_SHA256SUMS_SHA256
+  H100_VENV_SHA256 H100_VENV_BUILD_SHA256 H100_BASE_PYTHON_SHA256
+  H100_ENV_LOCK_SHA256 H100_DETECTOR_SHA256 H100_SCORER_SHA256
+  H100_SPLITS_SHA256 H100_STATS_SHA256 H100_LSSSDD_SHA256
+)
+for name in "${hash_names[@]}"; do
+  if [[ ! "${!name}" =~ ^[0-9a-f]{64}$ ]]; then
+    echo "$name must be a lowercase 64-character SHA-256" >&2
+    exit 2
+  fi
+done
 if [[ "$(realpath -m "$H100_PROJECT_ROOT")" != "$repo" ]]; then
   echo "H100_PROJECT_ROOT does not match this checkout: $repo" >&2
+  exit 2
+fi
+if [[ ! -x "$H100_BASE_PYTHON" || ! -x "$H100_VENV_ROOT/bin/python" ]]; then
+  echo "base Python and exact native venv Python must both be executable" >&2
+  exit 2
+fi
+canonical_venv_receipt="${H100_VENV_ROOT}.build.json"
+if [[ "$(realpath -m "$H100_VENV_BUILD_JSON")" != "$(realpath -m "$canonical_venv_receipt")" ]]; then
+  echo "H100_VENV_BUILD_JSON must be the builder's canonical $canonical_venv_receipt" >&2
+  exit 2
+fi
+if [[ "$(realpath -m "$H100_BASE_PACKAGE_ROOT")" == "$(realpath -m "$H100_RUNTIME_PACKAGE_ROOT")" ]]; then
+  echo "base payload and runtime amendment roots must be distinct" >&2
   exit 2
 fi
 if [[ "$mode" == "cutover-check" || "$mode" == "campaign" ]]; then
@@ -70,18 +113,27 @@ fi
 mkdir -p "$H100_RUNS_ROOT/.h100/slurm"
 mkdir -p "$H100_JOB_LOG_DIR"
 if [[ "$mode" == "cutover-check" ]]; then
-  PYTHONPATH="$repo" "$H100_TRANSFER_PYTHON" -m scripts.h100.cutover \
+  PYTHONNOUSERSITE=1 PYTHONPATH="$repo" "$H100_TRANSFER_PYTHON" -m scripts.h100.cutover \
     --h100-ready "$H100_RUNS_ROOT/.h100/H100_READY.json" \
     --r2-run-dir "$H100_REFERENCES_ROOT/yolo26-f100" \
     --r3-run-dir "$H100_REFERENCES_ROOT/locateanything-zs" \
     --expected-h100-git-sha "$H100_EXPECTED_GIT_SHA" \
     --expected-reference-git-sha "$H100_EXPECTED_REFERENCE_GIT_SHA" \
-    --expected-sif-sha256 "$H100_SIF_SHA256" \
-    --expected-container-build-sha256 "$H100_SIF_BUILD_SHA256" \
-    --expected-package-manifest-sha256 "$H100_MANIFEST_SHA256" \
-    --expected-package-ready-sha256 "$H100_READY_SHA256" \
-    --expected-package-sha256sums-sha256 "$H100_SHA256SUMS_SHA256" \
-    --expected-package-repo-bundle-sha256 "$H100_REPO_BUNDLE_SHA256" \
+    --expected-venv-sha256 "$H100_VENV_SHA256" \
+    --expected-venv-build-sha256 "$H100_VENV_BUILD_SHA256" \
+    --expected-base-python-sha256 "$H100_BASE_PYTHON_SHA256" \
+    --expected-base-payload-package-id "$H100_BASE_PACKAGE_ID" \
+    --expected-base-payload-git-sha "$H100_BASE_GIT_SHA" \
+    --expected-base-payload-manifest-sha256 "$H100_BASE_MANIFEST_SHA256" \
+    --expected-base-payload-ready-sha256 "$H100_BASE_READY_SHA256" \
+    --expected-base-payload-sha256sums-sha256 "$H100_BASE_SHA256SUMS_SHA256" \
+    --expected-base-payload-repo-bundle-sha256 "$H100_BASE_REPO_BUNDLE_SHA256" \
+    --expected-runtime-amendment-package-id "$H100_RUNTIME_PACKAGE_ID" \
+    --expected-runtime-amendment-git-sha "$H100_RUNTIME_GIT_SHA" \
+    --expected-runtime-amendment-manifest-sha256 "$H100_RUNTIME_MANIFEST_SHA256" \
+    --expected-runtime-amendment-ready-sha256 "$H100_RUNTIME_READY_SHA256" \
+    --expected-runtime-amendment-sha256sums-sha256 "$H100_RUNTIME_SHA256SUMS_SHA256" \
+    --expected-runtime-amendment-bundle-sha256 "$H100_RUNTIME_BUNDLE_SHA256" \
     --expected-frozen-sha256 "$H100_DETECTOR_SHA256" \
     --expected-frozen-sha256 "$H100_SCORER_SHA256" \
     --expected-frozen-sha256 "$H100_SPLITS_SHA256" \
@@ -98,7 +150,7 @@ fi
 
 if [[ "$mode" == "campaign" ]]; then
   canonical_archive_manifest="$H100_RUNS_ROOT/.h100/V100_CORE_ARCHIVE_MANIFEST.json"
-  PYTHONPATH="$repo" "$H100_TRANSFER_PYTHON" -m scripts.h100.operator_cutover \
+  PYTHONNOUSERSITE=1 PYTHONPATH="$repo" "$H100_TRANSFER_PYTHON" -m scripts.h100.operator_cutover \
     --cutover-ready "$H100_CUTOVER_READY" \
     --cutover-ready-sha256 "$H100_CUTOVER_READY_SHA256" \
     --receipt "$H100_V100_CORE_ARCHIVED" \
@@ -108,11 +160,19 @@ if [[ "$mode" == "campaign" ]]; then
     --bound-archive-manifest "$canonical_archive_manifest" \
     --persist-meta-root "$H100_RUNS_ROOT/.h100" \
     --expected-h100-git-sha "$H100_EXPECTED_GIT_SHA" \
-    --expected-sif-sha256 "$H100_SIF_SHA256" \
-    --expected-package-manifest-sha256 "$H100_MANIFEST_SHA256" \
-    --expected-package-ready-sha256 "$H100_READY_SHA256" \
-    --expected-package-sha256sums-sha256 "$H100_SHA256SUMS_SHA256" \
-    --expected-package-repo-bundle-sha256 "$H100_REPO_BUNDLE_SHA256" \
+    --expected-venv-sha256 "$H100_VENV_SHA256" \
+    --expected-base-payload-package-id "$H100_BASE_PACKAGE_ID" \
+    --expected-base-payload-git-sha "$H100_BASE_GIT_SHA" \
+    --expected-base-payload-manifest-sha256 "$H100_BASE_MANIFEST_SHA256" \
+    --expected-base-payload-ready-sha256 "$H100_BASE_READY_SHA256" \
+    --expected-base-payload-sha256sums-sha256 "$H100_BASE_SHA256SUMS_SHA256" \
+    --expected-base-payload-repo-bundle-sha256 "$H100_BASE_REPO_BUNDLE_SHA256" \
+    --expected-runtime-amendment-package-id "$H100_RUNTIME_PACKAGE_ID" \
+    --expected-runtime-amendment-git-sha "$H100_RUNTIME_GIT_SHA" \
+    --expected-runtime-amendment-manifest-sha256 "$H100_RUNTIME_MANIFEST_SHA256" \
+    --expected-runtime-amendment-ready-sha256 "$H100_RUNTIME_READY_SHA256" \
+    --expected-runtime-amendment-sha256sums-sha256 "$H100_RUNTIME_SHA256SUMS_SHA256" \
+    --expected-runtime-amendment-bundle-sha256 "$H100_RUNTIME_BUNDLE_SHA256" \
     --expected-reference-git-sha "$H100_EXPECTED_REFERENCE_GIT_SHA" \
     --expected-reference-campaign-id "$H100_REFERENCE_CAMPAIGN_ID"
   H100_V100_CORE_ARCHIVED="$H100_RUNS_ROOT/.h100/V100_CORE_ARCHIVED.json"
@@ -129,7 +189,8 @@ if [[ "$mode" == "smoke" ]]; then
 fi
 
 # Box credentials are transfer-host inputs and must not enter Slurm's exported
-# environment or an Apptainer process.
+# environment or a native training process. Mode and site path are positional
+# batch arguments; no user environment is exported into the allocation.
 env -u BOX_JWT_CONFIG -u BOX_FOLDER_ID sbatch \
   --account="${H100_ACCOUNT:-geofam}" \
   --partition="${H100_PARTITION:-minor-use-case}" \
@@ -138,5 +199,5 @@ env -u BOX_JWT_CONFIG -u BOX_FOLDER_ID sbatch \
   --output="$H100_JOB_LOG_DIR/%x-%j.out" \
   ${H100_MAIL_USER:+--mail-user="$H100_MAIL_USER"} \
   ${H100_MAIL_TYPE:+--mail-type="$H100_MAIL_TYPE"} \
-  --export="ALL,H100_MODE=$mode,H100_SITE_ENV=$site_env" \
-  "$batch_script"
+  --export=NONE \
+  "$batch_script" "$mode" "$site_env"

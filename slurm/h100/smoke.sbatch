@@ -13,10 +13,16 @@
 
 set -euo pipefail
 
-# This must precede Python, nvidia-smi, Apptainer --nv, or any CUDA import.
+# This must precede Python, nvidia-smi, or any CUDA import.
 export NVIDIA_TF32_OVERRIDE=0
 
-site_env="${H100_SITE_ENV:?submit.sh must export H100_SITE_ENV}"
+H100_MODE="${1:?submit.sh must pass smoke mode}"
+site_env="${2:?submit.sh must pass the untracked site.env path}"
+if [[ "$H100_MODE" != "smoke" ]]; then
+  echo "smoke batch received invalid mode: $H100_MODE" >&2
+  exit 2
+fi
+readonly H100_MODE site_env
 # shellcheck disable=SC1090
 source "$site_env"
 # Transfer credentials are never needed by a compute allocation.
@@ -33,12 +39,18 @@ check_sha() {
   fi
 }
 
-check_sha "$H100_REPO_BUNDLE_SHA256" "$H100_REPO_BUNDLE"
-check_sha "$H100_MANIFEST_SHA256" "$H100_PACKAGE_ROOT/manifest.json"
-check_sha "$H100_READY_SHA256" "$H100_PACKAGE_ROOT/READY.json"
-check_sha "$H100_SHA256SUMS_SHA256" "$H100_PACKAGE_ROOT/SHA256SUMS"
-check_sha "$H100_SIF_SHA256" "$H100_SIF"
-check_sha "$H100_SIF_BUILD_SHA256" "$H100_SIF_BUILD_JSON"
+base_repo_bundle="$H100_BASE_PACKAGE_ROOT/code/xview3.bundle"
+check_sha "$H100_BASE_REPO_BUNDLE_SHA256" "$base_repo_bundle"
+check_sha "$H100_BASE_MANIFEST_SHA256" "$H100_BASE_PACKAGE_ROOT/manifest.json"
+check_sha "$H100_BASE_READY_SHA256" "$H100_BASE_PACKAGE_ROOT/READY.json"
+check_sha "$H100_BASE_SHA256SUMS_SHA256" "$H100_BASE_PACKAGE_ROOT/SHA256SUMS"
+check_sha "$H100_RUNTIME_BUNDLE_SHA256" "$H100_RUNTIME_BUNDLE"
+check_sha "$H100_RUNTIME_MANIFEST_SHA256" "$H100_RUNTIME_PACKAGE_ROOT/manifest.json"
+check_sha "$H100_RUNTIME_READY_SHA256" "$H100_RUNTIME_PACKAGE_ROOT/READY.json"
+check_sha "$H100_RUNTIME_SHA256SUMS_SHA256" "$H100_RUNTIME_PACKAGE_ROOT/SHA256SUMS"
+(cd "$H100_RUNTIME_PACKAGE_ROOT" && sha256sum --check SHA256SUMS)
+check_sha "$H100_VENV_BUILD_SHA256" "$H100_VENV_BUILD_JSON"
+check_sha "$H100_BASE_PYTHON_SHA256" "$H100_BASE_PYTHON"
 
 scratch="${SLURM_TMPDIR:?SLURM_TMPDIR is required}"
 repo="$scratch/repo"
@@ -46,7 +58,7 @@ repo="$scratch/repo"
   echo "scratch repo destination must start empty" >&2
   exit 1
 }
-git clone "$H100_REPO_BUNDLE" "$repo"
+git clone "$H100_RUNTIME_BUNDLE" "$repo"
 git -C "$repo" checkout --detach "$H100_EXPECTED_GIT_SHA"
 actual_git_sha="$(git -C "$repo" rev-parse HEAD)"
 if [[ "$actual_git_sha" != "$H100_EXPECTED_GIT_SHA" ]]; then
@@ -55,54 +67,113 @@ if [[ "$actual_git_sha" != "$H100_EXPECTED_GIT_SHA" ]]; then
 fi
 check_sha "$H100_DETECTOR_SHA256" "$repo/configs/detector.yaml"
 check_sha "$H100_ENV_LOCK_SHA256" "$repo/locks/env-v100node.txt"
+PYTHONNOUSERSITE=1 PYTHONPATH="$repo" "$H100_TRANSFER_PYTHON" \
+  "$repo/scripts/h100/build_venv.py" verify \
+  --repo "$repo" \
+  --venv-root "$H100_VENV_ROOT" \
+  --base-python "$H100_BASE_PYTHON" \
+  --expected-venv-sha256 "$H100_VENV_SHA256" \
+  --expected-receipt-sha256 "$H100_VENV_BUILD_SHA256" \
+  --expected-base-python-sha256 "$H100_BASE_PYTHON_SHA256"
 
 mkdir -p "$H100_RUNS_ROOT/.h100/slurm-smoke"
-apptainer_bin="${H100_APPTAINER:-apptainer}"
-export APPTAINERENV_NVIDIA_TF32_OVERRIDE=0
-export APPTAINERENV_PYTHONPATH="$repo/scripts/h100:$repo"
-export APPTAINERENV_PYTHONDONTWRITEBYTECODE=1
-export APPTAINERENV_SLURM_JOB_ID="${SLURM_JOB_ID:?SLURM_JOB_ID is required}"
-export APPTAINERENV_SLURM_RESTART_COUNT="${SLURM_RESTART_COUNT:-0}"
-export APPTAINERENV_SLURM_CLUSTER_NAME="${SLURM_CLUSTER_NAME:-unknown}"
-
-run_sif() {
-  "$apptainer_bin" exec --cleanenv --containall --nv \
-    --bind "$repo:$repo:ro,$H100_RUNS_ROOT:$H100_RUNS_ROOT" \
-    "$H100_SIF" "$@"
-}
+runtime_home="$scratch/runtime-home"
+mkdir -m 700 "$runtime_home" "$runtime_home/cache"
+native_env=(
+  /usr/bin/env -i
+  "HOME=$runtime_home"
+  "XDG_CACHE_HOME=$runtime_home/cache"
+  "TMPDIR=$scratch"
+  "PATH=$H100_VENV_ROOT/bin:/usr/local/bin:/usr/bin:/bin"
+  "PYTHONPATH=$repo/scripts/h100:$repo"
+  "PYTHONNOUSERSITE=1"
+  "PYTHONDONTWRITEBYTECODE=1"
+  "PIP_NO_INDEX=1"
+  "HF_HUB_OFFLINE=1"
+  "TRANSFORMERS_OFFLINE=1"
+  "NVIDIA_TF32_OVERRIDE=0"
+  "CUDA_DEVICE_ORDER=PCI_BUS_ID"
+  "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-}"
+  "NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-}"
+  "LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}"
+  "SLURM_JOB_ID=${SLURM_JOB_ID:?SLURM_JOB_ID is required}"
+  "SLURM_RESTART_COUNT=${SLURM_RESTART_COUNT:-0}"
+  "SLURM_CLUSTER_NAME=${SLURM_CLUSTER_NAME:-unknown}"
+  "SLURM_JOB_GPUS=${SLURM_JOB_GPUS:-}"
+  "SLURM_GPUS_ON_NODE=${SLURM_GPUS_ON_NODE:-1}"
+)
 
 binding_args=(
   --runs-root "$H100_RUNS_ROOT"
   --git-sha "$H100_EXPECTED_GIT_SHA"
   --detector-sha256 "$H100_DETECTOR_SHA256"
-  --sif-sha256 "$H100_SIF_SHA256"
-  --container-build-sha256 "$H100_SIF_BUILD_SHA256"
-  --package-manifest-sha256 "$H100_MANIFEST_SHA256"
-  --package-ready-sha256 "$H100_READY_SHA256"
-  --package-sha256sums-sha256 "$H100_SHA256SUMS_SHA256"
-  --package-repo-bundle-sha256 "$H100_REPO_BUNDLE_SHA256"
+  --venv-sha256 "$H100_VENV_SHA256"
+  --venv-build-sha256 "$H100_VENV_BUILD_SHA256"
+  --base-python-sha256 "$H100_BASE_PYTHON_SHA256"
+  --base-payload-package-id "$H100_BASE_PACKAGE_ID"
+  --base-payload-git-sha "$H100_BASE_GIT_SHA"
+  --base-payload-manifest-sha256 "$H100_BASE_MANIFEST_SHA256"
+  --base-payload-ready-sha256 "$H100_BASE_READY_SHA256"
+  --base-payload-sha256sums-sha256 "$H100_BASE_SHA256SUMS_SHA256"
+  --base-payload-repo-bundle-sha256 "$H100_BASE_REPO_BUNDLE_SHA256"
+  --runtime-amendment-package-id "$H100_RUNTIME_PACKAGE_ID"
+  --runtime-amendment-git-sha "$H100_RUNTIME_GIT_SHA"
+  --runtime-amendment-manifest-sha256 "$H100_RUNTIME_MANIFEST_SHA256"
+  --runtime-amendment-ready-sha256 "$H100_RUNTIME_READY_SHA256"
+  --runtime-amendment-sha256sums-sha256 "$H100_RUNTIME_SHA256SUMS_SHA256"
+  --runtime-amendment-bundle-sha256 "$H100_RUNTIME_BUNDLE_SHA256"
 )
 
+smoke_root="$H100_RUNS_ROOT/.h100/slurm-smoke"
+signal_ready="$smoke_root/SLURM_SMOKE_SIGNAL_READY.pid"
+smoke_state="$smoke_root/SLURM_SMOKE_STATE.json"
+smoke_ready="$smoke_root/SLURM_SMOKE_READY.json"
+needs_external_signal=0
+[[ -e "$smoke_state" || -e "$smoke_ready" ]] || needs_external_signal=1
+cd "$repo"
 set +e
-(
-  cd "$repo"
-  run_sif python -m scripts.h100.slurm_smoke run \
-    "${binding_args[@]}" \
-    --job-id "$SLURM_JOB_ID" \
-    --restart-count "${SLURM_RESTART_COUNT:-0}"
-)
+"${native_env[@]}" "$H100_VENV_ROOT/bin/python" -m scripts.h100.slurm_smoke run \
+  "${binding_args[@]}" \
+  --job-id "$SLURM_JOB_ID" \
+  --restart-count "${SLURM_RESTART_COUNT:-0}" \
+  --external-signal-ready "$signal_ready" &
+smoke_pid="$!"
+set -e
+
+if [[ "$needs_external_signal" -eq 1 ]]; then
+  for _ in $(seq 1 30); do
+    [[ -s "$signal_ready" ]] && break
+    kill -0 "$smoke_pid" 2>/dev/null || break
+    sleep 1
+  done
+  [[ -s "$signal_ready" ]] || {
+    echo "native smoke did not publish its signal-ready PID" >&2
+    kill "$smoke_pid" 2>/dev/null || true
+    wait "$smoke_pid" 2>/dev/null || true
+    exit 1
+  }
+  signal_pid="$(<"$signal_ready")"
+  if [[ ! "$signal_pid" =~ ^[1-9][0-9]*$ || "$signal_pid" != "$smoke_pid" ]]; then
+    echo "native smoke PID receipt does not identify the direct venv process" >&2
+    kill "$smoke_pid" 2>/dev/null || true
+    wait "$smoke_pid" 2>/dev/null || true
+    exit 1
+  fi
+  kill -0 "$signal_pid"
+  kill -USR1 "$signal_pid"
+fi
+
+set +e
+wait "$smoke_pid"
 smoke_rc="$?"
 set -e
 
 if [[ "$smoke_rc" -eq 75 ]]; then
-  (
-    cd "$repo"
-    run_sif python -m scripts.h100.slurm_smoke authorize-requeue \
-      "${binding_args[@]}" \
-      --job-id "$SLURM_JOB_ID" \
-      --restart-count "${SLURM_RESTART_COUNT:-0}"
-  )
-  # The container never receives scontrol.  This is the smoke's sole real
+  "${native_env[@]}" "$H100_VENV_ROOT/bin/python" -m scripts.h100.slurm_smoke authorize-requeue \
+    "${binding_args[@]}" \
+    --job-id "$SLURM_JOB_ID" \
+    --restart-count "${SLURM_RESTART_COUNT:-0}"
+  # The native child never receives scontrol.  This is the smoke's sole real
   # requeue call, protected by the persistent one-shot authorization above.
   "${H100_REAL_SCONTROL:-/usr/bin/scontrol}" requeue "$SLURM_JOB_ID"
   exit 0

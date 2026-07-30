@@ -201,9 +201,11 @@ def validate_h100_ready(
     path: Path,
     *,
     expected_git_sha: str,
-    expected_sif_sha256: str,
-    expected_container_build_sha256: str,
-    expected_package: Mapping[str, str],
+    expected_venv_sha256: str,
+    expected_venv_build_sha256: str,
+    expected_base_python_sha256: str,
+    expected_base_payload: Mapping[str, str],
+    expected_runtime_amendment: Mapping[str, str],
     expected_frozen_sha256: Mapping[str, str],
     expected_smoke_receipt: Mapping[str, object],
     expected_smoke_sha256: str,
@@ -212,16 +214,28 @@ def validate_h100_ready(
     if path.is_symlink() or not path.is_file():
         raise RuntimeError("H100_READY must be a regular non-symlink")
     payload = json.loads(path.read_text())
-    if payload.get("status") != "ready":
-        raise RuntimeError("H100 acceptance marker is not ready")
+    if payload.get("schema") != 2 or payload.get("status") != "ready":
+        raise RuntimeError("H100 acceptance marker is not schema-2 ready")
     if payload.get("source", {}).get("git_sha") != expected_git_sha:
         raise RuntimeError("H100-ready git SHA mismatch")
-    if payload.get("sif", {}).get("sha256") != expected_sif_sha256:
-        raise RuntimeError("H100-ready SIF SHA mismatch")
-    if payload.get("sif", {}).get("container_build_sha256") != expected_container_build_sha256:
-        raise RuntimeError("H100-ready container receipt SHA mismatch")
-    if payload.get("package") != dict(expected_package):
-        raise RuntimeError("H100-ready package hash bindings mismatch")
+    accepted_venv = payload.get("venv")
+    if not isinstance(accepted_venv, Mapping):
+        raise RuntimeError("H100-ready native-venv binding is absent")
+    if accepted_venv.get("sha256") != expected_venv_sha256:
+        raise RuntimeError("H100-ready native-venv tree digest mismatch")
+    if accepted_venv.get("venv_build_sha256") != expected_venv_build_sha256:
+        raise RuntimeError("H100-ready native-venv build receipt mismatch")
+    base_python = accepted_venv.get("base_python")
+    if (
+        not isinstance(base_python, Mapping)
+        or base_python.get("version") != "3.11.15"
+        or base_python.get("executable_sha256") != expected_base_python_sha256
+    ):
+        raise RuntimeError("H100-ready base-Python identity mismatch")
+    if payload.get("base_payload") != dict(expected_base_payload):
+        raise RuntimeError("H100-ready base-payload bindings mismatch")
+    if payload.get("runtime_amendment") != dict(expected_runtime_amendment):
+        raise RuntimeError("H100-ready runtime-amendment bindings mismatch")
     if payload.get("source", {}).get("frozen_sha256") != dict(expected_frozen_sha256):
         raise RuntimeError("H100-ready frozen-file hash bindings mismatch")
     source_binding = payload.get("source_validation")
@@ -238,7 +252,8 @@ def validate_h100_ready(
         expected_sha256=str(source_binding["sha256"]),
         expected_git_sha=expected_git_sha,
         expected_hashes=expected_frozen_sha256,
-        expected_package=expected_package,
+        expected_base_payload=expected_base_payload,
+        expected_runtime_amendment=expected_runtime_amendment,
     )
     if source_binding.get("receipt") != source_receipt:
         raise RuntimeError("H100-ready embedded source-validation receipt differs")
@@ -282,18 +297,18 @@ def validate_h100_ready(
         "source_validation_sha256",
         "coverage",
         "host_handoff",
-        "sif_remaining",
+        "venv_remaining",
         "aggregate_duration_seconds",
     }:
         raise RuntimeError("H100-ready aggregate test-suite receipt differs")
     if (
-        test_suite.get("schema") != 1
+        test_suite.get("schema") != 2
         or test_suite.get("status") != "passed"
         or test_suite.get("source_validation_sha256") != source_binding["sha256"]
         or test_suite.get("coverage")
         != {
             "host": HOST_TESTS,
-            "sif": "all pytest collection except the two host-only files",
+            "venv": "all pytest collection except the two host-only files",
             "aggregate": "entire repository pytest suite",
         }
     ):
@@ -313,33 +328,33 @@ def validate_h100_ready(
     )
     if host_slice.get("receipt") != host_receipt:
         raise RuntimeError("aggregate embedded host-test receipt differs")
-    sif_slice = test_suite.get("sif_remaining")
-    expected_sif_log = path.parent / "acceptance-logs/pytest-sif-remaining.log"
-    if not isinstance(sif_slice, Mapping) or set(sif_slice) != {
+    venv_slice = test_suite.get("venv_remaining")
+    expected_venv_log = path.parent / "acceptance-logs/pytest-venv-remaining.log"
+    if not isinstance(venv_slice, Mapping) or set(venv_slice) != {
         "command",
         "duration_seconds",
         "log",
     }:
-        raise RuntimeError("aggregate SIF-test slice is invalid")
-    sif_log = sif_slice.get("log")
+        raise RuntimeError("aggregate venv-test slice is invalid")
+    venv_log = venv_slice.get("log")
     if (
-        sif_slice.get("command")
+        venv_slice.get("command")
         != ["-m", "pytest", "-q", *(f"--ignore={item}" for item in HOST_TESTS)]
-        or not isinstance(sif_log, Mapping)
-        or set(sif_log) != {"path", "sha256"}
-        or sif_log.get("path") != str(expected_sif_log)
-        or expected_sif_log.is_symlink()
-        or not expected_sif_log.is_file()
-        or not HEX64.fullmatch(str(sif_log.get("sha256", "")))
-        or sha256_file(expected_sif_log) != sif_log.get("sha256")
+        or not isinstance(venv_log, Mapping)
+        or set(venv_log) != {"path", "sha256"}
+        or venv_log.get("path") != str(expected_venv_log)
+        or expected_venv_log.is_symlink()
+        or not expected_venv_log.is_file()
+        or not HEX64.fullmatch(str(venv_log.get("sha256", "")))
+        or sha256_file(expected_venv_log) != venv_log.get("sha256")
     ):
-        raise RuntimeError("aggregate SIF-test log/scope binding is invalid")
+        raise RuntimeError("aggregate venv-test log/scope binding is invalid")
     aggregate_seconds = _finite(
         test_suite.get("aggregate_duration_seconds"), "aggregate pytest duration"
     )
     expected_seconds = _finite(
         host_receipt.get("duration_seconds"), "host pytest duration"
-    ) + _finite(sif_slice.get("duration_seconds"), "SIF pytest duration")
+    ) + _finite(venv_slice.get("duration_seconds"), "venv pytest duration")
     if (
         aggregate_seconds <= 0
         or not math.isclose(aggregate_seconds, expected_seconds)
@@ -452,12 +467,21 @@ def main() -> int:
     parser.add_argument("--r3-run-dir", type=Path, required=True)
     parser.add_argument("--expected-h100-git-sha", required=True)
     parser.add_argument("--expected-reference-git-sha", required=True)
-    parser.add_argument("--expected-sif-sha256", required=True)
-    parser.add_argument("--expected-container-build-sha256", required=True)
-    parser.add_argument("--expected-package-manifest-sha256", required=True)
-    parser.add_argument("--expected-package-ready-sha256", required=True)
-    parser.add_argument("--expected-package-sha256sums-sha256", required=True)
-    parser.add_argument("--expected-package-repo-bundle-sha256", required=True)
+    parser.add_argument("--expected-venv-sha256", required=True)
+    parser.add_argument("--expected-venv-build-sha256", required=True)
+    parser.add_argument("--expected-base-python-sha256", required=True)
+    parser.add_argument("--expected-base-payload-package-id", required=True)
+    parser.add_argument("--expected-base-payload-git-sha", required=True)
+    parser.add_argument("--expected-base-payload-manifest-sha256", required=True)
+    parser.add_argument("--expected-base-payload-ready-sha256", required=True)
+    parser.add_argument("--expected-base-payload-sha256sums-sha256", required=True)
+    parser.add_argument("--expected-base-payload-repo-bundle-sha256", required=True)
+    parser.add_argument("--expected-runtime-amendment-package-id", required=True)
+    parser.add_argument("--expected-runtime-amendment-git-sha", required=True)
+    parser.add_argument("--expected-runtime-amendment-manifest-sha256", required=True)
+    parser.add_argument("--expected-runtime-amendment-ready-sha256", required=True)
+    parser.add_argument("--expected-runtime-amendment-sha256sums-sha256", required=True)
+    parser.add_argument("--expected-runtime-amendment-bundle-sha256", required=True)
     parser.add_argument(
         "--expected-frozen-sha256",
         action="append",
@@ -479,21 +503,30 @@ def main() -> int:
     expected_frozen = dict(
         zip(FROZEN_PATHS, args.expected_frozen_sha256, strict=True)
     )
-    expected_package = {
-        "manifest_sha256": args.expected_package_manifest_sha256,
-        "ready_sha256": args.expected_package_ready_sha256,
-        "sha256sums_sha256": args.expected_package_sha256sums_sha256,
-        "repo_bundle_sha256": args.expected_package_repo_bundle_sha256,
+    expected_base_payload = {
+        "package_id": args.expected_base_payload_package_id,
+        "git_sha": args.expected_base_payload_git_sha,
+        "manifest_sha256": args.expected_base_payload_manifest_sha256,
+        "ready_sha256": args.expected_base_payload_ready_sha256,
+        "sha256sums_sha256": args.expected_base_payload_sha256sums_sha256,
+        "repo_bundle_sha256": args.expected_base_payload_repo_bundle_sha256,
+    }
+    expected_runtime_amendment = {
+        "package_id": args.expected_runtime_amendment_package_id,
+        "git_sha": args.expected_runtime_amendment_git_sha,
+        "manifest_sha256": args.expected_runtime_amendment_manifest_sha256,
+        "ready_sha256": args.expected_runtime_amendment_ready_sha256,
+        "sha256sums_sha256": args.expected_runtime_amendment_sha256sums_sha256,
+        "runtime_bundle_sha256": args.expected_runtime_amendment_bundle_sha256,
     }
     smoke_bindings = make_smoke_bindings(
         git_sha=args.expected_h100_git_sha,
         detector_sha256=expected_frozen["configs/detector.yaml"],
-        sif_sha256=args.expected_sif_sha256,
-        container_build_sha256=args.expected_container_build_sha256,
-        package_manifest_sha256=args.expected_package_manifest_sha256,
-        package_ready_sha256=args.expected_package_ready_sha256,
-        package_sha256sums_sha256=args.expected_package_sha256sums_sha256,
-        package_repo_bundle_sha256=args.expected_package_repo_bundle_sha256,
+        venv_sha256=args.expected_venv_sha256,
+        venv_build_sha256=args.expected_venv_build_sha256,
+        base_python_sha256=args.expected_base_python_sha256,
+        base_payload=expected_base_payload,
+        runtime_amendment=expected_runtime_amendment,
     )
     smoke = validate_smoke_receipt(
         args.smoke_ready,
@@ -508,9 +541,11 @@ def main() -> int:
     ready = validate_h100_ready(
         args.h100_ready,
         expected_git_sha=args.expected_h100_git_sha,
-        expected_sif_sha256=args.expected_sif_sha256,
-        expected_container_build_sha256=args.expected_container_build_sha256,
-        expected_package=expected_package,
+        expected_venv_sha256=args.expected_venv_sha256,
+        expected_venv_build_sha256=args.expected_venv_build_sha256,
+        expected_base_python_sha256=args.expected_base_python_sha256,
+        expected_base_payload=expected_base_payload,
+        expected_runtime_amendment=expected_runtime_amendment,
         expected_frozen_sha256=expected_frozen,
         expected_smoke_receipt=smoke,
         expected_smoke_sha256=smoke_sha256,
@@ -521,7 +556,7 @@ def main() -> int:
         ready, args.current_remaining_v100_wall_hours
     )
     marker = {
-        "schema": 1,
+        "schema": 2,
         "status": "cutover-ready",
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "h100_ready": ready,

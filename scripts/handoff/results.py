@@ -16,6 +16,7 @@ from typing import Mapping, Sequence
 
 import yaml
 
+from scripts.h100.build_venv import verify as verify_native_venv
 from scripts.h100.campaign import (
     hardware_class,
     validate_runtime_provenance,
@@ -38,17 +39,20 @@ from scripts.h100.contracts import (
 from scripts.h100.cutover import validate_h100_ready
 from scripts.h100.host_test_gate import validate_host_gate
 from scripts.h100.slurm_smoke import (
-    PACKAGE_HASH_KEYS,
     READY_NAME as SMOKE_READY_NAME,
     STATE_NAME as SMOKE_STATE_NAME,
     make_bindings as make_smoke_bindings,
     validate_smoke_receipt,
 )
-from scripts.h100.source_validation import validate_source_receipt
+from scripts.h100.source_validation import (
+    BASE_PAYLOAD_KEYS,
+    RUNTIME_AMENDMENT_KEYS,
+    validate_source_receipt,
+)
 
 from .package import (
-    EXPECTED_BRANCH,
     EXPECTED_TORCH,
+    RUNTIME_BRANCH,
     FORMAT_VERSION,
     PackageError,
     _archive_artifact,
@@ -66,7 +70,6 @@ from .package import (
 )
 
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
-_OCI_DIGEST = re.compile(r"^\S+@sha256:[0-9a-f]{64}$")
 _ALLOCATION_NAME = re.compile(
     r"^h100_runtime-(?P<job_id>[^/]+)-r(?P<restart>[0-9]+)\.json$"
 )
@@ -94,7 +97,7 @@ _GRID_FIELDS = (
     "monotonicity_ok",
 )
 _ACCEPTANCE_LOGS = (
-    "pytest-sif-remaining.log",
+    "pytest-venv-remaining.log",
     "vit-fp32.log",
     "cnn-200step-fp32.log",
 )
@@ -127,10 +130,11 @@ def _result_identity(campaign: Mapping[str, object]) -> tuple[dict[str, object],
         "campaign_id": campaign.get("campaign_id"),
         "git_commit": campaign.get("git_sha"),
         "detector_sha256": campaign.get("detector_sha256"),
-        "sif_sha256": campaign.get("sif_sha256"),
-        "container_build_sha256": campaign.get("container_build_sha256"),
-        "base_oci": campaign.get("base_oci"),
-        "package": campaign.get("package"),
+        "venv_sha256": campaign.get("venv_sha256"),
+        "venv_build_sha256": campaign.get("venv_build_sha256"),
+        "base_python": campaign.get("base_python"),
+        "base_payload": campaign.get("base_payload"),
+        "runtime_amendment": campaign.get("runtime_amendment"),
         "acceptance_uuid": acceptance.get("uuid"),
         "source_validation_sha256": campaign.get(
             "source_validation_sha256"
@@ -188,13 +192,24 @@ def _strict_backend(value: object, description: str) -> dict[str, object]:
     return backend
 
 
-def _package_hashes(value: object) -> dict[str, str]:
-    package = _mapping(value, "source-package hash bindings")
-    if set(package) != set(PACKAGE_HASH_KEYS):
-        raise PackageError("source-package hash bindings are not the four exact hashes")
-    normalized = {key: str(package[key]) for key in PACKAGE_HASH_KEYS}
-    if any(not _HEX64.fullmatch(digest) for digest in normalized.values()):
-        raise PackageError("source-package bindings contain an invalid SHA-256")
+def _transfer_identity(
+    value: object,
+    *,
+    keys: set[str],
+    description: str,
+) -> dict[str, str]:
+    identity = _mapping(value, description)
+    if set(identity) != keys:
+        raise PackageError(f"{description} keys do not match the closed contract")
+    normalized = {key: str(identity[key]) for key in keys}
+    if not re.fullmatch(r"[0-9a-f]{40}", normalized["git_sha"]):
+        raise PackageError(f"{description} git SHA is invalid")
+    if any(
+        not _HEX64.fullmatch(value)
+        for key, value in normalized.items()
+        if key not in {"package_id", "git_sha"}
+    ):
+        raise PackageError(f"{description} contains an invalid SHA-256")
     return normalized
 
 
@@ -284,6 +299,7 @@ def _validate_campaign(
     _exact_bindings(
         campaign,
         {
+            "schema": 2,
             "status": "complete",
             "git_sha": git_sha,
             "detector_sha256": detector_sha256,
@@ -311,7 +327,7 @@ def _validate_campaign(
     ready_path = meta_root / "H100_READY.json"
     runtime_path = meta_root / "h100_runtime.json"
     projection_path = meta_root / "throughput_projection.json"
-    build_path = meta_root / "container_build.json"
+    build_path = meta_root / "venv_build.json"
     cutover_path = meta_root / "CUTOVER_READY.json"
     source_validation_path = meta_root / "SOURCE_VALIDATED.json"
     host_test_receipt_path = meta_root / "HOST_HANDOFF_TESTS.json"
@@ -326,7 +342,7 @@ def _validate_campaign(
     ready = _json(ready_path)
     runtime = _json(runtime_path)
     projection = _json(projection_path)
-    container_build = _json(build_path)
+    venv_build = _json(build_path)
     cutover = _json(cutover_path)
     source_validation = _json(source_validation_path)
     host_test_receipt = _json(host_test_receipt_path)
@@ -334,26 +350,49 @@ def _validate_campaign(
     smoke_receipt_raw = _json(smoke_ready_path)
     smoke_state = _json(smoke_state_path)
 
-    package = _package_hashes(ready.get("package"))
+    base_payload = _transfer_identity(
+        ready.get("base_payload"),
+        keys=BASE_PAYLOAD_KEYS,
+        description="base-payload identity",
+    )
+    runtime_amendment = _transfer_identity(
+        ready.get("runtime_amendment"),
+        keys=RUNTIME_AMENDMENT_KEYS,
+        description="runtime-amendment identity",
+    )
     strict_fp32 = _strict_backend(ready.get("strict_fp32"), "H100 acceptance backend")
-    base_oci = str(ready.get("sif", {}).get("base_oci", ""))  # type: ignore[union-attr]
-    if not _OCI_DIGEST.fullmatch(base_oci):
-        raise PackageError("H100 acceptance does not bind a digest-pinned base OCI")
-    sif_sha256 = str(ready.get("sif", {}).get("sha256", ""))  # type: ignore[union-attr]
-    container_build_sha256 = sha256_file(build_path)
-    if not _HEX64.fullmatch(sif_sha256):
-        raise PackageError("H100 acceptance SIF SHA-256 is invalid")
+    accepted_venv = _mapping(ready.get("venv"), "H100 acceptance native venv")
+    venv_sha256 = str(accepted_venv.get("sha256", ""))
+    venv_build_sha256 = sha256_file(build_path)
+    base_python = _mapping(accepted_venv.get("base_python"), "base-Python identity")
+    base_python_sha256 = str(base_python.get("executable_sha256", ""))
+    if not _HEX64.fullmatch(venv_sha256) or not _HEX64.fullmatch(base_python_sha256):
+        raise PackageError("H100 acceptance native-venv identity is invalid")
+    if accepted_venv.get("venv_build_sha256") != venv_build_sha256:
+        raise PackageError("H100 acceptance native-venv receipt hash mismatch")
+    try:
+        verified_venv = verify_native_venv(
+            repo=repo,
+            venv_root=Path(str(accepted_venv.get("path", ""))),
+            base_python=Path(str(base_python.get("requested_path", ""))),
+            expected_venv_sha256=venv_sha256,
+            expected_receipt_sha256=venv_build_sha256,
+            expected_base_python_sha256=base_python_sha256,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise PackageError(f"native venv failed reverse-package verification: {exc}") from exc
+    if verified_venv != venv_build:
+        raise PackageError("persisted native-venv receipt differs from verified sidecar")
 
     expected_frozen = frozen_hashes(repo)
     smoke_bindings = make_smoke_bindings(
         git_sha=git_sha,
         detector_sha256=detector_sha256,
-        sif_sha256=sif_sha256,
-        container_build_sha256=container_build_sha256,
-        package_manifest_sha256=package["manifest_sha256"],
-        package_ready_sha256=package["ready_sha256"],
-        package_sha256sums_sha256=package["sha256sums_sha256"],
-        package_repo_bundle_sha256=package["repo_bundle_sha256"],
+        venv_sha256=venv_sha256,
+        venv_build_sha256=venv_build_sha256,
+        base_python_sha256=base_python_sha256,
+        base_payload=base_payload,
+        runtime_amendment=runtime_amendment,
     )
     smoke_receipt = validate_smoke_receipt(
         smoke_ready_path, expected_bindings=smoke_bindings
@@ -365,9 +404,11 @@ def _validate_campaign(
     ready = validate_h100_ready(
         ready_path,
         expected_git_sha=git_sha,
-        expected_sif_sha256=sif_sha256,
-        expected_container_build_sha256=container_build_sha256,
-        expected_package=package,
+        expected_venv_sha256=venv_sha256,
+        expected_venv_build_sha256=venv_build_sha256,
+        expected_base_python_sha256=base_python_sha256,
+        expected_base_payload=base_payload,
+        expected_runtime_amendment=runtime_amendment,
         expected_frozen_sha256=expected_frozen,
         expected_smoke_receipt=smoke_receipt,
         expected_smoke_sha256=smoke_sha256,
@@ -378,7 +419,8 @@ def _validate_campaign(
         expected_sha256=source_validation_sha256,
         expected_git_sha=git_sha,
         expected_hashes=expected_frozen,
-        expected_package=package,
+        expected_base_payload=base_payload,
+        expected_runtime_amendment=runtime_amendment,
     )
     expected_source_validation = {
         "path": str(source_validation_path),
@@ -413,7 +455,7 @@ def _validate_campaign(
     if ready.get("test_suite") != expected_test_suite:
         raise PackageError("H100_READY aggregate pytest receipt binding mismatch")
     if (
-        test_suite.get("schema") != 1
+        test_suite.get("schema") != 2
         or test_suite.get("status") != "passed"
         or test_suite.get("source_validation_sha256")
         != source_validation_sha256
@@ -428,17 +470,17 @@ def _validate_campaign(
         "receipt": host_test_receipt,
     }:
         raise PackageError("aggregate host-handoff receipt binding mismatch")
-    sif_remaining = _mapping(
-        test_suite.get("sif_remaining"), "aggregate SIF pytest evidence"
+    venv_remaining = _mapping(
+        test_suite.get("venv_remaining"), "aggregate venv pytest evidence"
     )
-    sif_test_log_path = (
-        meta_root / "acceptance-logs" / "pytest-sif-remaining.log"
+    venv_test_log_path = (
+        meta_root / "acceptance-logs" / "pytest-venv-remaining.log"
     )
-    if sif_remaining.get("log") != {
-        "path": str(sif_test_log_path),
-        "sha256": sha256_file(sif_test_log_path),
+    if venv_remaining.get("log") != {
+        "path": str(venv_test_log_path),
+        "sha256": sha256_file(venv_test_log_path),
     }:
-        raise PackageError("aggregate SIF pytest log binding mismatch")
+        raise PackageError("aggregate venv pytest log binding mismatch")
     _finite(
         test_suite.get("aggregate_duration_seconds"),
         "aggregate pytest duration",
@@ -470,11 +512,11 @@ def _validate_campaign(
     _exact_bindings(
         campaign,
         {
-            "sif_sha256": sif_sha256,
-            "container_build_sha256": container_build_sha256,
-            "package_manifest_sha256": package["manifest_sha256"],
-            "base_oci": base_oci,
-            "package": package,
+            "venv_sha256": venv_sha256,
+            "venv_build_sha256": venv_build_sha256,
+            "base_python": base_python,
+            "base_payload": base_payload,
+            "runtime_amendment": runtime_amendment,
             "strict_fp32": strict_fp32,
             "accepted_hardware_class": accepted_hardware_class,
             "allocation_hardware_class": allocation_hardware_class,
@@ -498,19 +540,6 @@ def _validate_campaign(
         "projection"
     ):
         raise PackageError("campaign/acceptance throughput projection mismatch")
-
-    _exact_bindings(
-        container_build,
-        {
-            "base_oci": base_oci,
-            "environment_lock_sha256": sha256_file(
-                repo / "locks/env-v100node.txt"
-            ),
-        },
-        "container build",
-    )
-    if container_build.get("sif", {}).get("sha256") != sif_sha256:  # type: ignore[union-attr]
-        raise PackageError("container-build SIF SHA mismatch")
 
     if cutover.get("status") != "cutover-ready" or cutover.get(
         "h100_ready"
@@ -642,7 +671,11 @@ def _validate_campaign(
         "archive_manifest_path": archive_manifest_path,
         "smoke_ready_path": smoke_ready_path,
         "smoke_state_path": smoke_state_path,
-        "package": package,
+        "venv_sha256": venv_sha256,
+        "venv_build_sha256": venv_build_sha256,
+        "base_python": base_python,
+        "base_payload": base_payload,
+        "runtime_amendment": runtime_amendment,
         "strict_fp32": strict_fp32,
         "accepted_hardware_class": accepted_hardware_class,
         "allocation_hardware_class": allocation_hardware_class,
@@ -764,9 +797,11 @@ def _run_entries(
         campaign_id=str(campaign["campaign_id"]),
         git_sha=str(campaign["git_sha"]),
         detector_sha256=str(campaign["detector_sha256"]),
-        sif_sha256=str(campaign["sif_sha256"]),
-        base_oci=str(campaign["base_oci"]),
-        package=context["package"],  # type: ignore[arg-type]
+        venv_sha256=str(campaign["venv_sha256"]),
+        venv_build_sha256=str(campaign["venv_build_sha256"]),
+        base_python=context["base_python"],  # type: ignore[arg-type]
+        base_payload=context["base_payload"],  # type: ignore[arg-type]
+        runtime_amendment=context["runtime_amendment"],  # type: ignore[arg-type]
         acceptance_uuid=str(
             _mapping(campaign["acceptance"], "campaign acceptance")["uuid"]
         ),
@@ -780,10 +815,6 @@ def _run_entries(
         strict_fp32=context["strict_fp32"],  # type: ignore[arg-type]
         accepted_hardware_class=context["accepted_hardware_class"],  # type: ignore[arg-type]
     )
-    if provenance.get("package_manifest_sha256") != campaign.get(
-        "package_manifest_sha256"
-    ):
-        raise PackageError(f"{exp_id} legacy package-manifest binding mismatch")
     attempt_uuids = _validate_attempts(
         provenance,
         exp_id=exp_id,
@@ -1008,7 +1039,7 @@ def _provenance_entries(
         ),
         (
             context["build_path"],  # type: ignore[arg-type]
-            PurePosixPath("results/provenance/container_build.json"),
+            PurePosixPath("results/provenance/venv_build.json"),
         ),
         (
             context["cutover_path"],  # type: ignore[arg-type]
@@ -1111,9 +1142,9 @@ def build_results_package(
     if not campaign_manifest.is_file():
         raise PackageError(f"campaign manifest is absent: {campaign_manifest}")
     branch = _git_value(repo, "branch", "--show-current")
-    if branch != EXPECTED_BRANCH:
+    if branch != RUNTIME_BRANCH:
         raise PackageError(
-            f"result package requires clean branch {EXPECTED_BRANCH}, found {branch!r}"
+            f"result package requires clean branch {RUNTIME_BRANCH}, found {branch!r}"
         )
     if _git_value(repo, "status", "--porcelain=v1", "--untracked-files=all"):
         raise PackageError("result package requires a clean source worktree")
@@ -1196,16 +1227,15 @@ def build_results_package(
             "package_id": package_id,
             "created_at": created,
             "source": {
-                "branch": EXPECTED_BRANCH,
+                "branch": RUNTIME_BRANCH,
                 "git_commit": git_sha,
                 "campaign_id": campaign.get("campaign_id"),
                 "detector_sha256": campaign.get("detector_sha256"),
-                "sif_sha256": campaign.get("sif_sha256"),
-                "container_build_sha256": campaign.get(
-                    "container_build_sha256"
-                ),
-                "base_oci": campaign.get("base_oci"),
-                "package": context["package"],
+                "venv_sha256": campaign.get("venv_sha256"),
+                "venv_build_sha256": campaign.get("venv_build_sha256"),
+                "base_python": campaign.get("base_python"),
+                "base_payload": context["base_payload"],
+                "runtime_amendment": context["runtime_amendment"],
                 "acceptance_uuid": _mapping(
                     campaign["acceptance"], "campaign acceptance"
                 )["uuid"],

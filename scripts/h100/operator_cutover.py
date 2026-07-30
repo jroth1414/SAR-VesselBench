@@ -24,11 +24,21 @@ HEX64 = re.compile(r"^[0-9a-f]{64}$")
 CUTOVER_READY_NAME = "CUTOVER_READY.json"
 V100_RECEIPT_NAME = "V100_CORE_ARCHIVED.json"
 V100_ARCHIVE_MANIFEST_NAME = "V100_CORE_ARCHIVE_MANIFEST.json"
-PACKAGE_KEYS = {
+BASE_PAYLOAD_KEYS = {
+    "package_id",
+    "git_sha",
     "manifest_sha256",
     "ready_sha256",
     "sha256sums_sha256",
     "repo_bundle_sha256",
+}
+RUNTIME_AMENDMENT_KEYS = {
+    "package_id",
+    "git_sha",
+    "manifest_sha256",
+    "ready_sha256",
+    "sha256sums_sha256",
+    "runtime_bundle_sha256",
 }
 RECEIPT_KEYS = {
     "schema",
@@ -40,7 +50,13 @@ RECEIPT_KEYS = {
     "v100",
     "archive",
 }
-H100_KEYS = {"acceptance_uuid", "git_sha", "sif_sha256", "package"}
+H100_KEYS = {
+    "acceptance_uuid",
+    "git_sha",
+    "venv_sha256",
+    "base_payload",
+    "runtime_amendment",
+}
 V100_KEYS = {
     "git_sha",
     "campaign_id",
@@ -182,22 +198,33 @@ def _timestamp(value: object, label: str) -> datetime:
     return parsed
 
 
-def expected_package(
+def expected_transfer_identity(
     *,
+    package_id: str,
+    git_sha: str,
     manifest_sha256: str,
     ready_sha256: str,
     sha256sums_sha256: str,
-    repo_bundle_sha256: str,
+    bundle_key: str,
+    bundle_sha256: str,
 ) -> dict[str, str]:
-    package = {
+    identity = {
+        "package_id": package_id,
+        "git_sha": git_sha,
         "manifest_sha256": manifest_sha256,
         "ready_sha256": ready_sha256,
         "sha256sums_sha256": sha256sums_sha256,
-        "repo_bundle_sha256": repo_bundle_sha256,
+        bundle_key: bundle_sha256,
     }
-    if any(not HEX64.fullmatch(value) for value in package.values()):
-        raise RuntimeError("operator cutover package bindings require 64-hex SHA-256")
-    return package
+    if not re.fullmatch(r"[0-9a-f]{40}", git_sha):
+        raise RuntimeError("operator cutover transfer git SHA must be full 40-hex")
+    if any(
+        not HEX64.fullmatch(value)
+        for key, value in identity.items()
+        if key not in {"package_id", "git_sha"}
+    ):
+        raise RuntimeError("operator cutover transfer bindings require SHA-256")
+    return identity
 
 
 def validate_operator_archive(
@@ -210,8 +237,9 @@ def validate_operator_archive(
     archive_manifest_sha256: str,
     bound_archive_manifest: Path | None = None,
     expected_h100_git_sha: str,
-    expected_sif_sha256: str,
-    expected_package_hashes: Mapping[str, str],
+    expected_venv_sha256: str,
+    expected_base_payload: Mapping[str, str],
+    expected_runtime_amendment: Mapping[str, str],
     expected_reference_git_sha: str,
     expected_reference_campaign_id: str,
 ) -> dict:
@@ -243,8 +271,8 @@ def validate_operator_archive(
     cutover = _json_object(cutover_ready, "CUTOVER_READY receipt")
     attestation = _json_object(receipt, "V100_CORE_ARCHIVED receipt")
     archive_payload = _json_object(archive_manifest, "V100 archive manifest")
-    if cutover.get("status") != "cutover-ready":
-        raise RuntimeError("CUTOVER_READY status is invalid")
+    if cutover.get("schema") != 2 or cutover.get("status") != "cutover-ready":
+        raise RuntimeError("CUTOVER_READY schema/status is invalid")
     if cutover.get("v100_action") != (
         "none; this guard never stops or signals V100 processes"
     ):
@@ -254,26 +282,34 @@ def validate_operator_archive(
     if not isinstance(acceptance, Mapping):
         raise RuntimeError("CUTOVER_READY lacks bound H100 acceptance")
     source = acceptance.get("source")
-    sif = acceptance.get("sif")
-    package = acceptance.get("package")
-    if not isinstance(source, Mapping) or not isinstance(sif, Mapping):
-        raise RuntimeError("CUTOVER_READY source/SIF bindings are malformed")
+    venv = acceptance.get("venv")
+    base_payload = acceptance.get("base_payload")
+    runtime_amendment = acceptance.get("runtime_amendment")
+    if not isinstance(source, Mapping) or not isinstance(venv, Mapping):
+        raise RuntimeError("CUTOVER_READY source/venv bindings are malformed")
     if (
-        not isinstance(package, Mapping)
-        or set(package) != PACKAGE_KEYS
-        or dict(package) != dict(expected_package_hashes)
+        not isinstance(base_payload, Mapping)
+        or set(base_payload) != BASE_PAYLOAD_KEYS
+        or dict(base_payload) != dict(expected_base_payload)
     ):
-        raise RuntimeError("CUTOVER_READY package bindings mismatch")
+        raise RuntimeError("CUTOVER_READY base-payload bindings mismatch")
+    if (
+        not isinstance(runtime_amendment, Mapping)
+        or set(runtime_amendment) != RUNTIME_AMENDMENT_KEYS
+        or dict(runtime_amendment) != dict(expected_runtime_amendment)
+    ):
+        raise RuntimeError("CUTOVER_READY runtime-amendment bindings mismatch")
     h100_expected = {
         "acceptance_uuid": acceptance.get("uuid"),
         "git_sha": source.get("git_sha"),
-        "sif_sha256": sif.get("sha256"),
-        "package": dict(expected_package_hashes),
+        "venv_sha256": venv.get("sha256"),
+        "base_payload": dict(expected_base_payload),
+        "runtime_amendment": dict(expected_runtime_amendment),
     }
     if h100_expected["git_sha"] != expected_h100_git_sha:
         raise RuntimeError("CUTOVER_READY H100 git binding mismatch")
-    if h100_expected["sif_sha256"] != expected_sif_sha256:
-        raise RuntimeError("CUTOVER_READY SIF binding mismatch")
+    if h100_expected["venv_sha256"] != expected_venv_sha256:
+        raise RuntimeError("CUTOVER_READY native-venv binding mismatch")
     if not str(h100_expected["acceptance_uuid"] or ""):
         raise RuntimeError("CUTOVER_READY acceptance UUID is absent")
 
@@ -303,7 +339,7 @@ def validate_operator_archive(
 
     if set(attestation) != RECEIPT_KEYS:
         raise RuntimeError("V100_CORE_ARCHIVED top-level keys do not match the schema")
-    if attestation.get("schema") != 1:
+    if attestation.get("schema") != 2:
         raise RuntimeError("V100_CORE_ARCHIVED schema is unsupported")
     if attestation.get("status") != "v100-core-archived":
         raise RuntimeError("V100_CORE_ARCHIVED status is invalid")
@@ -473,19 +509,39 @@ def main() -> int:
     parser.add_argument("--bound-archive-manifest", type=Path)
     parser.add_argument("--persist-meta-root", type=Path)
     parser.add_argument("--expected-h100-git-sha", required=True)
-    parser.add_argument("--expected-sif-sha256", required=True)
-    parser.add_argument("--expected-package-manifest-sha256", required=True)
-    parser.add_argument("--expected-package-ready-sha256", required=True)
-    parser.add_argument("--expected-package-sha256sums-sha256", required=True)
-    parser.add_argument("--expected-package-repo-bundle-sha256", required=True)
+    parser.add_argument("--expected-venv-sha256", required=True)
+    parser.add_argument("--expected-base-payload-package-id", required=True)
+    parser.add_argument("--expected-base-payload-git-sha", required=True)
+    parser.add_argument("--expected-base-payload-manifest-sha256", required=True)
+    parser.add_argument("--expected-base-payload-ready-sha256", required=True)
+    parser.add_argument("--expected-base-payload-sha256sums-sha256", required=True)
+    parser.add_argument("--expected-base-payload-repo-bundle-sha256", required=True)
+    parser.add_argument("--expected-runtime-amendment-package-id", required=True)
+    parser.add_argument("--expected-runtime-amendment-git-sha", required=True)
+    parser.add_argument("--expected-runtime-amendment-manifest-sha256", required=True)
+    parser.add_argument("--expected-runtime-amendment-ready-sha256", required=True)
+    parser.add_argument("--expected-runtime-amendment-sha256sums-sha256", required=True)
+    parser.add_argument("--expected-runtime-amendment-bundle-sha256", required=True)
     parser.add_argument("--expected-reference-git-sha", required=True)
     parser.add_argument("--expected-reference-campaign-id", required=True)
     args = parser.parse_args()
-    package = expected_package(
-        manifest_sha256=args.expected_package_manifest_sha256,
-        ready_sha256=args.expected_package_ready_sha256,
-        sha256sums_sha256=args.expected_package_sha256sums_sha256,
-        repo_bundle_sha256=args.expected_package_repo_bundle_sha256,
+    base_payload = expected_transfer_identity(
+        package_id=args.expected_base_payload_package_id,
+        git_sha=args.expected_base_payload_git_sha,
+        manifest_sha256=args.expected_base_payload_manifest_sha256,
+        ready_sha256=args.expected_base_payload_ready_sha256,
+        sha256sums_sha256=args.expected_base_payload_sha256sums_sha256,
+        bundle_key="repo_bundle_sha256",
+        bundle_sha256=args.expected_base_payload_repo_bundle_sha256,
+    )
+    runtime_amendment = expected_transfer_identity(
+        package_id=args.expected_runtime_amendment_package_id,
+        git_sha=args.expected_runtime_amendment_git_sha,
+        manifest_sha256=args.expected_runtime_amendment_manifest_sha256,
+        ready_sha256=args.expected_runtime_amendment_ready_sha256,
+        sha256sums_sha256=args.expected_runtime_amendment_sha256sums_sha256,
+        bundle_key="runtime_bundle_sha256",
+        bundle_sha256=args.expected_runtime_amendment_bundle_sha256,
     )
     cutover_ready = args.cutover_ready.absolute()
     receipt = args.receipt.absolute()
@@ -504,8 +560,9 @@ def main() -> int:
         archive_manifest_sha256=args.archive_manifest_sha256,
         bound_archive_manifest=bound_archive_manifest,
         expected_h100_git_sha=args.expected_h100_git_sha,
-        expected_sif_sha256=args.expected_sif_sha256,
-        expected_package_hashes=package,
+        expected_venv_sha256=args.expected_venv_sha256,
+        expected_base_payload=base_payload,
+        expected_runtime_amendment=runtime_amendment,
         expected_reference_git_sha=args.expected_reference_git_sha,
         expected_reference_campaign_id=args.expected_reference_campaign_id,
     )
@@ -531,8 +588,9 @@ def main() -> int:
             archive_manifest=Path(evidence["archive_manifest"]["path"]),
             archive_manifest_sha256=args.archive_manifest_sha256,
             expected_h100_git_sha=args.expected_h100_git_sha,
-            expected_sif_sha256=args.expected_sif_sha256,
-            expected_package_hashes=package,
+            expected_venv_sha256=args.expected_venv_sha256,
+            expected_base_payload=base_payload,
+            expected_runtime_amendment=runtime_amendment,
             expected_reference_git_sha=args.expected_reference_git_sha,
             expected_reference_campaign_id=args.expected_reference_campaign_id,
         )

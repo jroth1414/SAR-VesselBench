@@ -16,7 +16,7 @@
   ],
   "properties": {
     "schema": {
-      "const": 1
+      "const": 2
     },
     "status": {
       "const": "v100-core-archived"
@@ -37,8 +37,9 @@
       "required": [
         "acceptance_uuid",
         "git_sha",
-        "sif_sha256",
-        "package"
+        "venv_sha256",
+        "base_payload",
+        "runtime_amendment"
       ],
       "properties": {
         "acceptance_uuid": {
@@ -49,11 +50,14 @@
           "type": "string",
           "pattern": "^[0-9a-f]{40}$"
         },
-        "sif_sha256": {
+        "venv_sha256": {
           "$ref": "#/$defs/sha256"
         },
-        "package": {
-          "$ref": "#/$defs/package"
+        "base_payload": {
+          "$ref": "#/$defs/base_payload"
+        },
+        "runtime_amendment": {
+          "$ref": "#/$defs/runtime_amendment"
         }
       }
     },
@@ -115,29 +119,58 @@
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
     },
-    "package": {
+    "base_payload": {
       "type": "object",
       "additionalProperties": false,
       "required": [
+        "package_id",
+        "git_sha",
         "manifest_sha256",
         "ready_sha256",
         "sha256sums_sha256",
         "repo_bundle_sha256"
       ],
       "properties": {
-        "manifest_sha256": {
-          "$ref": "#/$defs/sha256"
+        "package_id": {
+          "type": "string",
+          "pattern": "^xview3-h100-fp32-[0-9a-f]{40}$"
         },
-        "ready_sha256": {
-          "$ref": "#/$defs/sha256"
+        "git_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
         },
-        "sha256sums_sha256": {
-          "$ref": "#/$defs/sha256"
+        "manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "ready_sha256": {"$ref": "#/$defs/sha256"},
+        "sha256sums_sha256": {"$ref": "#/$defs/sha256"},
+        "repo_bundle_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "runtime_amendment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "package_id",
+        "git_sha",
+        "manifest_sha256",
+        "ready_sha256",
+        "sha256sums_sha256",
+        "runtime_bundle_sha256"
+      ],
+      "properties": {
+        "package_id": {
+          "type": "string",
+          "pattern": "^xview3-h100-runtime-[0-9a-f]{40}-[0-9a-f]{64}$"
         },
-        "repo_bundle_sha256": {
-          "$ref": "#/$defs/sha256"
-        }
+        "git_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "ready_sha256": {"$ref": "#/$defs/sha256"},
+        "sha256sums_sha256": {"$ref": "#/$defs/sha256"},
+        "runtime_bundle_sha256": {"$ref": "#/$defs/sha256"}
       }
     }
+
   }
 }

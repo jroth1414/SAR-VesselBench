@@ -40,9 +40,11 @@ def cutover_acceptance_bindings(ready: Mapping[str, object]) -> dict[str, object
     """Return the exact H100 acceptance subset embedded in CUTOVER_READY."""
 
     keys = (
+        "schema",
         "source",
-        "sif",
-        "package",
+        "venv",
+        "base_payload",
+        "runtime_amendment",
         "gates",
         "source_validation",
         "test_suite",
