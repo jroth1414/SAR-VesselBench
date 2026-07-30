@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import shutil
@@ -32,6 +33,8 @@ from .package import (
 MINIMUM_BOX_FREE_BYTES = 500_000_000_000
 CHUNKED_UPLOAD_THRESHOLD = 50_000_000
 MAX_CHUNK_RESUME_ATTEMPTS = 5
+BOX_REQUEST_TIMEOUT = (30, 300)
+_BOXSDK_NULL_HANDLER = logging.NullHandler()
 
 
 class BoxTransferError(PackageError):
@@ -106,20 +109,42 @@ def credentials_from_environment(repo_root: Path) -> tuple[Path, str]:
     return config, folder_id
 
 
+def _silence_boxsdk_logging() -> None:
+    """Prevent the SDK from emitting request metadata through lastResort."""
+
+    logger = logging.getLogger("boxsdk")
+    if _BOXSDK_NULL_HANDLER not in logger.handlers:
+        logger.addHandler(_BOXSDK_NULL_HANDLER)
+    logger.setLevel(logging.CRITICAL + 1)
+    logger.propagate = False
+
+
 def client_from_environment(repo_root: Path) -> tuple[object, str]:
     """Authenticate using the isolated boxsdk[jwt] v4 transfer environment."""
 
+    _silence_boxsdk_logging()
     config, folder_id = credentials_from_environment(repo_root)
     try:
         from boxsdk import Client, JWTAuth
+        from boxsdk.session.session import AuthorizedSession, Session
     except ImportError as exc:
         raise BoxTransferError(
             "Box SDK is absent; install requirements-transfer.txt in a separate venv"
         ) from exc
     try:
-        auth = JWTAuth.from_settings_file(str(config))
+        request_kwargs = {"timeout": BOX_REQUEST_TIMEOUT}
+        auth = JWTAuth.from_settings_file(
+            str(config),
+            session=Session(
+                default_network_request_kwargs=request_kwargs,
+            ),
+        )
         auth.authenticate_instance()
-        return Client(auth), folder_id
+        session = AuthorizedSession(
+            auth,
+            default_network_request_kwargs=request_kwargs,
+        )
+        return Client(auth, session=session), folder_id
     except Exception as exc:
         raise BoxTransferError("Box JWT authentication failed") from exc
 
@@ -437,20 +462,27 @@ def _upload_one(
                 uploader = client.file(existing.item_id).get_chunked_uploader(  # type: ignore[attr-defined]
                     str(local)
                 )
+            last_chunk_error: Exception | None = None
             try:
                 uploaded = uploader.start()
-            except Exception:
-                # The v4 SDK retains the upload session and committed parts;
-                # resume() queries the session and sends only missing chunks.
+            except Exception as exc:
                 uploaded = None
+                last_chunk_error = exc
             for _attempt in range(MAX_CHUNK_RESUME_ATTEMPTS):
                 if uploaded is not None:
                     break
-                uploaded = uploader.resume()
+                try:
+                    # The v4 SDK retains the upload session and committed
+                    # parts; resume() queries it and sends only missing chunks.
+                    uploaded = uploader.resume()
+                except Exception as exc:
+                    uploaded = None
+                    last_chunk_error = exc
             if uploaded is None:
-                raise BoxTransferError(
-                    f"Box chunk commit remained pending for {filename}"
-                )
+                message = f"Box chunk upload exhausted retries for {filename}"
+                if last_chunk_error is not None:
+                    raise BoxTransferError(message) from last_chunk_error
+                raise BoxTransferError(message)
         elif existing is None:
             uploaded = client.folder(parent_id).upload(  # type: ignore[attr-defined]
                 str(local), filename

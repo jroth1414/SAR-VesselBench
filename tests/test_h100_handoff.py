@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import subprocess
 import sys
 from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import pytest
 import yaml
@@ -424,6 +425,106 @@ def test_box_jwt_path_rejects_symlink_before_resolution(tmp_path, monkeypatch):
 
     with pytest.raises(BoxTransferError, match="no symlink components"):
         handoff_box.credentials_from_environment(options.repo_root)
+
+
+def test_boxsdk_logging_is_silent_and_configuration_is_idempotent(
+    monkeypatch, caplog
+):
+    sdk_logger = logging.getLogger("boxsdk")
+    child_logger = logging.getLogger("boxsdk.network.default_network")
+    monkeypatch.setattr(sdk_logger, "handlers", [])
+    monkeypatch.setattr(sdk_logger, "level", logging.NOTSET)
+    monkeypatch.setattr(sdk_logger, "propagate", True)
+    monkeypatch.setattr(child_logger, "handlers", [])
+    monkeypatch.setattr(child_logger, "level", logging.NOTSET)
+    monkeypatch.setattr(child_logger, "propagate", True)
+
+    handoff_box._silence_boxsdk_logging()
+    handoff_box._silence_boxsdk_logging()
+
+    assert sdk_logger.level == logging.CRITICAL + 1
+    assert sdk_logger.propagate is False
+    assert sdk_logger.handlers == [handoff_box._BOXSDK_NULL_HANDLER]
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        child_logger.warning("sensitive request metadata")
+    assert caplog.records == []
+
+
+def test_box_client_applies_timeouts_to_auth_and_data_sessions(
+    tmp_path, monkeypatch
+):
+    options, _ = _fixture_source(tmp_path)
+    config = tmp_path / "box-jwt.json"
+    _write(config, "{}")
+    config.chmod(0o600)
+    monkeypatch.setenv("BOX_JWT_CONFIG", str(config))
+    monkeypatch.setenv("BOX_FOLDER_ID", "123")
+
+    plain_sessions = []
+    authorized_sessions = []
+    settings_sessions = []
+    authentication_calls = []
+    client_sessions = []
+
+    class Session:
+        def __init__(self, *, default_network_request_kwargs):
+            self.request_kwargs = dict(default_network_request_kwargs)
+            plain_sessions.append(self)
+
+    class AuthorizedSession:
+        def __init__(self, auth, *, default_network_request_kwargs):
+            self.auth = auth
+            self.request_kwargs = dict(default_network_request_kwargs)
+            authorized_sessions.append(self)
+
+    class Auth:
+        def authenticate_instance(self):
+            authentication_calls.append(self)
+
+    auth = Auth()
+
+    class JWTAuth:
+        @classmethod
+        def from_settings_file(cls, path, *, session):
+            assert path == str(config)
+            settings_sessions.append(session)
+            return auth
+
+    class Client:
+        def __init__(self, client_auth, *, session):
+            self.auth = client_auth
+            self.session = session
+            client_sessions.append(session)
+
+    boxsdk = ModuleType("boxsdk")
+    setattr(boxsdk, "__path__", [])
+    boxsdk.Client = Client
+    boxsdk.JWTAuth = JWTAuth
+    session_package = ModuleType("boxsdk.session")
+    setattr(session_package, "__path__", [])
+    session_module = ModuleType("boxsdk.session.session")
+    session_module.AuthorizedSession = AuthorizedSession
+    session_module.Session = Session
+    monkeypatch.setitem(sys.modules, "boxsdk", boxsdk)
+    monkeypatch.setitem(sys.modules, "boxsdk.session", session_package)
+    monkeypatch.setitem(sys.modules, "boxsdk.session.session", session_module)
+    sdk_logger = logging.getLogger("boxsdk")
+    monkeypatch.setattr(sdk_logger, "handlers", [])
+    monkeypatch.setattr(sdk_logger, "level", logging.NOTSET)
+    monkeypatch.setattr(sdk_logger, "propagate", True)
+
+    client, folder_id = handoff_box.client_from_environment(options.repo_root)
+
+    expected = {"timeout": (30, 300)}
+    assert handoff_box.BOX_REQUEST_TIMEOUT == (30, 300)
+    assert [session.request_kwargs for session in plain_sessions] == [expected]
+    assert settings_sessions == plain_sessions
+    assert [session.request_kwargs for session in authorized_sessions] == [expected]
+    assert authentication_calls == [auth]
+    assert client.auth is auth
+    assert client_sessions == authorized_sessions
+    assert folder_id == "123"
 
 
 def _rewrite_package_controls(
@@ -1282,6 +1383,86 @@ def test_chunk_threshold_is_decimal_50_mb(monkeypatch):
         chunked_threshold=CHUNKED_UPLOAD_THRESHOLD,
     )
     assert events == ["direct", "chunked"]
+
+
+def test_chunk_resume_retries_exceptions_until_success(tmp_path, monkeypatch):
+    payload = tmp_path / "payload.bin"
+    payload.write_bytes(b"payload")
+    events = []
+
+    class Uploader:
+        def start(self):
+            events.append("start")
+            raise RuntimeError("transient start failure")
+
+        def resume(self):
+            events.append("resume")
+            if events.count("resume") < 3:
+                raise RuntimeError("transient resume failure")
+            return SimpleNamespace(id="uploaded")
+
+    uploader = Uploader()
+    folder = SimpleNamespace(
+        get_chunked_uploader=lambda _path, file_name: uploader
+    )
+    client = SimpleNamespace(folder=lambda _folder_id: folder)
+    monkeypatch.setattr(
+        handoff_box,
+        "_refresh_file",
+        lambda _client, _item_id: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        handoff_box,
+        "_remote_matches",
+        lambda _remote, _local: True,
+    )
+
+    _upload_one(
+        client,
+        "0",
+        payload,
+        payload.name,
+        None,
+        chunked_threshold=0,
+    )
+
+    assert events == ["start", "resume", "resume", "resume"]
+
+
+def test_chunk_resume_exceptions_exhaust_bounded_attempts(tmp_path):
+    payload = tmp_path / "payload.bin"
+    payload.write_bytes(b"payload")
+    events = []
+
+    class Uploader:
+        def start(self):
+            events.append("start")
+            raise RuntimeError("private-session-id start failure")
+
+        def resume(self):
+            events.append("resume")
+            raise RuntimeError("private-session-id resume failure")
+
+    uploader = Uploader()
+    folder = SimpleNamespace(
+        get_chunked_uploader=lambda _path, file_name: uploader
+    )
+    client = SimpleNamespace(folder=lambda _folder_id: folder)
+
+    with pytest.raises(BoxTransferError, match="Box upload failed") as error:
+        _upload_one(
+            client,
+            "0",
+            payload,
+            payload.name,
+            None,
+            chunked_threshold=0,
+        )
+
+    assert events == ["start"] + [
+        "resume"
+    ] * handoff_box.MAX_CHUNK_RESUME_ATTEMPTS
+    assert "private-session-id" not in str(error.value)
 
 
 @pytest.mark.parametrize(
