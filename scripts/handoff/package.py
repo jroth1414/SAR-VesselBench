@@ -28,8 +28,12 @@ from pathlib import Path, PurePosixPath
 from typing import Iterable, Mapping, Sequence
 
 FORMAT_VERSION = 1
+# The immutable 294 GB payload remains a Sprint 7d package.  Sprint 7e is a
+# separate code-only amendment and must never change this verifier's identity.
 EXPECTED_BRANCH = "sprint-7d-h100-fp32"
 SOURCE_BASE_COMMIT = "48e10534a8c7baf0662acd548f52928da69f23c8"
+RUNTIME_BRANCH = "sprint-7e-judy-venv"
+RUNTIME_REQUIRED_ANCESTOR = "2726199efcebbebc89156e708b89df2a3415468a"
 ENVIRONMENT_LOCK_PATH = "locks/env-v100node.txt"
 COMMITTED_APPTAINER_DEFINITION = "containers/h100-strict-fp32.def"
 EXPECTED_PYTHON = "3.11.15"
@@ -1873,7 +1877,7 @@ def _validate_artifact_schema(
             "results/provenance/H100_READY.json",
             "results/provenance/h100_runtime.json",
             "results/provenance/throughput_projection.json",
-            "results/provenance/container_build.json",
+            "results/provenance/venv_build.json",
             "results/provenance/CUTOVER_READY.json",
             "results/provenance/SOURCE_VALIDATED.json",
             "results/provenance/HOST_HANDOFF_TESTS.json",
@@ -1884,7 +1888,7 @@ def _validate_artifact_schema(
             "results/provenance/slurm-smoke/SLURM_SMOKE_STATE.json",
             "results/provenance/summary/grid.csv",
             "results/provenance/acceptance-logs/pytest-handoff-host.log",
-            "results/provenance/acceptance-logs/pytest-sif-remaining.log",
+            "results/provenance/acceptance-logs/pytest-venv-remaining.log",
             "results/provenance/acceptance-logs/vit-fp32.log",
             "results/provenance/acceptance-logs/cnn-200step-fp32.log",
         }

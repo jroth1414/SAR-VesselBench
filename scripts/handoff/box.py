@@ -19,7 +19,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import Mapping
+from typing import Callable, Mapping
 
 from .package import (
     PackageError,
@@ -65,6 +65,25 @@ class RemoteFile:
     size: int
     sha1: str
     item: object
+
+
+PackageVerifier = Callable[[Path], Mapping[str, object]]
+
+
+def _verify_transfer_package(
+    package_root: Path,
+    *,
+    require_production: bool,
+    verifier: PackageVerifier | None,
+) -> dict[str, object]:
+    if verifier is None:
+        return _verify_package(
+            package_root, require_production=require_production
+        )
+    result = verifier(package_root)
+    if not isinstance(result, Mapping):
+        raise BoxTransferError("package verifier did not return a manifest object")
+    return dict(result)
 
 
 def _hash_file(path: Path, algorithm: str) -> str:
@@ -576,12 +595,14 @@ def _upload_package(
     require_production: bool,
     chunked_threshold: int = CHUNKED_UPLOAD_THRESHOLD,
     minimum_free_bytes: int = 0,
+    verifier: PackageVerifier | None = None,
 ) -> dict[str, object]:
     """Upload exact package contents, invalidating READY before any mutation."""
 
-    manifest = _verify_package(
+    manifest = _verify_transfer_package(
         package_root,
         require_production=require_production,
+        verifier=verifier,
     )
     package_root = _absolute_path(package_root)
     receipt = _receipt_destination(receipt_path, repo_root)
@@ -675,9 +696,10 @@ def _upload_package(
             ready_cleanup_required = True
             raise BoxTransferError("final Box tree does not match the local package")
         try:
-            final_manifest = _verify_package(
+            final_manifest = _verify_transfer_package(
                 package_root,
                 require_production=require_production,
+                verifier=verifier,
             )
         except BaseException:
             ready_cleanup_required = True
@@ -730,6 +752,32 @@ def upload_package(
         repo_root=repo_root,
         receipt_path=receipt_path,
         require_production=True,
+        chunked_threshold=chunked_threshold,
+        minimum_free_bytes=minimum_free_bytes,
+    )
+
+
+def upload_package_with_verifier(
+    client: object,
+    folder_id: str,
+    package_root: Path,
+    *,
+    repo_root: Path,
+    receipt_path: Path,
+    verifier: PackageVerifier,
+    chunked_threshold: int = CHUNKED_UPLOAD_THRESHOLD,
+    minimum_free_bytes: int = 0,
+) -> dict[str, object]:
+    """Upload a production package using its dedicated verifier callback."""
+
+    return _upload_package(
+        client,
+        folder_id,
+        package_root,
+        repo_root=repo_root,
+        receipt_path=receipt_path,
+        require_production=True,
+        verifier=verifier,
         chunked_threshold=chunked_threshold,
         minimum_free_bytes=minimum_free_bytes,
     )
@@ -845,6 +893,7 @@ def _download_package(
     expected_manifest_sha256: str,
     expected_sha256sums_sha256: str,
     expected_package_id: str,
+    verifier: PackageVerifier | None = None,
 ) -> Path:
     """Verify in a private sibling tree, then atomically publish the whole root."""
 
@@ -934,9 +983,10 @@ def _download_package(
                 destination,
                 expected_sha256=expected[relative],
             )
-        _verify_package(
+        _verify_transfer_package(
             staging,
             require_production=require_production,
+            verifier=verifier,
         )
         os.replace(staging, package_root)
     except BaseException:
@@ -969,6 +1019,34 @@ def download_package(
         expected_manifest_sha256=expected_manifest_sha256,
         expected_sha256sums_sha256=expected_sha256sums_sha256,
         expected_package_id=expected_package_id,
+    )
+
+
+def download_package_with_verifier(
+    client: object,
+    folder_id: str,
+    package_root: Path,
+    *,
+    repo_root: Path,
+    expected_ready_sha256: str,
+    expected_manifest_sha256: str,
+    expected_sha256sums_sha256: str,
+    expected_package_id: str,
+    verifier: PackageVerifier,
+) -> Path:
+    """Atomically download a package using its dedicated verifier callback."""
+
+    return _download_package(
+        client,
+        folder_id,
+        package_root,
+        repo_root=repo_root,
+        require_production=True,
+        expected_ready_sha256=expected_ready_sha256,
+        expected_manifest_sha256=expected_manifest_sha256,
+        expected_sha256sums_sha256=expected_sha256sums_sha256,
+        expected_package_id=expected_package_id,
+        verifier=verifier,
     )
 
 
