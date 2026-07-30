@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import subprocess
 from pathlib import Path
@@ -205,3 +206,39 @@ def test_box_callback_and_runtime_cli_surface(tmp_path: Path) -> None:
         "upload-runtime",
         "download-runtime",
     } <= set(choices)
+
+
+def test_runtime_upload_refuses_wrong_folder_before_mutation(
+    tmp_path: Path,
+) -> None:
+    local_ready = tmp_path / "READY.json"
+    local_ready.write_bytes(b"runtime-ready")
+    local = {"READY.json": local_ready}
+    wrong = box.RemoteFile(
+        path="READY.json",
+        item_id="base-ready",
+        size=len(b"base-ready"),
+        sha1=hashlib.sha1(b"base-ready").hexdigest(),
+        item=object(),
+    )
+    with pytest.raises(
+        box.BoxTransferError,
+        match="not empty or an exact package subset",
+    ):
+        box._require_matching_remote_subset({"READY.json": wrong}, local)
+
+    unexpected = box.RemoteFile(
+        path="data/chips/base.tar.zst",
+        item_id="base-data",
+        size=1,
+        sha1=hashlib.sha1(b"x").hexdigest(),
+        item=object(),
+    )
+    with pytest.raises(box.BoxTransferError, match="unexpected"):
+        box._require_matching_remote_subset(
+            {"data/chips/base.tar.zst": unexpected},
+            local,
+        )
+    assert "require_matching_remote_subset=True" in inspect.getsource(
+        box.upload_package_with_verifier
+    )

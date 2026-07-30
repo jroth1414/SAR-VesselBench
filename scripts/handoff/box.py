@@ -585,6 +585,25 @@ def _write_upload_receipt(
     return payload
 
 
+def _require_matching_remote_subset(
+    remote: Mapping[str, RemoteFile],
+    local: Mapping[str, Path],
+) -> None:
+    """Require an empty folder or byte-identical subset before any mutation."""
+
+    unexpected = sorted(set(remote) - set(local))
+    divergent = sorted(
+        name
+        for name in set(remote) & set(local)
+        if not _remote_matches(remote[name], local[name])
+    )
+    if unexpected or divergent:
+        raise BoxTransferError(
+            "dedicated runtime-amendment folder is not empty or an exact "
+            f"package subset; unexpected={unexpected}, divergent={divergent}"
+        )
+
+
 def _upload_package(
     client: object,
     folder_id: str,
@@ -596,6 +615,7 @@ def _upload_package(
     chunked_threshold: int = CHUNKED_UPLOAD_THRESHOLD,
     minimum_free_bytes: int = 0,
     verifier: PackageVerifier | None = None,
+    require_matching_remote_subset: bool = False,
 ) -> dict[str, object]:
     """Upload exact package contents, invalidating READY before any mutation."""
 
@@ -614,6 +634,8 @@ def _upload_package(
     )
     local = _local_files(package_root)
     remote = list_remote_files(client, folder_id)
+    if require_matching_remote_subset:
+        _require_matching_remote_subset(remote, local)
     unexpected = set(remote) - set(local)
     initial_mismatched = {
         relative
@@ -780,6 +802,7 @@ def upload_package_with_verifier(
         verifier=verifier,
         chunked_threshold=chunked_threshold,
         minimum_free_bytes=minimum_free_bytes,
+        require_matching_remote_subset=True,
     )
 
 
