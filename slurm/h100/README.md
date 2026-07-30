@@ -35,7 +35,7 @@ replaced. Both transfer identities remain bound in every readiness receipt.
 
 ## 2. Build the persistent native venv
 
-Provide an executable Python 3.11.15 installation on Judy, record the SHA-256
+Provide an executable Python 3.11.13 installation on Judy, record the SHA-256
 of its resolved executable, and build directly at the final persistent path
 from the base payload's verified offline wheelhouse:
 
@@ -43,7 +43,7 @@ from the base payload's verified offline wheelhouse:
 /path/to/requirements-transfer-python -m scripts.h100.build_venv build \
   --repo /path/to/cloned/repo \
   --wheelhouse /path/to/extracted/environment/wheelhouse \
-  --base-python /path/to/python-3.11.15/bin/python3.11 \
+  --base-python /path/to/python-3.11.13/bin/python3.11 \
   --output /persistent/venvs/xview3-h100-fp32
 ```
 
@@ -63,9 +63,13 @@ command. Box variables never enter the child process.
 ## 3. Configure the site
 
 Copy `site.env.example` to ignored `site.env` and fill every hash/path.
-Keep H100 runs in a persistent root distinct from V100 runs. Account,
-partition, reservation, log directory, mail, project name, reference paths,
-Box JWT path/folder, and the preflight result-part limit are site interfaces.
+Set `H100_V100_RUNS_ROOT` to the existing live V100 campaign directory; it is
+an immutable, read-only isolation boundary, not an H100 output. Submission
+canonicalizes that path plus `H100_RUNS_ROOT` and `H100_JOB_LOG_DIR`, then
+rejects equality or ancestor overlap in either direction before its first
+directory creation, receipt write, or Slurm submission. Account, partition,
+reservation, log directory, mail, project name, reference paths, Box JWT
+path/folder, and the preflight result-part limit are site interfaces.
 Submission uses exact `--export=NONE`; mode and site-file path are validated
 positional batch arguments, not exported environment variables.
 

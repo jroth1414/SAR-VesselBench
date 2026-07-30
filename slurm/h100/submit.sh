@@ -33,6 +33,7 @@ required=(
   H100_RUNTIME_MANIFEST_SHA256 H100_RUNTIME_READY_SHA256
   H100_RUNTIME_SHA256SUMS_SHA256 H100_VENV_ROOT H100_VENV_SHA256
   H100_VENV_BUILD_JSON H100_VENV_BUILD_SHA256 H100_RUNS_ROOT
+  H100_V100_RUNS_ROOT
   H100_EXPECTED_GIT_SHA H100_JOB_LOG_DIR
   H100_PROJECT H100_PROJECT_ROOT H100_TRANSFER_PYTHON H100_ENV_LOCK_SHA256
   H100_BASE_PYTHON H100_BASE_PYTHON_SHA256 H100_DETECTOR_SHA256 H100_SCORER_SHA256
@@ -85,6 +86,54 @@ for name in "${hash_names[@]}"; do
     exit 2
   fi
 done
+
+# The live V100 campaign is an immutable, read-only input to this submission
+# lane. Canonicalize every submit-owned persistent write root and reject both
+# directions of tree overlap before the first mkdir, receipt write, or Slurm
+# submission. The ancestor check matters: merely requiring unequal strings
+# would still allow H100_RUNS_ROOT="$H100_V100_RUNS_ROOT/h100" (or reverse).
+canonical_write_root() {
+  local name="$1"
+  local raw="${!name}"
+  local canonical
+  if [[ "$raw" != /* ]]; then
+    echo "$name must be an absolute path" >&2
+    return 2
+  fi
+  canonical="$(realpath -m -- "$raw")"
+  if [[ "$canonical" == "/" ]]; then
+    echo "$name must not resolve to /" >&2
+    return 2
+  fi
+  printf '%s\n' "$canonical"
+}
+
+assert_disjoint_from_v100() {
+  local name="$1"
+  local candidate="$2"
+  local v100_root="$3"
+  if [[ "$candidate" == "$v100_root" ||
+        "$candidate" == "$v100_root/"* ||
+        "$v100_root" == "$candidate/"* ]]; then
+    echo "$name overlaps live V100 runs root $v100_root: $candidate" >&2
+    return 2
+  fi
+}
+
+h100_runs_root="$(canonical_write_root H100_RUNS_ROOT)"
+h100_job_log_root="$(canonical_write_root H100_JOB_LOG_DIR)"
+v100_runs_root="$(canonical_write_root H100_V100_RUNS_ROOT)"
+if [[ ! -d "$v100_runs_root" ]]; then
+  echo "H100_V100_RUNS_ROOT must resolve to the existing live V100 runs directory: $v100_runs_root" >&2
+  exit 2
+fi
+assert_disjoint_from_v100 H100_RUNS_ROOT "$h100_runs_root" "$v100_runs_root"
+assert_disjoint_from_v100 H100_JOB_LOG_DIR "$h100_job_log_root" "$v100_runs_root"
+H100_RUNS_ROOT="$h100_runs_root"
+H100_JOB_LOG_DIR="$h100_job_log_root"
+H100_V100_RUNS_ROOT="$v100_runs_root"
+readonly H100_RUNS_ROOT H100_JOB_LOG_DIR H100_V100_RUNS_ROOT
+
 if [[ "$(realpath -m "$H100_PROJECT_ROOT")" != "$repo" ]]; then
   echo "H100_PROJECT_ROOT does not match this checkout: $repo" >&2
   exit 2
