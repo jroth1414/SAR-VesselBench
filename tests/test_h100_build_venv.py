@@ -21,21 +21,36 @@ def _write_executable(path: Path, content: bytes) -> None:
 
 def _metadata(path: Path, *, prefix: str, base_prefix: str) -> dict[str, object]:
     resolved = path.resolve(strict=True)
-    return {
-        "version": "3.11.13",
+    root = Path(base_prefix)
+    metadata: dict[str, object] = {
+        "version": "3.11.15",
         "implementation": "cpython",
-        "implementation_version": [3, 11, 13, "final", 0],
+        "implementation_version": [3, 11, 15, "final", 0],
         "soabi": "cpython-311-x86_64-linux-gnu",
         "platform": "Linux-fixture-x86_64",
         "libc": ["glibc", "2.36"],
         "prefix": prefix,
         "base_prefix": base_prefix,
         "stdlib": f"{base_prefix}/lib/python3.11",
+        "platstdlib": f"{base_prefix}/lib/python3.11",
         "executable": str(resolved),
+        "config_vars": {
+            "LIBDIR": f"{base_prefix}/lib",
+            "LIBPL": f"{base_prefix}/lib/python3.11/config",
+            "LDLIBRARY": "libpython3.11.so",
+            "LIBRARY": None,
+            "INSTSONAME": None,
+        },
+        "mapped_runtime_files": [str(root / "lib/libsystem-runtime.so")],
+        "probed_modules": {
+            name: "loaded" for name in build_venv.BASE_RUNTIME_PROBE_MODULES
+        },
         "requested_path": str(path.absolute()),
         "resolved_path": str(resolved),
         "executable_sha256": sha256_file(resolved),
     }
+    metadata["runtime"] = build_venv.base_python_runtime_manifest(metadata)
+    return metadata
 
 
 def _fixture_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
@@ -44,14 +59,36 @@ def _fixture_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
     lock.parent.mkdir(parents=True)
     lock.write_text("# exact fixture\nDemo_Pkg==1.0\n")
 
-    wheelhouse = tmp_path / "wheelhouse"
-    wheelhouse.mkdir()
+    extracted = tmp_path / "base-extracted"
+    wheelhouse = extracted / "environment/wheelhouse"
+    wheelhouse.mkdir(parents=True)
     (wheelhouse / "demo_pkg-1.0-py3-none-any.whl").write_bytes(b"fixture wheel")
+    base_package_id = "xview3-h100-fp32-" + "1" * 40
+    base_manifest_sha256 = "2" * 64
+    extraction_receipt = extracted / "HANDOFF_EXTRACTED.json"
+    extraction_receipt.write_text(
+        __import__("json").dumps(
+            {
+                "format_version": 1,
+                "package_id": base_package_id,
+                "manifest_sha256": base_manifest_sha256,
+                "wheelhouse": build_venv.wheelhouse_identity(wheelhouse),
+            },
+            sort_keys=True,
+        )
+    )
 
     base_python = tmp_path / "python311/bin/python3.11"
     _write_executable(base_python, b"#!/bin/sh\nexit 0\n")
     output = tmp_path / "persistent/xview3-h100-venv"
     base_prefix = str(base_python.parent.parent)
+    stdlib = Path(base_prefix) / "lib/python3.11"
+    stdlib.mkdir(parents=True)
+    (stdlib / "site.py").write_text("BASE_SITE = 1\n")
+    (stdlib / "site-packages").mkdir()
+    (stdlib / "site-packages/ignored.py").write_text("MUTABLE = 1\n")
+    (Path(base_prefix) / "lib/libpython3.11.so").write_bytes(b"fixture libpython")
+    (Path(base_prefix) / "lib/libsystem-runtime.so").write_bytes(b"fixture system")
     state = {"freeze": "demo-pkg==1.0\npip==24.0\n"}
 
     def fake_inspect(path: str | Path) -> dict[str, object]:
@@ -93,6 +130,9 @@ def _fixture_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
         "wheelhouse": wheelhouse,
         "output": output,
         "base_python": base_python,
+        "base_extraction_receipt": extraction_receipt,
+        "base_package_id": base_package_id,
+        "base_manifest_sha256": base_manifest_sha256,
         "state": state,
     }
 
@@ -103,6 +143,9 @@ def _build(runtime: dict) -> dict[str, object]:
         wheelhouse=runtime["wheelhouse"],
         output=runtime["output"],
         base_python=runtime["base_python"],
+        base_extraction_receipt=runtime["base_extraction_receipt"],
+        expected_base_payload_package_id=runtime["base_package_id"],
+        expected_base_payload_manifest_sha256=runtime["base_manifest_sha256"],
     )
 
 
@@ -112,9 +155,16 @@ def _verify(runtime: dict, payload: dict[str, object]) -> dict[str, object]:
         repo=runtime["repo"],
         venv_root=root,
         base_python=runtime["base_python"],
+        wheelhouse=runtime["wheelhouse"],
+        base_extraction_receipt=runtime["base_extraction_receipt"],
         expected_venv_sha256=payload["venv"]["tree"]["sha256"],
         expected_receipt_sha256=sha256_file(build_venv.receipt_path(root)),
         expected_base_python_sha256=payload["base_python"]["executable_sha256"],
+        expected_base_python_runtime_sha256=payload["base_python"]["runtime"]["sha256"],
+        expected_wheelhouse_sha256=payload["wheelhouse"]["identity"]["sha256"],
+        expected_base_extraction_receipt_sha256=payload["wheelhouse"]["base_extraction"]["sha256"],
+        expected_base_payload_package_id=runtime["base_package_id"],
+        expected_base_payload_manifest_sha256=runtime["base_manifest_sha256"],
     )
 
 
@@ -140,10 +190,32 @@ def test_build_seals_and_verifies_native_venv(
         build_receipt=build_venv.receipt_path(root),
         venv_root=root,
         base_python=runtime["base_python"],
+        wheelhouse=runtime["wheelhouse"],
+        base_extraction_receipt=runtime["base_extraction_receipt"],
         expected_venv_sha256=payload["venv"]["tree"]["sha256"],
         expected_receipt_sha256=sha256_file(build_venv.receipt_path(root)),
         expected_base_python_sha256=payload["base_python"]["executable_sha256"],
+        expected_base_python_runtime_sha256=payload["base_python"]["runtime"]["sha256"],
+        expected_wheelhouse_sha256=payload["wheelhouse"]["identity"]["sha256"],
+        expected_base_extraction_receipt_sha256=payload["wheelhouse"]["base_extraction"]["sha256"],
+        expected_base_payload_package_id=runtime["base_package_id"],
+        expected_base_payload_manifest_sha256=runtime["base_manifest_sha256"],
     ) == payload
+
+
+def test_build_rejects_base_extraction_format_mismatch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = _fixture_runtime(tmp_path, monkeypatch)
+    receipt = runtime["base_extraction_receipt"]
+    receipt_payload = __import__("json").loads(receipt.read_text())
+    receipt_payload["format_version"] = 2
+    receipt.write_text(__import__("json").dumps(receipt_payload, sort_keys=True))
+
+    with pytest.raises(RuntimeError, match="format version mismatch"):
+        _build(runtime)
+    assert not runtime["output"].exists()
 
 
 def test_build_failure_at_receipt_last_cleans_only_new_artifacts(
@@ -202,6 +274,57 @@ def test_verify_rejects_base_python_mismatch(
     runtime["base_python"].chmod(0o755)
 
     with pytest.raises(RuntimeError, match="base Python provenance mismatch"):
+        _verify(runtime, payload)
+
+
+def test_verify_rejects_base_runtime_stdlib_tamper(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = _fixture_runtime(tmp_path, monkeypatch)
+    payload = _build(runtime)
+    stdlib_file = runtime["base_python"].parent.parent / "lib/python3.11/site.py"
+    stdlib_file.write_text("BASE_SITE = 2\n")
+
+    with pytest.raises(RuntimeError, match="base Python provenance mismatch"):
+        _verify(runtime, payload)
+
+
+def test_verify_rejects_libpython_tamper(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = _fixture_runtime(tmp_path, monkeypatch)
+    payload = _build(runtime)
+    libpython = runtime["base_python"].parent.parent / "lib/libpython3.11.so"
+    libpython.write_bytes(b"changed libpython")
+
+    with pytest.raises(RuntimeError, match="base Python provenance mismatch"):
+        _verify(runtime, payload)
+
+
+def test_verify_rejects_mapped_system_library_tamper(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = _fixture_runtime(tmp_path, monkeypatch)
+    payload = _build(runtime)
+    system_library = runtime["base_python"].parent.parent / "lib/libsystem-runtime.so"
+    system_library.write_bytes(b"changed system runtime")
+
+    with pytest.raises(RuntimeError, match="base Python provenance mismatch"):
+        _verify(runtime, payload)
+
+
+def test_verify_rejects_wheelhouse_or_extraction_receipt_tamper(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = _fixture_runtime(tmp_path, monkeypatch)
+    payload = _build(runtime)
+    wheel = runtime["wheelhouse"] / "demo_pkg-1.0-py3-none-any.whl"
+    wheel.write_bytes(b"changed wheel")
+    with pytest.raises(RuntimeError, match="wheelhouse|extraction"):
         _verify(runtime, payload)
 
 

@@ -23,14 +23,34 @@ from typing import Mapping
 from packaging.utils import canonicalize_name
 
 from scripts.h100.contracts import atomic_write_json, atomic_write_text, sha256_file
+from scripts.h100.wheelhouse import (
+    assert_wheelhouse_unchanged,
+    validate_base_extraction_receipt,
+    wheelhouse_identity,
+    wheelhouse_manifest,
+)
 
-# Judy provides this site-managed CPython module. It is intentionally pinned
-# as part of the native-runtime amendment; the historical Sprint 7d payload's
-# 3.11.15 OCI metadata remains immutable base-payload provenance.
-EXPECTED_PYTHON_VERSION = "3.11.13"
+EXPECTED_PYTHON_VERSION = "3.11.15"
 RECEIPT_SCHEMA = 1
 RECEIPT_KIND = "xview3-h100-native-venv"
 TREE_DIGEST_ALGORITHM = "xview3-venv-tree-v1"
+BASE_RUNTIME_DIGEST_ALGORITHM = "xview3-base-python-runtime-v1"
+BASE_RUNTIME_EXCLUDED_DIRECTORIES = frozenset(
+    {"__pycache__", "site-packages", "dist-packages"}
+)
+BASE_RUNTIME_EXCLUDED_SUFFIXES = frozenset({".pyc", ".pyo"})
+BASE_RUNTIME_PROBE_MODULES = (
+    "_bz2",
+    "_ctypes",
+    "_decimal",
+    "_hashlib",
+    "_lzma",
+    "_sqlite3",
+    "_ssl",
+    "readline",
+    "uuid",
+    "zlib",
+)
 BOOTSTRAP_PACKAGES = frozenset({"pip", "setuptools", "wheel"})
 IMMUTABILITY_CONTRACT = {
     "directory_mode": "0555",
@@ -38,44 +58,6 @@ IMMUTABILITY_CONTRACT = {
     "regular_file_mode": "0444",
     "bytecode_removed": True,
 }
-
-
-def wheelhouse_manifest(
-    wheelhouse: str | Path,
-) -> dict[str, dict[str, object]]:
-    root = Path(wheelhouse)
-    if root.is_symlink() or not root.is_dir():
-        raise RuntimeError(f"offline wheelhouse is absent or unsafe: {root}")
-    entries = sorted(root.iterdir(), key=lambda item: item.name)
-    invalid = [
-        item.name
-        for item in entries
-        if item.suffix != ".whl"
-        or item.is_symlink()
-        or not stat.S_ISREG(item.lstat().st_mode)
-    ]
-    if invalid:
-        raise RuntimeError(
-            "offline wheelhouse may contain only regular .whl files: "
-            + ", ".join(invalid)
-        )
-    artifacts = {
-        item.name: {"sha256": sha256_file(item), "bytes": item.stat().st_size}
-        for item in entries
-    }
-    if not artifacts:
-        raise RuntimeError("offline wheelhouse contains no files")
-    return artifacts
-
-
-def assert_wheelhouse_unchanged(
-    wheelhouse: str | Path,
-    expected: Mapping[str, Mapping[str, object]],
-) -> dict[str, dict[str, object]]:
-    actual = wheelhouse_manifest(wheelhouse)
-    if actual != dict(expected):
-        raise RuntimeError("offline wheelhouse changed while the native venv was building")
-    return actual
 
 
 def _sidecar(venv_root: Path, suffix: str) -> Path:
@@ -134,24 +116,285 @@ def _require_regular_executable(path: Path, label: str) -> Path:
     return resolved
 
 
+def _runtime_file_record(path: Path, *, identity: str) -> dict[str, object]:
+    requested = path.absolute()
+    try:
+        metadata = requested.lstat()
+        resolved = requested.resolve(strict=True)
+        resolved_metadata = resolved.lstat()
+    except (FileNotFoundError, OSError) as exc:
+        raise RuntimeError(f"base runtime component is absent: {requested}") from exc
+    if not stat.S_ISREG(resolved_metadata.st_mode):
+        raise RuntimeError(f"base runtime component is not a regular file: {requested}")
+    record: dict[str, object] = {
+        "identity": identity,
+        "path": str(requested),
+        "resolved_path": str(resolved),
+        "bytes": resolved_metadata.st_size,
+        "sha256": sha256_file(resolved),
+    }
+    if stat.S_ISLNK(metadata.st_mode):
+        record["symlink_target"] = os.readlink(requested)
+    elif not stat.S_ISREG(metadata.st_mode):
+        raise RuntimeError(f"base runtime component has unsupported type: {requested}")
+    return record
+
+
+def _runtime_tree_records(
+    root: Path,
+    *,
+    identity: str,
+) -> tuple[list[dict[str, object]], dict[str, object]]:
+    requested = root.absolute()
+    try:
+        resolved = requested.resolve(strict=True)
+    except (FileNotFoundError, OSError) as exc:
+        raise RuntimeError(f"base Python runtime tree is absent: {requested}") from exc
+    if not resolved.is_dir():
+        raise RuntimeError(f"base Python runtime tree is not a directory: {requested}")
+    records: list[dict[str, object]] = []
+    counts = {"files": 0, "symlinks": 0, "directories": 1, "bytes": 0}
+
+    def visit(
+        directory: Path,
+        relative_root: Path,
+        ancestors: frozenset[tuple[int, int]],
+    ) -> None:
+        directory_metadata = directory.stat()
+        inode = (directory_metadata.st_dev, directory_metadata.st_ino)
+        if inode in ancestors:
+            raise RuntimeError(
+                f"base Python runtime tree contains a symlink cycle: {directory}"
+            )
+        current_ancestors = ancestors | {inode}
+        with os.scandir(directory) as entries:
+            for entry in sorted(entries, key=lambda item: item.name):
+                if entry.name in BASE_RUNTIME_EXCLUDED_DIRECTORIES:
+                    continue
+                source = Path(entry.path)
+                relative = relative_root / entry.name
+                if source.suffix.lower() in BASE_RUNTIME_EXCLUDED_SUFFIXES:
+                    continue
+                metadata = entry.stat(follow_symlinks=False)
+                record_identity = f"{identity}/{relative.as_posix()}"
+                if stat.S_ISLNK(metadata.st_mode):
+                    target = os.readlink(source)
+                    try:
+                        resolved_target = source.resolve(strict=True)
+                    except (FileNotFoundError, OSError) as exc:
+                        raise RuntimeError(
+                            "base Python runtime tree has a dangling symlink: "
+                            f"{source}"
+                        ) from exc
+                    counts["symlinks"] += 1
+                    record: dict[str, object] = {
+                        "identity": record_identity,
+                        "type": "symlink",
+                        "target": target,
+                        "resolved_path": str(resolved_target),
+                    }
+                    if resolved_target.is_dir():
+                        records.append(record)
+                        counts["directories"] += 1
+                        visit(resolved_target, relative, current_ancestors)
+                        continue
+                    resolved_metadata = resolved_target.lstat()
+                    if not stat.S_ISREG(resolved_metadata.st_mode):
+                        raise RuntimeError(
+                            "base Python runtime symlink has unsupported target: "
+                            f"{source}"
+                        )
+                    record.update(
+                        {
+                            "bytes": resolved_metadata.st_size,
+                            "sha256": sha256_file(resolved_target),
+                        }
+                    )
+                    counts["bytes"] += resolved_metadata.st_size
+                    records.append(record)
+                    continue
+                if stat.S_ISDIR(metadata.st_mode):
+                    counts["directories"] += 1
+                    records.append(
+                        {"identity": record_identity, "type": "directory"}
+                    )
+                    visit(source, relative, current_ancestors)
+                    continue
+                if not stat.S_ISREG(metadata.st_mode):
+                    raise RuntimeError(
+                        f"base Python runtime tree has unsupported entry: {source}"
+                    )
+                counts["files"] += 1
+                counts["bytes"] += metadata.st_size
+                records.append(
+                    {
+                        "identity": record_identity,
+                        "type": "file",
+                        "bytes": metadata.st_size,
+                        "sha256": sha256_file(source),
+                    }
+                )
+
+    visit(resolved, Path(), frozenset())
+    root_binding = {
+        "identity": identity,
+        "requested_path": str(requested),
+        "resolved_path": str(resolved),
+    }
+    return records, {**root_binding, **counts}
+
+
+def base_python_runtime_manifest(metadata: Mapping[str, object]) -> dict[str, object]:
+    resolved_executable = Path(str(metadata.get("resolved_path", "")))
+    roots: list[dict[str, object]] = []
+    records: list[dict[str, object]] = []
+    seen_roots: set[Path] = set()
+    for label, raw_root in (
+        ("stdlib", metadata.get("stdlib")),
+        ("platstdlib", metadata.get("platstdlib")),
+    ):
+        if not isinstance(raw_root, str) or not raw_root:
+            raise RuntimeError(f"Python provenance probe lacks {label}")
+        resolved_root = Path(raw_root).resolve(strict=True)
+        if resolved_root in seen_roots:
+            continue
+        seen_roots.add(resolved_root)
+        tree_records, root_summary = _runtime_tree_records(
+            Path(raw_root), identity=label
+        )
+        roots.append(root_summary)
+        records.extend(tree_records)
+
+    standalone: list[dict[str, object]] = [
+        _runtime_file_record(resolved_executable, identity="python-executable")
+    ]
+    config = metadata.get("config_vars")
+    if not isinstance(config, Mapping):
+        raise RuntimeError("Python provenance probe lacks runtime config variables")
+    libdirs = [
+        Path(str(value))
+        for key in ("LIBDIR", "LIBPL")
+        if (value := config.get(key))
+    ]
+    libpython_paths: list[str] = []
+    seen_libpython_candidates: set[Path] = set()
+    seen_components = {Path(str(standalone[0]["resolved_path"]))}
+    for key in ("LDLIBRARY", "LIBRARY", "INSTSONAME"):
+        value = config.get(key)
+        if not isinstance(value, str) or not value:
+            continue
+        candidates = (
+            [Path(value)]
+            if Path(value).is_absolute()
+            else [root / value for root in libdirs]
+        )
+        for candidate in candidates:
+            requested_candidate = candidate.absolute()
+            if (
+                requested_candidate in seen_libpython_candidates
+                or not candidate.exists()
+            ):
+                continue
+            seen_libpython_candidates.add(requested_candidate)
+            record = _runtime_file_record(candidate, identity=f"libpython:{key}")
+            resolved = Path(str(record["resolved_path"]))
+            seen_components.add(resolved)
+            standalone.append(record)
+            libpython_paths.append(str(requested_candidate))
+
+    mapped = metadata.get("mapped_runtime_files")
+    if not isinstance(mapped, list) or any(not isinstance(item, str) for item in mapped):
+        raise RuntimeError("Python provenance probe lacks mapped runtime files")
+    mapped_paths: list[str] = []
+    for raw_path in sorted(set(mapped)):
+        record = _runtime_file_record(
+            Path(raw_path), identity="mapped-runtime-library"
+        )
+        resolved = Path(str(record["resolved_path"]))
+        mapped_paths.append(str(resolved))
+        if resolved in seen_components:
+            continue
+        seen_components.add(resolved)
+        standalone.append(record)
+
+    records.extend(
+        sorted(
+            standalone,
+            key=lambda item: (str(item["identity"]), str(item["path"])),
+        )
+    )
+    encoded = json.dumps(
+        {
+            "algorithm": BASE_RUNTIME_DIGEST_ALGORITHM,
+            "excluded_directories": sorted(BASE_RUNTIME_EXCLUDED_DIRECTORIES),
+            "excluded_suffixes": sorted(BASE_RUNTIME_EXCLUDED_SUFFIXES),
+            "roots": roots,
+            "records": records,
+            "probed_modules": metadata.get("probed_modules"),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    return {
+        "algorithm": BASE_RUNTIME_DIGEST_ALGORITHM,
+        "sha256": hashlib.sha256(encoded).hexdigest(),
+        "files": sum(int(root["files"]) for root in roots) + len(standalone),
+        "symlinks": sum(int(root["symlinks"]) for root in roots),
+        "directories": sum(int(root["directories"]) for root in roots),
+        "bytes": sum(int(root["bytes"]) for root in roots)
+        + sum(int(item["bytes"]) for item in standalone),
+        "roots": roots,
+        "libpython_paths": sorted(set(libpython_paths)),
+        "mapped_runtime_files": sorted(set(mapped_paths)),
+        "probed_modules": metadata.get("probed_modules"),
+        "excluded_directories": sorted(BASE_RUNTIME_EXCLUDED_DIRECTORIES),
+        "excluded_suffixes": sorted(BASE_RUNTIME_EXCLUDED_SUFFIXES),
+    }
+
+
 def inspect_python(path: str | Path) -> dict[str, object]:
     requested = Path(path).expanduser()
     resolved = _require_regular_executable(requested, "Python interpreter")
-    probe = (
-        "import json, platform, sys, sysconfig;"
-        "print(json.dumps({"
-        "'version': platform.python_version(),"
-        "'implementation': sys.implementation.name,"
-        "'implementation_version': list(sys.implementation.version),"
-        "'soabi': sysconfig.get_config_var('SOABI'),"
-        "'platform': platform.platform(),"
-        "'libc': list(platform.libc_ver()),"
-        "'prefix': sys.prefix,"
-        "'base_prefix': sys.base_prefix,"
-        "'stdlib': sysconfig.get_path('stdlib'),"
-        "'executable': sys.executable"
-        "}, sort_keys=True))"
-    )
+    probe = """
+import importlib
+import json
+import platform
+import sys
+import sysconfig
+
+probe_modules = %r
+probed_modules = {}
+for name in probe_modules:
+    try:
+        importlib.import_module(name)
+    except Exception as exc:
+        probed_modules[name] = type(exc).__name__
+    else:
+        probed_modules[name] = "loaded"
+mapped_runtime_files = set()
+with open("/proc/self/maps", encoding="utf-8") as maps:
+    for line in maps:
+        fields = line.rstrip().split(None, 5)
+        if len(fields) == 6 and fields[5].startswith("/"):
+            mapped_runtime_files.add(fields[5])
+config_keys = ("LIBDIR", "LIBPL", "LDLIBRARY", "LIBRARY", "INSTSONAME")
+print(json.dumps({
+    "version": platform.python_version(),
+    "implementation": sys.implementation.name,
+    "implementation_version": list(sys.implementation.version),
+    "soabi": sysconfig.get_config_var("SOABI"),
+    "platform": platform.platform(),
+    "libc": list(platform.libc_ver()),
+    "prefix": sys.prefix,
+    "base_prefix": sys.base_prefix,
+    "stdlib": sysconfig.get_path("stdlib"),
+    "platstdlib": sysconfig.get_path("platstdlib"),
+    "executable": sys.executable,
+    "config_vars": {key: sysconfig.get_config_var(key) for key in config_keys},
+    "mapped_runtime_files": sorted(mapped_runtime_files),
+    "probed_modules": probed_modules,
+}, sort_keys=True))
+""" % (BASE_RUNTIME_PROBE_MODULES,)
     completed = _run([str(resolved), "-I", "-c", probe], capture_output=True)
     try:
         metadata = json.loads(completed.stdout)
@@ -161,6 +404,17 @@ def inspect_python(path: str | Path) -> dict[str, object]:
         ) from exc
     if not isinstance(metadata, dict):
         raise RuntimeError(f"Python provenance probe returned a non-object: {resolved}")
+    probed_modules = metadata.get("probed_modules")
+    expected_modules = set(BASE_RUNTIME_PROBE_MODULES)
+    if (
+        not isinstance(probed_modules, dict)
+        or set(probed_modules) != expected_modules
+        or set(probed_modules.values()) != {"loaded"}
+    ):
+        raise RuntimeError(
+            "base Python failed required runtime-library probes: "
+            f"{probed_modules}"
+        )
     metadata.update(
         {
             "requested_path": str(requested.absolute()),
@@ -168,6 +422,7 @@ def inspect_python(path: str | Path) -> dict[str, object]:
             "executable_sha256": sha256_file(resolved),
         }
     )
+    metadata["runtime"] = base_python_runtime_manifest(metadata)
     return metadata
 
 
@@ -383,6 +638,9 @@ def build(
     wheelhouse: Path,
     output: Path,
     base_python: Path,
+    base_extraction_receipt: Path,
+    expected_base_payload_package_id: str,
+    expected_base_payload_manifest_sha256: str,
 ) -> dict[str, object]:
     repo = repo.resolve()
     wheelhouse = wheelhouse.resolve()
@@ -412,6 +670,14 @@ def build(
     lock_text = env_lock.read_text()
     locked = _exact_pins(lock_text, source="environment lock")
     wheels = wheelhouse_manifest(wheelhouse)
+    wheelhouse_tree = wheelhouse_identity(wheelhouse)
+    base_extraction = validate_base_extraction_receipt(
+        base_extraction_receipt,
+        wheelhouse=wheelhouse,
+        expected_package_id=expected_base_payload_package_id,
+        expected_manifest_sha256=expected_base_payload_manifest_sha256,
+        expected_wheelhouse_sha256=str(wheelhouse_tree["sha256"]),
+    )
     output.parent.mkdir(parents=True, exist_ok=True)
     output.mkdir()
     owns_output = True
@@ -480,6 +746,17 @@ def build(
                 "venv does not bind the inspected base Python installation"
             )
         assert_wheelhouse_unchanged(wheelhouse, wheels)
+        if wheelhouse_identity(wheelhouse) != wheelhouse_tree:
+            raise RuntimeError("wheelhouse identity changed while the native venv was building")
+        if validate_base_extraction_receipt(
+            base_extraction_receipt,
+            wheelhouse=wheelhouse,
+            expected_package_id=expected_base_payload_package_id,
+            expected_manifest_sha256=expected_base_payload_manifest_sha256,
+            expected_receipt_sha256=str(base_extraction["sha256"]),
+            expected_wheelhouse_sha256=str(wheelhouse_tree["sha256"]),
+        ) != base_extraction:
+            raise RuntimeError("base extraction changed while the native venv was building")
         if inspect_python(base_python) != base_python_metadata:
             raise RuntimeError("base Python changed while the native venv was building")
 
@@ -505,7 +782,9 @@ def build(
                 "normalized": {name: locked[name] for name in sorted(locked)},
             },
             "wheelhouse": {
+                "identity": wheelhouse_tree,
                 "artifacts": wheels,
+                "base_extraction": base_extraction,
                 "reverified_after_build": True,
             },
             "venv": {
@@ -543,9 +822,16 @@ def verify(
     build_receipt: Path | None = None,
     venv_root: Path,
     base_python: Path,
+    wheelhouse: Path,
+    base_extraction_receipt: Path,
     expected_venv_sha256: str,
     expected_receipt_sha256: str,
     expected_base_python_sha256: str,
+    expected_base_python_runtime_sha256: str,
+    expected_wheelhouse_sha256: str,
+    expected_base_extraction_receipt_sha256: str,
+    expected_base_payload_package_id: str,
+    expected_base_payload_manifest_sha256: str,
 ) -> dict[str, object]:
     root = venv_root.absolute()
     receipt = (
@@ -607,8 +893,12 @@ def verify(
 
     actual_base = inspect_python(base_python)
     _assert_python_version(actual_base, label="base")
+    actual_base_runtime = actual_base.get("runtime")
     if (
         actual_base.get("executable_sha256") != expected_base_python_sha256
+        or not isinstance(actual_base_runtime, Mapping)
+        or actual_base_runtime.get("sha256")
+        != expected_base_python_runtime_sha256
         or payload.get("base_python") != actual_base
     ):
         raise RuntimeError("native venv base Python provenance mismatch")
@@ -632,6 +922,29 @@ def verify(
     }
     if lock_binding != expected_lock:
         raise RuntimeError("native venv environment-lock binding mismatch")
+
+    wheelhouse = wheelhouse.resolve()
+    actual_wheels = wheelhouse_manifest(wheelhouse)
+    actual_wheelhouse_tree = wheelhouse_identity(wheelhouse)
+    base_extraction = validate_base_extraction_receipt(
+        base_extraction_receipt,
+        wheelhouse=wheelhouse,
+        expected_package_id=expected_base_payload_package_id,
+        expected_manifest_sha256=expected_base_payload_manifest_sha256,
+        expected_receipt_sha256=expected_base_extraction_receipt_sha256,
+        expected_wheelhouse_sha256=expected_wheelhouse_sha256,
+    )
+    expected_wheelhouse = {
+        "identity": actual_wheelhouse_tree,
+        "artifacts": actual_wheels,
+        "base_extraction": base_extraction,
+        "reverified_after_build": True,
+    }
+    if (
+        actual_wheelhouse_tree.get("sha256") != expected_wheelhouse_sha256
+        or payload.get("wheelhouse") != expected_wheelhouse
+    ):
+        raise RuntimeError("native venv wheelhouse provenance mismatch")
 
     venv_python = _require_regular_executable(
         root / "bin/python", "venv Python interpreter"
@@ -665,6 +978,9 @@ def _build_parser() -> argparse.ArgumentParser:
     builder.add_argument("--wheelhouse", type=Path, required=True)
     builder.add_argument("--output", type=Path, required=True)
     builder.add_argument("--base-python", type=Path, required=True)
+    builder.add_argument("--base-extraction-receipt", type=Path, required=True)
+    builder.add_argument("--expected-base-payload-package-id", required=True)
+    builder.add_argument("--expected-base-payload-manifest-sha256", required=True)
 
     verifier = commands.add_parser(
         "verify", help="verify the complete native venv receipt before a job"
@@ -675,9 +991,16 @@ def _build_parser() -> argparse.ArgumentParser:
     verifier.add_argument("--venv-root", type=Path, required=True)
     verifier.add_argument("--receipt", type=Path, dest="build_receipt")
     verifier.add_argument("--base-python", type=Path, required=True)
+    verifier.add_argument("--wheelhouse", type=Path, required=True)
+    verifier.add_argument("--base-extraction-receipt", type=Path, required=True)
     verifier.add_argument("--expected-venv-sha256", required=True)
     verifier.add_argument("--expected-receipt-sha256", required=True)
     verifier.add_argument("--expected-base-python-sha256", required=True)
+    verifier.add_argument("--expected-base-python-runtime-sha256", required=True)
+    verifier.add_argument("--expected-wheelhouse-sha256", required=True)
+    verifier.add_argument("--expected-base-extraction-receipt-sha256", required=True)
+    verifier.add_argument("--expected-base-payload-package-id", required=True)
+    verifier.add_argument("--expected-base-payload-manifest-sha256", required=True)
     return parser
 
 
@@ -689,6 +1012,11 @@ def main() -> int:
             wheelhouse=args.wheelhouse,
             output=args.output,
             base_python=args.base_python,
+            base_extraction_receipt=args.base_extraction_receipt,
+            expected_base_payload_package_id=args.expected_base_payload_package_id,
+            expected_base_payload_manifest_sha256=(
+                args.expected_base_payload_manifest_sha256
+            ),
         )
     else:
         payload = verify(
@@ -697,9 +1025,24 @@ def main() -> int:
             build_receipt=args.build_receipt,
             venv_root=args.venv_root,
             base_python=args.base_python,
+            wheelhouse=args.wheelhouse,
+            base_extraction_receipt=args.base_extraction_receipt,
             expected_venv_sha256=args.expected_venv_sha256,
             expected_receipt_sha256=args.expected_receipt_sha256,
             expected_base_python_sha256=args.expected_base_python_sha256,
+            expected_base_python_runtime_sha256=(
+                args.expected_base_python_runtime_sha256
+            ),
+            expected_wheelhouse_sha256=args.expected_wheelhouse_sha256,
+            expected_base_extraction_receipt_sha256=(
+                args.expected_base_extraction_receipt_sha256
+            ),
+            expected_base_payload_package_id=(
+                args.expected_base_payload_package_id
+            ),
+            expected_base_payload_manifest_sha256=(
+                args.expected_base_payload_manifest_sha256
+            ),
         )
     print(json.dumps(payload, indent=2, sort_keys=True))
     return 0

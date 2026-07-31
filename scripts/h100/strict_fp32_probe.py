@@ -14,6 +14,11 @@ from scripts.h100.contracts import (
     EXPECTED_GPU_COUNT,
     validate_gpu_inventory,
 )
+from scripts.h100.lightning_contract import (
+    assert_pre_trainer_contract,
+    assert_trainer_contract,
+    validate_trainer_contract_evidence,
+)
 from scripts.h100.precision import assert_sitecustomize_active
 
 
@@ -37,6 +42,7 @@ def _device_record(torch, index: int) -> dict:
 
 
 def child_probe() -> dict:
+    import lightning as L
     import torch
 
     backend = assert_sitecustomize_active(torch)
@@ -57,12 +63,45 @@ def child_probe() -> dict:
     conv = torch.nn.Conv2d(8, 8, kernel_size=3, padding=1, device=device)
     image = torch.randn(2, 8, 64, 64, dtype=torch.float32, device=device)
     convolved = conv(image)
+    pre_trainer = assert_pre_trainer_contract(
+        conv,
+        precision="32-true",
+        devices=1,
+        micro_batch=16,
+        gradient_accumulation=1,
+        torch_module=torch,
+    )
+    trainer = L.Trainer(
+        accelerator="gpu",
+        devices=1,
+        precision="32-true",
+        accumulate_grad_batches=1,
+        logger=False,
+        enable_checkpointing=False,
+        enable_progress_bar=False,
+        enable_model_summary=False,
+    )
+    runtime_contract = assert_trainer_contract(
+        trainer,
+        conv,
+        precision="32-true",
+        devices=1,
+        micro_batch=16,
+        gradient_accumulation=1,
+        pre_trainer=pre_trainer,
+        torch_module=torch,
+    )
     torch.cuda.synchronize()
     if matmul.dtype != torch.float32 or not torch.isfinite(matmul).all():
         raise RuntimeError("strict-FP32 matmul probe failed")
     if convolved.dtype != torch.float32 or not torch.isfinite(convolved).all():
         raise RuntimeError("strict-FP32 cuDNN convolution probe failed")
-    return {"device": record, "backend": backend, "finite": True}
+    return {
+        "device": record,
+        "backend": backend,
+        "finite": True,
+        "runtime_contract": runtime_contract,
+    }
 
 
 def bind_child_probes(
@@ -104,6 +143,13 @@ def bind_child_probes(
             mismatches["backend"] = (dict(expected_backend), raw_child.get("backend"))
         if raw_child.get("finite") is not True:
             mismatches["finite"] = (True, raw_child.get("finite"))
+        try:
+            runtime_contract = validate_trainer_contract_evidence(
+                raw_child.get("runtime_contract")
+            )
+        except RuntimeError as exc:
+            runtime_contract = {}
+            mismatches["runtime_contract"] = ("valid", str(exc))
         if mismatches:
             raise RuntimeError(
                 f"child probe for parent GPU {parent_index} is mismatched: {mismatches}"
@@ -119,6 +165,7 @@ def bind_child_probes(
                 "device": dict(device),
                 "backend": dict(raw_child["backend"]),
                 "finite": True,
+                "runtime_contract": runtime_contract,
             }
         )
     return bound

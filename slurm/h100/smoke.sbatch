@@ -17,16 +17,91 @@ set -euo pipefail
 export NVIDIA_TF32_OVERRIDE=0
 
 H100_MODE="${1:?submit.sh must pass smoke mode}"
-site_env="${2:?submit.sh must pass the untracked site.env path}"
+compute_site="${2:?submit.sh must pass the immutable compute-site snapshot}"
+compute_site_sha256="${3:?submit.sh must pass the compute-site SHA-256}"
 if [[ "$H100_MODE" != "smoke" ]]; then
   echo "smoke batch received invalid mode: $H100_MODE" >&2
   exit 2
 fi
-readonly H100_MODE site_env
+if [[ ! "$compute_site_sha256" =~ ^[0-9a-f]{64}$ ]]; then
+  echo "compute-site SHA-256 must be lowercase 64-hex" >&2
+  exit 2
+fi
+if [[ -L "$compute_site" || ! -f "$compute_site" || "$(stat -c '%a' "$compute_site")" != "444" ]]; then
+  echo "compute-site snapshot must be a read-only regular non-symlink file" >&2
+  exit 2
+fi
+actual_compute_site_sha256="$(sha256sum "$compute_site" | awk '{print $1}')"
+if [[ "$actual_compute_site_sha256" != "$compute_site_sha256" ]]; then
+  echo "compute-site snapshot SHA-256 mismatch" >&2
+  exit 2
+fi
+readonly H100_MODE compute_site compute_site_sha256
 # shellcheck disable=SC1090
-source "$site_env"
+source "$compute_site"
 # Transfer credentials are never needed by a compute allocation.
 unset BOX_JWT_CONFIG BOX_FOLDER_ID
+
+# Repeat the submission-time isolation check from the verified snapshot before
+# the allocation writes smoke metadata. This protects queued jobs and every
+# requeue independently of the original mutable site.env.
+canonical_write_root() {
+  local name="$1"
+  local raw="${!name}"
+  local canonical
+  if [[ "$raw" != /* ]]; then
+    echo "$name must be an absolute path" >&2
+    return 2
+  fi
+  canonical="$(realpath -m -- "$raw")"
+  if [[ "$canonical" == "/" ]]; then
+    echo "$name must not resolve to /" >&2
+    return 2
+  fi
+  printf '%s\n' "$canonical"
+}
+
+assert_disjoint_from_protected_root() {
+  local name="$1"
+  local candidate="$2"
+  local protected_name="$3"
+  local protected_root="$4"
+  if [[ "$candidate" == "$protected_root" ||
+        "$candidate" == "$protected_root/"* ||
+        "$protected_root" == "$candidate/"* ]]; then
+    echo "$name overlaps $protected_name $protected_root: $candidate" >&2
+    return 2
+  fi
+}
+
+h100_runs_root="$(canonical_write_root H100_RUNS_ROOT)"
+h100_job_log_root="$(canonical_write_root H100_JOB_LOG_DIR)"
+v100_runs_root="$(canonical_write_root H100_V100_RUNS_ROOT)"
+if [[ ! -d "$v100_runs_root" ]]; then
+  echo "H100_V100_RUNS_ROOT is not the existing live V100 runs directory: $v100_runs_root" >&2
+  exit 2
+fi
+assert_disjoint_from_protected_root \
+  H100_RUNS_ROOT "$h100_runs_root" "live V100 runs root" "$v100_runs_root"
+assert_disjoint_from_protected_root \
+  H100_JOB_LOG_DIR "$h100_job_log_root" "live V100 runs root" "$v100_runs_root"
+reference_runs_root=""
+if [[ -n "${H100_REFERENCES_ROOT:-}" ]]; then
+  reference_runs_root="$(canonical_write_root H100_REFERENCES_ROOT)"
+  if [[ ! -d "$reference_runs_root" ]]; then
+    echo "H100_REFERENCES_ROOT is not the existing V100 reference runs directory: $reference_runs_root" >&2
+    exit 2
+  fi
+  assert_disjoint_from_protected_root \
+    H100_RUNS_ROOT "$h100_runs_root" "V100 reference runs root" "$reference_runs_root"
+  assert_disjoint_from_protected_root \
+    H100_JOB_LOG_DIR "$h100_job_log_root" "V100 reference runs root" "$reference_runs_root"
+  H100_REFERENCES_ROOT="$reference_runs_root"
+fi
+H100_RUNS_ROOT="$h100_runs_root"
+H100_JOB_LOG_DIR="$h100_job_log_root"
+H100_V100_RUNS_ROOT="$v100_runs_root"
+readonly H100_RUNS_ROOT H100_JOB_LOG_DIR H100_V100_RUNS_ROOT H100_REFERENCES_ROOT
 
 check_sha() {
   local expected="$1"
@@ -72,9 +147,16 @@ PYTHONNOUSERSITE=1 PYTHONPATH="$repo" "$H100_TRANSFER_PYTHON" \
   --repo "$repo" \
   --venv-root "$H100_VENV_ROOT" \
   --base-python "$H100_BASE_PYTHON" \
+  --wheelhouse "$H100_WHEELHOUSE" \
+  --base-extraction-receipt "$H100_BASE_EXTRACTION_RECEIPT" \
   --expected-venv-sha256 "$H100_VENV_SHA256" \
   --expected-receipt-sha256 "$H100_VENV_BUILD_SHA256" \
-  --expected-base-python-sha256 "$H100_BASE_PYTHON_SHA256"
+  --expected-base-python-sha256 "$H100_BASE_PYTHON_SHA256" \
+  --expected-base-python-runtime-sha256 "$H100_BASE_PYTHON_RUNTIME_SHA256" \
+  --expected-wheelhouse-sha256 "$H100_WHEELHOUSE_SHA256" \
+  --expected-base-extraction-receipt-sha256 "$H100_BASE_EXTRACTION_RECEIPT_SHA256" \
+  --expected-base-payload-package-id "$H100_BASE_PACKAGE_ID" \
+  --expected-base-payload-manifest-sha256 "$H100_BASE_MANIFEST_SHA256"
 
 mkdir -p "$H100_RUNS_ROOT/.h100/slurm-smoke"
 runtime_home="$scratch/runtime-home"
@@ -110,6 +192,9 @@ binding_args=(
   --venv-sha256 "$H100_VENV_SHA256"
   --venv-build-sha256 "$H100_VENV_BUILD_SHA256"
   --base-python-sha256 "$H100_BASE_PYTHON_SHA256"
+  --base-python-runtime-sha256 "$H100_BASE_PYTHON_RUNTIME_SHA256"
+  --wheelhouse-sha256 "$H100_WHEELHOUSE_SHA256"
+  --base-extraction-receipt-sha256 "$H100_BASE_EXTRACTION_RECEIPT_SHA256"
   --base-payload-package-id "$H100_BASE_PACKAGE_ID"
   --base-payload-git-sha "$H100_BASE_GIT_SHA"
   --base-payload-manifest-sha256 "$H100_BASE_MANIFEST_SHA256"

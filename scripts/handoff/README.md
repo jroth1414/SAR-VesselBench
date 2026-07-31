@@ -171,7 +171,7 @@ but are never the Judy execution checkout or runtime.
 
 ## Build the final-path native H100 venv
 
-Provide the exact Python 3.11.13 executable on Judy and build directly at the
+Provide the exact Python 3.11.15 executable on Judy and build directly at the
 permanent path. The build is offline and consumes the verified Sprint 7d
 wheelhouse:
 
@@ -180,14 +180,18 @@ cd /scratch/xview3-sprint7e
 /path/to/bootstrap-python -m scripts.h100.build_venv build \
   --repo "$PWD" \
   --wheelhouse /scratch/xview3-base-extracted/environment/wheelhouse \
-  --base-python /path/to/python-3.11.13/bin/python3.11 \
+  --base-extraction-receipt /scratch/xview3-base-extracted/HANDOFF_EXTRACTED.json \
+  --expected-base-payload-package-id xview3-h100-fp32-2726199efcebbebc89156e708b89df2a3415468a \
+  --expected-base-payload-manifest-sha256 fccb0b505c89836a148afec709bb799f7af4908d955ea1b142e153154d830896 \
+  --base-python /path/to/python-3.11.15/bin/python3.11 \
   --output /persistent/venvs/xview3-h100-fp32
 ```
 
 The builder uses `venv --copies`, `pip --no-index`, and the exact
 `locks/env-v100node.txt` contract (`torch==2.11.0+cu126`). It checks the
-normalized freeze and `pip check`, removes bytecode, seals the venv read-only,
-and writes these read-only sidecars:
+normalized freeze and `pip check`, proves the wheelhouse tree is the one named
+by the verified Sprint-7d `HANDOFF_EXTRACTED.json`, removes bytecode, seals the
+venv read-only, and writes these read-only sidecars:
 
 ```text
 /persistent/venvs/xview3-h100-fp32.sha256
@@ -196,17 +200,27 @@ and writes these read-only sidecars:
 
 The venv is deliberately non-relocatable. Before every Slurm allocation,
 verify its complete tree, receipt, final path, environment lock, installed
-freeze, and exact base Python:
+freeze, exact wheelhouse/extraction receipt, and complete base-Python runtime.
+The runtime digest covers the resolved executable, libpython, stdlib/platstdlib
+(excluding only caches and base site/dist-packages), and deterministically
+probed mapped system libraries:
 
 ```bash
 cd /scratch/xview3-sprint7e
 /path/to/bootstrap-python -m scripts.h100.build_venv verify \
   --repo "$PWD" \
   --venv-root /persistent/venvs/xview3-h100-fp32 \
-  --base-python /path/to/python-3.11.13/bin/python3.11 \
+  --base-python /path/to/python-3.11.15/bin/python3.11 \
+  --wheelhouse /scratch/xview3-base-extracted/environment/wheelhouse \
+  --base-extraction-receipt /scratch/xview3-base-extracted/HANDOFF_EXTRACTED.json \
   --expected-venv-sha256 VENV_TREE_64HEX \
   --expected-receipt-sha256 VENV_BUILD_JSON_64HEX \
-  --expected-base-python-sha256 BASE_PYTHON_EXECUTABLE_64HEX
+  --expected-base-python-sha256 BASE_PYTHON_EXECUTABLE_64HEX \
+  --expected-base-python-runtime-sha256 BASE_PYTHON_RUNTIME_64HEX \
+  --expected-wheelhouse-sha256 WHEELHOUSE_TREE_64HEX \
+  --expected-base-extraction-receipt-sha256 EXTRACTION_RECEIPT_64HEX \
+  --expected-base-payload-package-id xview3-h100-fp32-2726199efcebbebc89156e708b89df2a3415468a \
+  --expected-base-payload-manifest-sha256 fccb0b505c89836a148afec709bb799f7af4908d955ea1b142e153154d830896
 ```
 
 Jobs invoke `/persistent/venvs/xview3-h100-fp32/bin/python` directly under a

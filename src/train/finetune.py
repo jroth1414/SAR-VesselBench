@@ -49,6 +49,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     from lightning.pytorch.loggers import CSVLogger
 
+    from scripts.h100.lightning_contract import (
+        assert_pre_trainer_contract,
+        assert_trainer_contract,
+        h100_runtime_active,
+    )
     from src.train.datamodule import FineTuneDataModule
     from src.train.lit_modules import HeatmapLitModule
 
@@ -181,6 +186,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         LearningRateMonitor(logging_interval="epoch"),
     ]
 
+    h100_pre_trainer = None
+    h100_runtime_contract = None
+    if h100_runtime_active():
+        h100_pre_trainer = assert_pre_trainer_contract(
+            module,
+            precision=det_cfg["schedule"]["precision"],
+            devices=1,
+            micro_batch=batch_size,
+            gradient_accumulation=accumulate,
+        )
     trainer = L.Trainer(
         max_epochs=epochs,
         accelerator="gpu",
@@ -196,6 +211,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         log_every_n_steps=10,
         enable_progress_bar=True,
     )
+    if h100_pre_trainer is not None:
+        h100_runtime_contract = assert_trainer_contract(
+            trainer,
+            module,
+            precision=det_cfg["schedule"]["precision"],
+            devices=1,
+            micro_batch=batch_size,
+            gradient_accumulation=accumulate,
+            pre_trainer=h100_pre_trainer,
+        )
 
     resolved = {
         "exp_id": run_id,
@@ -210,6 +235,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             "effective_batch": batch_size * accumulate,
         },
     }
+    if h100_runtime_contract is not None:
+        resolved["execution"]["h100_runtime_contract"] = h100_runtime_contract
     (run_dir / "config.yaml").write_text(yaml.safe_dump(resolved), newline="\n")
 
     last_ckpt = run_dir / "checkpoints" / "last.ckpt"
@@ -233,6 +260,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "last_dev": dev_eval.last_result,
         "train_loss": float(trainer.callback_metrics.get("train_loss", float("nan"))),
     }
+    if h100_runtime_contract is not None:
+        final["h100_runtime_contract"] = h100_runtime_contract
     (run_dir / "final_metrics.json").write_text(json.dumps(final, indent=1), newline="\n")
     print(json.dumps(final, indent=1))
     return 0

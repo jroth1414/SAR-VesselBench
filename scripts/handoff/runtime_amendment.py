@@ -73,6 +73,8 @@ RUNTIME_EXTRACTED_RECEIPT = "RUNTIME_AMENDMENT_EXTRACTED.json"
 _REQUIRED_RUNTIME_FILES = (
     ENVIRONMENT_LOCK_PATH,
     "scripts/h100/build_venv.py",
+    "scripts/h100/lightning_contract.py",
+    "scripts/h100/wheelhouse.py",
     "slurm/h100/campaign.sbatch",
     "slurm/h100/smoke.sbatch",
     "slurm/h100/submit.sh",

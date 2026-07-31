@@ -27,6 +27,8 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Iterable, Mapping, Sequence
 
+from scripts.h100.wheelhouse import wheelhouse_identity
+
 FORMAT_VERSION = 1
 # The immutable 294 GB payload remains a Sprint 7d package.  Sprint 7e is a
 # separate code-only amendment and must never change this verifier's identity.
@@ -2644,15 +2646,28 @@ def _extract_package(
                 raise PackageError(
                     f"extracted content mismatch for {artifact.get('name')}"
                 )
+        extraction_receipt: dict[str, object] = {
+            "format_version": FORMAT_VERSION,
+            "package_id": manifest["package_id"],
+            "manifest_sha256": _hash_file(package_root / "manifest.json"),
+        }
+        extracted_wheelhouse = staging / "environment/wheelhouse"
+        if manifest.get("package_type") == "h100-source-handoff":
+            if not extracted_wheelhouse.is_dir():
+                raise PackageError(
+                    "source handoff extraction lacks environment/wheelhouse"
+                )
+            try:
+                extraction_receipt["wheelhouse"] = wheelhouse_identity(
+                    extracted_wheelhouse
+                )
+            except RuntimeError as exc:
+                raise PackageError(
+                    f"extracted wheelhouse identity is invalid: {exc}"
+                ) from exc
         _write_bytes(
             staging / "HANDOFF_EXTRACTED.json",
-            _canonical_json(
-                {
-                    "format_version": FORMAT_VERSION,
-                    "package_id": manifest["package_id"],
-                    "manifest_sha256": _hash_file(package_root / "manifest.json"),
-                }
-            ),
+            _canonical_json(extraction_receipt),
         )
         os.replace(staging, destination)
     except BaseException:

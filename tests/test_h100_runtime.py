@@ -20,9 +20,11 @@ from scripts.h100 import (
     acceptance,
     build_venv,
     campaign,
+    cell as h100_cell,
     contracts,
     cutover,
     host_test_gate,
+    lightning_contract,
     operator_cutover,
     slurm_smoke,
     source_validation,
@@ -47,6 +49,9 @@ BASE_GIT_SHA = source_validation.BASE_PAYLOAD_GIT_SHA
 VENV_SHA256 = "3" * 64
 VENV_BUILD_SHA256 = "4" * 64
 BASE_PYTHON_SHA256 = "5" * 64
+BASE_PYTHON_RUNTIME_SHA256 = "0" * 64
+WHEELHOUSE_SHA256 = "1" * 64
+BASE_EXTRACTION_RECEIPT_SHA256 = "2" * 64
 
 
 def base_payload() -> dict[str, str]:
@@ -74,10 +79,47 @@ def runtime_amendment() -> dict[str, str]:
 
 def base_python() -> dict[str, object]:
     return {
-        "version": "3.11.13",
+        "version": "3.11.15",
         "implementation": "cpython",
-        "resolved_path": "/opt/python-3.11.13/bin/python3.11",
+        "resolved_path": "/opt/python-3.11.15/bin/python3.11",
         "executable_sha256": BASE_PYTHON_SHA256,
+        "runtime": {
+            "algorithm": build_venv.BASE_RUNTIME_DIGEST_ALGORITHM,
+            "sha256": BASE_PYTHON_RUNTIME_SHA256,
+        },
+    }
+
+
+def wheelhouse() -> dict[str, object]:
+    identity = {
+        "algorithm": "xview3-wheelhouse-tree-v1",
+        "sha256": WHEELHOUSE_SHA256,
+        "files": 1,
+        "bytes": 1,
+    }
+    receipt = {
+        "format_version": 1,
+        "package_id": base_payload()["package_id"],
+        "manifest_sha256": base_payload()["manifest_sha256"],
+        "wheelhouse": identity,
+    }
+    return {
+        "identity": identity,
+        "artifacts": {"fixture.whl": {"sha256": "3" * 64, "bytes": 1}},
+        "base_extraction": {
+            "path": "/persistent/base/HANDOFF_EXTRACTED.json",
+            "sha256": BASE_EXTRACTION_RECEIPT_SHA256,
+            "receipt": receipt,
+        },
+        "reverified_after_build": True,
+    }
+
+
+def staged_base_extraction() -> dict[str, object]:
+    return {
+        "path": "/scratch/payload/HANDOFF_EXTRACTED.json",
+        "sha256": BASE_EXTRACTION_RECEIPT_SHA256,
+        "receipt": wheelhouse()["base_extraction"]["receipt"],
     }
 
 
@@ -132,6 +174,47 @@ def strict_backend():
     }
 
 
+def h100_runtime_contract():
+    return {
+        "schema": 1,
+        "status": "verified",
+        "pre_trainer": {
+            "schema": 1,
+            "status": "verified",
+            "stage": "pre-trainer",
+            "precision": "32-true",
+            "devices": 1,
+            "micro_batch": 16,
+            "gradient_accumulation": 1,
+            "effective_batch": 16,
+            "strict_fp32": strict_backend(),
+            "autocast": {"global": False, "cuda": False, "cpu": False},
+            "process": {
+                "WORLD_SIZE": "unset",
+                "SLURM_NTASKS": "unset",
+                "effective_world_size": 1,
+            },
+            "model": {
+                "floating_parameter_count": 2,
+                "floating_parameter_dtypes": ["torch.float32"],
+            },
+        },
+        "resolved_trainer": {
+            "accelerator": lightning_contract.CUDA_ACCELERATOR,
+            "precision_plugin": lightning_contract.PRECISION_PLUGIN,
+            "precision": "32-true",
+            "gradient_scaler": None,
+            "strategy": lightning_contract.SINGLE_DEVICE_STRATEGY,
+            "root_device_type": "cuda",
+            "root_device_index": 0,
+            "num_devices": 1,
+            "world_size": 1,
+            "device_ids": [0],
+            "gradient_accumulation": 1,
+        },
+    }
+
+
 def h100_hardware():
     return {
         "torch": "2.11.0+cu126",
@@ -139,6 +222,7 @@ def h100_hardware():
         "driver_version": "590.1",
         "backend": strict_backend(),
         "devices": h100_devices(),
+        "child_probes": [{"runtime_contract": h100_runtime_contract()} for _ in range(8)],
     }
 
 
@@ -156,6 +240,9 @@ def smoke_bindings():
         venv_sha256=VENV_SHA256,
         venv_build_sha256=VENV_BUILD_SHA256,
         base_python_sha256=BASE_PYTHON_SHA256,
+        base_python_runtime_sha256=BASE_PYTHON_RUNTIME_SHA256,
+        wheelhouse_sha256=WHEELHOUSE_SHA256,
+        base_extraction_receipt_sha256=BASE_EXTRACTION_RECEIPT_SHA256,
         base_payload=base_payload(),
         runtime_amendment=runtime_amendment(),
     )
@@ -183,6 +270,12 @@ def smoke_cli_args(bindings: dict[str, object], runs: Path, signal_ready: Path) 
         venv["build_receipt_sha256"],
         "--base-python-sha256",
         venv["base_python_sha256"],
+        "--base-python-runtime-sha256",
+        venv["base_python_runtime_sha256"],
+        "--wheelhouse-sha256",
+        venv["wheelhouse_sha256"],
+        "--base-extraction-receipt-sha256",
+        venv["base_extraction_receipt_sha256"],
         "--base-payload-package-id",
         base["package_id"],
         "--base-payload-git-sha",
@@ -270,6 +363,7 @@ def completion_payload(cell, *, scored=False):
         "effective_batch": 16,
         "epochs_run": 50,
         "best_dev_f1": 0.5,
+        "h100_runtime_contract": h100_runtime_contract(),
     }
     if scored:
         payload.update(
@@ -295,6 +389,7 @@ def runtime_provenance(cell, *, finalized=False):
         "venv_sha256": VENV_SHA256,
         "venv_build_sha256": VENV_BUILD_SHA256,
         "base_python": base_python(),
+        "wheelhouse": wheelhouse(),
         "base_payload": base_payload(),
         "runtime_amendment": runtime_amendment(),
         "acceptance_uuid": "acceptance",
@@ -330,6 +425,7 @@ def runtime_provenance(cell, *, finalized=False):
                 "elapsed_hours": 1.0,
                 "completed_utc": "2026-07-27T01:00:00+00:00",
                 "epochs_run": 50,
+                "h100_runtime_contract": h100_runtime_contract(),
                 "best_dev_f1": 0.5,
                 "test_f1": 0.4,
             }
@@ -346,6 +442,7 @@ def existing_state_kwargs(runs):
         "venv_sha256": VENV_SHA256,
         "venv_build_sha256": VENV_BUILD_SHA256,
         "base_python": base_python(),
+        "wheelhouse": wheelhouse(),
         "base_payload": base_payload(),
         "runtime_amendment": runtime_amendment(),
         "acceptance_uuid": "acceptance",
@@ -445,6 +542,8 @@ def ready_payload(smoke_path: Path, smoke_receipt: dict, bindings: dict) -> dict
             "sha256": bindings["venv"]["sha256"],
             "venv_build_sha256": bindings["venv"]["build_receipt_sha256"],
             "base_python": base_python(),
+            "wheelhouse": wheelhouse(),
+            "staged_base_extraction": staged_base_extraction(),
         },
         "base_payload": dict(bindings["base_payload"]),
         "runtime_amendment": dict(bindings["runtime_amendment"]),
@@ -576,6 +675,7 @@ def operator_evidence_fixture(tmp_path: Path) -> dict:
         "cutover_ready_sha256": contracts.sha256_file(cutover_path),
         "receipt": source_receipt,
         "receipt_sha256": contracts.sha256_file(source_receipt),
+
         "archive_manifest": source_manifest,
         "archive_manifest_sha256": manifest_sha,
         "bound_archive_manifest": canonical_manifest,
@@ -620,6 +720,353 @@ def test_failure_or_preemption_fail_stops_new_launches():
     assert [cell.exp_id for _gpu, cell in resumed] == [cells[2].exp_id]
     prior = {"fail_stop": {"engaged": True, "failed": [cells[0].exp_id], "allowed_to_finish": sorted(allowed)}}
     assert campaign.restore_fail_stop(prior, cells) == (True, {cells[0].exp_id}, allowed)
+
+
+class _ScriptedProcess:
+    def __init__(self, polls: list[int | None], *, pid: int = 4321) -> None:
+        self._polls = list(polls)
+        self._last = polls[-1]
+        self.pid = pid
+        self.signals: list[int] = []
+        self.terminated = False
+        self.killed = False
+
+    def poll(self) -> int | None:
+        if self._polls:
+            self._last = self._polls.pop(0)
+        return self._last
+
+    def wait(self, timeout: float | None = None) -> int | None:
+        del timeout
+        return self._last
+
+    def send_signal(self, signum: int) -> None:
+        self.signals.append(signum)
+
+    def terminate(self) -> None:
+        self.terminated = True
+
+    def kill(self) -> None:
+        self.killed = True
+
+
+def _bare_preemption_controller(
+    tmp_path: Path,
+    *,
+    process: _ScriptedProcess,
+    cell: contracts.Cell,
+    cells: list[contracts.Cell],
+) -> campaign.Controller:
+    controller = object.__new__(campaign.Controller)
+    controller.args = SimpleNamespace(
+        campaign_id="preemption-race-fixture",
+        checkpoint_timeout=0.01,
+    )
+    controller.repo = REPO
+    controller.runs_root = tmp_path / "runs"
+    controller.cells = cells
+    controller.git_sha = RUNTIME_GIT_SHA
+    controller.detector_sha256 = "f" * 64
+    controller.venv_sha256 = VENV_SHA256
+    controller.venv_build_sha256 = VENV_BUILD_SHA256
+    controller.base_python = {}
+    controller.wheelhouse = {}
+    controller.base_payload = {}
+    controller.runtime_amendment = {}
+    controller.acceptance_uuid = "acceptance"
+    controller.source_validation_sha256 = "a" * 64
+    controller.cutover_ready_sha256 = "b" * 64
+    controller.v100_core_archived_sha256 = "c" * 64
+    controller.strict_fp32 = {}
+    controller.accepted_hardware_class = {}
+    controller.running = {0: (process, cell, time.monotonic())}
+    controller.complete_ids = set()
+    controller.failure_seen = False
+    controller.failed_ids = set()
+    controller.failure_allowed_ids = set()
+    controller.preemption_seen = True
+    controller.preemption_forwarded = False
+    controller.cell_runtime = {}
+    controller.request_dir = controller.runs_root / ".h100/requeue-requests"
+    controller.request_dir.mkdir(parents=True)
+    run_dir = controller.runs_root / cell.exp_id
+    run_dir.mkdir(parents=True)
+    contracts.atomic_write_json(
+        run_dir / "runtime_provenance.json",
+        {"attempts": [{}], "accumulated_active_seconds": 0.0},
+    )
+    controller.test_events = []
+    controller.test_statuses = []
+    controller.record = lambda event, **payload: controller.test_events.append(
+        {"event": event, **payload}
+    )
+    controller.write_manifest = (
+        lambda status=None: controller.test_statuses.append(status)
+    )
+    return controller
+
+
+@pytest.mark.parametrize(
+    ("pending_cell", "expected_code", "expected_status"),
+    [
+        (True, campaign.HOST_REQUEUE_EXIT_CODE, "host-requeue-required"),
+        (False, 0, "complete"),
+    ],
+)
+def test_preemption_completion_race_reaps_code_zero_and_finalizes_or_requeues(
+    tmp_path,
+    monkeypatch,
+    pending_cell,
+    expected_code,
+    expected_status,
+):
+    all_cells = contracts.load_cells(REPO)
+    cell = all_cells[0]
+    cells = [cell, all_cells[1]] if pending_cell else [cell]
+    process = _ScriptedProcess([None, None, 0])
+    controller = _bare_preemption_controller(
+        tmp_path,
+        process=process,
+        cell=cell,
+        cells=cells,
+    )
+    monkeypatch.setenv("SLURM_JOB_ID", "job-completion-race")
+    monkeypatch.setattr(
+        campaign,
+        "validate_scored_completion",
+        lambda *_args, **_kwargs: {
+            "epochs_run": 1,
+            "best_dev_f1": 0.1,
+            "test_f1": 0.2,
+            "test_scored_at": "2026-07-30T00:00:00+00:00",
+            "h100_runtime_contract": {},
+        },
+    )
+    monkeypatch.setattr(
+        campaign,
+        "validate_runtime_provenance",
+        lambda *_args, **_kwargs: None,
+    )
+    kill_attempts = []
+
+    def vanished_before_signal(pid, signum):
+        kill_attempts.append((pid, signum))
+        raise ProcessLookupError
+
+    monkeypatch.setattr(campaign.os, "kill", vanished_before_signal)
+    grid = tmp_path / "grid.csv"
+    grid.write_text("validated-grid\n")
+    grid_calls = []
+
+    def fake_collect(**kwargs):
+        grid_calls.append(kwargs)
+        return grid
+
+    monkeypatch.setattr(campaign, "collect_and_validate_grid", fake_collect)
+
+    assert controller.preempt_and_requeue() == expected_code
+    assert controller.running == {}
+    assert controller.complete_ids == {cell.exp_id}
+    assert not controller.failure_seen
+    assert kill_attempts == [(process.pid, signal.SIGUSR1)]
+    assert controller.test_statuses[-1] == expected_status
+    assert any(item["event"] == "cell_complete" for item in controller.test_events)
+    if pending_cell:
+        assert grid_calls == []
+    else:
+        assert len(grid_calls) == 1
+        assert any(
+            item["event"] == "grid_validated" for item in controller.test_events
+        )
+
+
+def test_preemption_valid_job_bound_request_promotes_checkpoint_and_returns_75(
+    tmp_path,
+    monkeypatch,
+):
+    cells = contracts.load_cells(REPO)
+    cell = cells[0]
+    process = _ScriptedProcess([campaign.HOST_REQUEUE_EXIT_CODE])
+    controller = _bare_preemption_controller(
+        tmp_path,
+        process=process,
+        cell=cell,
+        cells=cells[:2],
+    )
+    monkeypatch.setenv("SLURM_JOB_ID", "job-valid-marker")
+    (controller.request_dir / "gpu-0.request").write_text("job-valid-marker\n")
+    run_dir = controller.runs_root / cell.exp_id
+    contracts.atomic_write_json(
+        run_dir / "cell_wrapper.json",
+        {"phase": "score-test", "exp_id": cell.exp_id},
+    )
+    checkpoints = run_dir / "checkpoints"
+    checkpoints.mkdir()
+    (checkpoints / "best.ckpt").write_bytes(b"best")
+    (checkpoints / "last.ckpt").write_bytes(b"last")
+
+    assert controller.preempt_and_requeue() == campaign.HOST_REQUEUE_EXIT_CODE
+    assert controller.running == {}
+    assert controller.test_statuses[-1] == "host-requeue-required"
+    assert any(
+        item["event"] == "checkpoint_promoted"
+        and item["exp_id"] == cell.exp_id
+        for item in controller.test_events
+    )
+    provenance = json.loads((run_dir / "runtime_provenance.json").read_text())
+    assert provenance["attempts"][-1]["exit"] == "preempted"
+
+
+@pytest.mark.parametrize(
+    ("exit_code", "request_job"),
+    [(1, None), (campaign.HOST_REQUEUE_EXIT_CODE, "different-job")],
+)
+def test_preemption_invalid_or_wrong_job_exit_fails_closed(
+    tmp_path,
+    monkeypatch,
+    exit_code,
+    request_job,
+):
+    cells = contracts.load_cells(REPO)
+    cell = cells[0]
+    controller = _bare_preemption_controller(
+        tmp_path,
+        process=_ScriptedProcess([exit_code]),
+        cell=cell,
+        cells=cells[:2],
+    )
+    monkeypatch.setenv("SLURM_JOB_ID", "current-job")
+    if request_job is not None:
+        (controller.request_dir / "gpu-0.request").write_text(request_job + "\n")
+
+    assert controller.preempt_and_requeue() == 1
+    assert controller.running == {}
+    assert controller.failure_seen
+    assert controller.failed_ids == {cell.exp_id}
+    assert any(
+        item["event"] == "preemption_invalid_child_exit"
+        for item in controller.test_events
+    )
+
+
+def test_cell_completion_signal_race_writes_job_bound_requeue_request(
+    tmp_path,
+    monkeypatch,
+):
+    runs = tmp_path / "runs"
+    exp_id = "race-f100-s0"
+    run_dir = runs / exp_id
+    request_dir = tmp_path / "requests"
+    request_dir.mkdir()
+    monkeypatch.setenv("H100_REQUEUE_REQUEST_DIR", str(request_dir))
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
+    monkeypatch.setenv("SLURM_JOB_ID", "job-cell-race")
+    monkeypatch.setattr(h100_cell, "assert_sitecustomize_active", lambda: None)
+    monkeypatch.setattr(h100_cell, "assert_launch_process_contract", lambda: None)
+
+    def missing_process(*_args):
+        raise ProcessLookupError
+
+    monkeypatch.setattr(h100_cell.os, "kill", missing_process)
+
+    class CompletingProcess:
+        pid = 7654
+
+        def poll(self):
+            return None
+
+        def wait(self):
+            signal.raise_signal(signal.SIGUSR1)
+            checkpoints = run_dir / "checkpoints"
+            checkpoints.mkdir(parents=True)
+            (checkpoints / "best.ckpt").write_bytes(b"best")
+            (checkpoints / "last.ckpt").write_bytes(b"last")
+            return 0
+
+    monkeypatch.setattr(
+        h100_cell.subprocess,
+        "Popen",
+        lambda *_args, **_kwargs: CompletingProcess(),
+    )
+    args = SimpleNamespace(
+        repo=REPO,
+        runs_root=runs,
+        exp_id=exp_id,
+        init="convnext_random",
+        label_frac=1.0,
+        git_sha=RUNTIME_GIT_SHA,
+        workers=1,
+    )
+
+    assert h100_cell.run_cell(args) == h100_cell.PREEMPTED_EXIT_CODE
+    assert (request_dir / "gpu-0.request").read_text() == "job-cell-race\n"
+    assert not (run_dir / "final_metrics.json").exists()
+    wrapper = json.loads((run_dir / "cell_wrapper.json").read_text())
+    assert wrapper == {"phase": "score-test", "exp_id": exp_id}
+
+
+def test_cell_scoring_signal_requeues_before_final_metrics_exist(
+    tmp_path,
+    monkeypatch,
+):
+    runs = tmp_path / "runs"
+    exp_id = "score-race-f100-s0"
+    run_dir = runs / exp_id
+    request_dir = tmp_path / "requests"
+    request_dir.mkdir()
+    monkeypatch.setenv("H100_REQUEUE_REQUEST_DIR", str(request_dir))
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
+    monkeypatch.setenv("SLURM_JOB_ID", "job-score-race")
+    monkeypatch.setattr(h100_cell, "assert_sitecustomize_active", lambda: None)
+    monkeypatch.setattr(h100_cell, "assert_launch_process_contract", lambda: None)
+
+    class TrainProcess:
+        pid = 7655
+
+        def poll(self):
+            return None
+
+        def wait(self):
+            checkpoints = run_dir / "checkpoints"
+            checkpoints.mkdir(parents=True)
+            (checkpoints / "best.ckpt").write_bytes(b"best")
+            (checkpoints / "last.ckpt").write_bytes(b"last")
+            return 0
+
+    class ScoreProcess:
+        pid = 7656
+
+        def poll(self):
+            return None
+
+        def send_signal(self, _signum):
+            raise ProcessLookupError
+
+        def wait(self):
+            signal.raise_signal(signal.SIGUSR1)
+            return 0
+
+    processes = iter((TrainProcess(), ScoreProcess()))
+    monkeypatch.setattr(
+        h100_cell.subprocess,
+        "Popen",
+        lambda *_args, **_kwargs: next(processes),
+    )
+    args = SimpleNamespace(
+        repo=REPO,
+        runs_root=runs,
+        exp_id=exp_id,
+        init="convnext_random",
+        label_frac=1.0,
+        git_sha=RUNTIME_GIT_SHA,
+        workers=1,
+    )
+
+    assert h100_cell.run_cell(args) == h100_cell.PREEMPTED_EXIT_CODE
+    assert (request_dir / "gpu-0.request").read_text() == "job-score-race\n"
+    assert not (run_dir / "final_metrics.json").exists()
+    wrapper = json.loads((run_dir / "cell_wrapper.json").read_text())
+    assert wrapper == {"phase": "score-test", "exp_id": exp_id}
 
 
 def test_final_grid_requires_exact_32_finite_rows_and_monotonicity(tmp_path, monkeypatch):
@@ -670,7 +1117,14 @@ def test_campaign_wires_shared_wrapper_and_single_controller_lock():
     assert "fcntl.LOCK_EX | fcntl.LOCK_NB" in source
     assert '"src.analysis.curves",\n            "collect"' in source
     assert '"schema": 2' in source
-    for token in ("venv_sha256", "venv_build_sha256", "base_python", "base_payload", "runtime_amendment"):
+    for token in (
+        "venv_sha256",
+        "venv_build_sha256",
+        "base_python",
+        "wheelhouse",
+        "base_payload",
+        "runtime_amendment",
+    ):
         assert token in source
 
 
@@ -793,6 +1247,7 @@ def test_acceptance_probe_marker_requires_finite_fp32_batch16(tmp_path):
         "train_loss": 1.5,
         "git_sha": "git",
         "detector_sha256": "detector",
+        "h100_runtime_contract": h100_runtime_contract(),
     }))
     acceptance.validate_probe_marker(marker, "probe", expected_git_sha="git", expected_detector_sha256="detector")
     payload = json.loads(marker.read_text())
@@ -914,7 +1369,7 @@ def test_slurm_smoke_binding_lock_distinguishes_both_transfers(tmp_path):
 
 def test_native_venv_builder_is_final_path_offline_and_copies_python():
     source = (REPO / "scripts/h100/build_venv.py").read_text()
-    assert 'EXPECTED_PYTHON_VERSION = "3.11.13"' in source
+    assert 'EXPECTED_PYTHON_VERSION = "3.11.15"' in source
     assert '"venv",\n                "--copies"' in source
     assert '"--no-index"' in source
     assert '"--only-binary=:all:"' in source
@@ -956,14 +1411,14 @@ def test_slurm_native_defaults_identity_order_and_clean_runtime_are_static():
     assert "#SBATCH --mem=256G" in job
     assert "#SBATCH --time=1-12:30:00" in job
     assert "#SBATCH --signal=B:USR1@900" in job and "#SBATCH --requeue" in job
-    assert job.index("export NVIDIA_TF32_OVERRIDE=0") < job.index('source "$site_env"')
+    assert job.index("export NVIDIA_TF32_OVERRIDE=0") < job.index('source "$compute_site"')
     assert job.index("scratch_free=") < job.index("scripts.handoff extract")
     assert 'git clone "$H100_RUNTIME_BUNDLE" "$repo"' in job
     assert 'git clone "$base_repo_bundle"' not in job
     assert '"$repo/scripts/h100/build_venv.py" verify' in job
     assert '"$H100_VENV_ROOT/bin/python"' in job
     assert "/usr/bin/env -i" in job
-    assert "source " not in job[job.index("native_env=("):].replace('source "$site_env"', "")
+    assert "source " not in job[job.index("native_env=(") :]
     assert 'ln -s "$H100_RUNS_ROOT" "$repo/runs"' in job
     assert "500000000000" in job
     assert "unset BOX_JWT_CONFIG BOX_FOLDER_ID" in job
@@ -1036,6 +1491,9 @@ def test_cutover_validates_schema2_native_ready_and_rejects_v1_sif(tmp_path):
         expected_venv_sha256=VENV_SHA256,
         expected_venv_build_sha256=VENV_BUILD_SHA256,
         expected_base_python_sha256=BASE_PYTHON_SHA256,
+        expected_base_python_runtime_sha256=BASE_PYTHON_RUNTIME_SHA256,
+        expected_wheelhouse_sha256=WHEELHOUSE_SHA256,
+        expected_base_extraction_receipt_sha256=BASE_EXTRACTION_RECEIPT_SHA256,
         expected_base_payload=base_payload(),
         expected_runtime_amendment=runtime_amendment(),
         expected_frozen_sha256=frozen_hashes(),
@@ -1053,6 +1511,11 @@ def test_cutover_validates_schema2_native_ready_and_rejects_v1_sif(tmp_path):
             expected_venv_sha256=VENV_SHA256,
             expected_venv_build_sha256=VENV_BUILD_SHA256,
             expected_base_python_sha256=BASE_PYTHON_SHA256,
+            expected_base_python_runtime_sha256=BASE_PYTHON_RUNTIME_SHA256,
+            expected_wheelhouse_sha256=WHEELHOUSE_SHA256,
+            expected_base_extraction_receipt_sha256=(
+                BASE_EXTRACTION_RECEIPT_SHA256
+            ),
             expected_base_payload=base_payload(),
             expected_runtime_amendment=runtime_amendment(),
             expected_frozen_sha256=frozen_hashes(),

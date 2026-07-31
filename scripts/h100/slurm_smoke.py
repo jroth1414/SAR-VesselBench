@@ -67,6 +67,9 @@ def make_bindings(
     venv_sha256: str,
     venv_build_sha256: str,
     base_python_sha256: str,
+    base_python_runtime_sha256: str,
+    wheelhouse_sha256: str,
+    base_extraction_receipt_sha256: str,
     base_payload: Mapping[str, str],
     runtime_amendment: Mapping[str, str],
 ) -> dict:
@@ -79,6 +82,9 @@ def make_bindings(
             "sha256": venv_sha256,
             "build_receipt_sha256": venv_build_sha256,
             "base_python_sha256": base_python_sha256,
+            "base_python_runtime_sha256": base_python_runtime_sha256,
+            "wheelhouse_sha256": wheelhouse_sha256,
+            "base_extraction_receipt_sha256": base_extraction_receipt_sha256,
         },
         "base_payload": dict(base_payload),
         "runtime_amendment": dict(runtime_amendment),
@@ -140,6 +146,9 @@ def _validate_bindings(bindings: object) -> None:
         "sha256",
         "build_receipt_sha256",
         "base_python_sha256",
+        "base_python_runtime_sha256",
+        "wheelhouse_sha256",
+        "base_extraction_receipt_sha256",
     }:
         raise RuntimeError("Slurm smoke native-venv binding keys are invalid")
     git_sha = source["git_sha"]
@@ -572,6 +581,9 @@ def _binding_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--venv-sha256", required=True)
     parser.add_argument("--venv-build-sha256", required=True)
     parser.add_argument("--base-python-sha256", required=True)
+    parser.add_argument("--base-python-runtime-sha256", required=True)
+    parser.add_argument("--wheelhouse-sha256", required=True)
+    parser.add_argument("--base-extraction-receipt-sha256", required=True)
     for prefix in ("base-payload", "runtime-amendment"):
         parser.add_argument(f"--{prefix}-package-id", required=True)
         parser.add_argument(f"--{prefix}-git-sha", required=True)
@@ -605,6 +617,9 @@ def _bindings_from_args(args: argparse.Namespace) -> dict:
         venv_sha256=args.venv_sha256,
         venv_build_sha256=args.venv_build_sha256,
         base_python_sha256=args.base_python_sha256,
+        base_python_runtime_sha256=args.base_python_runtime_sha256,
+        wheelhouse_sha256=args.wheelhouse_sha256,
+        base_extraction_receipt_sha256=args.base_extraction_receipt_sha256,
         base_payload=base_payload,
         runtime_amendment=runtime_amendment,
     )

@@ -11,6 +11,7 @@ import subprocess
 import sys
 import time
 import uuid
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -29,12 +30,14 @@ from scripts.h100.contracts import (
 )
 from scripts.h100.build_venv import verify as verify_native_venv
 from scripts.h100.host_test_gate import HOST_TESTS, validate_host_gate
+from scripts.h100.lightning_contract import validate_trainer_contract_evidence
 from scripts.h100.precision import assert_sitecustomize_active
 from scripts.h100.slurm_smoke import (
     make_bindings as make_smoke_bindings,
     validate_smoke_receipt,
 )
 from scripts.h100.source_validation import validate_source_receipt
+from scripts.h100.wheelhouse import validate_base_extraction_receipt
 
 WEIGHT_SUBDIRS = (
     "satdino",
@@ -187,6 +190,30 @@ def guarded_python(*args: str) -> list[str]:
     ]
 
 
+def validate_hardware_runtime_contracts(hardware: object) -> list[dict]:
+    """Require one verified Lightning contract from every H100 child probe."""
+
+    if not isinstance(hardware, Mapping):
+        raise RuntimeError("H100 hardware probe is not a JSON object")
+    children = hardware.get("child_probes")
+    if not isinstance(children, list) or len(children) != 8:
+        raise RuntimeError("H100 hardware probe lacks eight child runtime contracts")
+    validated: list[dict] = []
+    for index, child in enumerate(children):
+        if not isinstance(child, Mapping):
+            raise RuntimeError(f"H100 child probe {index} is not a JSON object")
+        try:
+            contract = validate_trainer_contract_evidence(
+                child.get("runtime_contract")
+            )
+        except RuntimeError as exc:
+            raise RuntimeError(
+                f"H100 child probe {index} lacks a valid Lightning contract"
+            ) from exc
+        validated.append(contract)
+    return validated
+
+
 def validate_probe_marker(
     path: Path,
     expected_exp_id: str,
@@ -216,6 +243,10 @@ def validate_probe_marker(
             finite = False
         if not finite:
             mismatches[key] = ("finite", payload.get(key))
+    try:
+        validate_trainer_contract_evidence(payload.get("h100_runtime_contract"))
+    except RuntimeError as exc:
+        mismatches["h100_runtime_contract"] = ("valid", str(exc))
     if mismatches:
         raise RuntimeError(f"invalid strict-FP32 acceptance result {path}: {mismatches}")
     for name in ("best.ckpt", "last.ckpt"):
@@ -284,6 +315,11 @@ def run_acceptance(args: argparse.Namespace) -> dict:
         venv_sha256=args.venv_sha256,
         venv_build_sha256=args.venv_build_sha256,
         base_python_sha256=args.base_python_sha256,
+        base_python_runtime_sha256=args.base_python_runtime_sha256,
+        wheelhouse_sha256=args.wheelhouse_sha256,
+        base_extraction_receipt_sha256=(
+            args.base_extraction_receipt_sha256
+        ),
         base_payload=expected_base_payload,
         runtime_amendment=expected_runtime_amendment,
     )
@@ -297,10 +333,37 @@ def run_acceptance(args: argparse.Namespace) -> dict:
         repo=repo,
         venv_root=args.venv_root,
         base_python=args.base_python,
+        wheelhouse=args.wheelhouse,
+        base_extraction_receipt=args.base_extraction_receipt,
         expected_venv_sha256=args.venv_sha256,
         expected_receipt_sha256=args.venv_build_sha256,
         expected_base_python_sha256=args.base_python_sha256,
+        expected_base_python_runtime_sha256=args.base_python_runtime_sha256,
+        expected_wheelhouse_sha256=args.wheelhouse_sha256,
+        expected_base_extraction_receipt_sha256=(
+            args.base_extraction_receipt_sha256
+        ),
+        expected_base_payload_package_id=expected_base_payload["package_id"],
+        expected_base_payload_manifest_sha256=(
+            expected_base_payload["manifest_sha256"]
+        ),
     )
+    staged_payload = scratch / "payload"
+    staged_base_extraction = validate_base_extraction_receipt(
+        staged_payload / "HANDOFF_EXTRACTED.json",
+        wheelhouse=staged_payload / "environment/wheelhouse",
+        expected_package_id=expected_base_payload["package_id"],
+        expected_manifest_sha256=expected_base_payload["manifest_sha256"],
+        expected_receipt_sha256=args.base_extraction_receipt_sha256,
+        expected_wheelhouse_sha256=args.wheelhouse_sha256,
+    )
+    if (
+        staged_base_extraction["receipt"].get("wheelhouse")
+        != venv_receipt.get("wheelhouse", {}).get("identity")
+    ):
+        raise RuntimeError(
+            "fresh scratch extraction wheelhouse differs from native-venv build"
+        )
     meta_root = runs_root / ".h100"
     persisted_receipt = meta_root / "venv_build.json"
     if (
@@ -370,6 +433,7 @@ def run_acceptance(args: argparse.Namespace) -> dict:
     )
     hardware_seconds = time.monotonic() - hardware_seconds
     hardware = json.loads(completed.stdout)
+    validate_hardware_runtime_contracts(hardware)
     atomic_write_json(meta_root / "h100_runtime.json", hardware)
 
     # Both families cross a real forward/backward/dev-inference path.  The
@@ -524,6 +588,8 @@ def run_acceptance(args: argparse.Namespace) -> dict:
             "sha256": args.venv_sha256,
             "venv_build_sha256": args.venv_build_sha256,
             "base_python": venv_receipt["base_python"],
+            "wheelhouse": venv_receipt["wheelhouse"],
+            "staged_base_extraction": staged_base_extraction,
         },
         "base_payload": expected_base_payload,
         "runtime_amendment": expected_runtime_amendment,
@@ -566,6 +632,11 @@ def main() -> int:
     parser.add_argument("--venv-build-sha256", required=True)
     parser.add_argument("--base-python", type=Path, required=True)
     parser.add_argument("--base-python-sha256", required=True)
+    parser.add_argument("--base-python-runtime-sha256", required=True)
+    parser.add_argument("--wheelhouse", type=Path, required=True)
+    parser.add_argument("--wheelhouse-sha256", required=True)
+    parser.add_argument("--base-extraction-receipt", type=Path, required=True)
+    parser.add_argument("--base-extraction-receipt-sha256", required=True)
     parser.add_argument("--expected-git-sha", required=True)
     parser.add_argument("--source-validation-json", type=Path, required=True)
     parser.add_argument("--source-validation-sha256", required=True)

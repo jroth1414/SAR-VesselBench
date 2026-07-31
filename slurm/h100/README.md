@@ -35,7 +35,7 @@ replaced. Both transfer identities remain bound in every readiness receipt.
 
 ## 2. Build the persistent native venv
 
-Provide an executable Python 3.11.13 installation on Judy, record the SHA-256
+Provide an executable Python 3.11.15 installation on Judy, record the SHA-256
 of its resolved executable, and build directly at the final persistent path
 from the base payload's verified offline wheelhouse:
 
@@ -43,7 +43,10 @@ from the base payload's verified offline wheelhouse:
 /path/to/requirements-transfer-python -m scripts.h100.build_venv build \
   --repo /path/to/cloned/repo \
   --wheelhouse /path/to/extracted/environment/wheelhouse \
-  --base-python /path/to/python-3.11.13/bin/python3.11 \
+  --base-extraction-receipt /path/to/extracted/HANDOFF_EXTRACTED.json \
+  --expected-base-payload-package-id xview3-h100-fp32-2726199efcebbebc89156e708b89df2a3415468a \
+  --expected-base-payload-manifest-sha256 fccb0b505c89836a148afec709bb799f7af4908d955ea1b142e153154d830896 \
+  --base-python /path/to/python-3.11.15/bin/python3.11 \
   --output /persistent/venvs/xview3-h100-fp32
 ```
 
@@ -52,8 +55,12 @@ The builder uses `venv --copies`, installs only from the wheelhouse with
 `locks/env-v100node.txt`, removes bytecode, seals the tree read-only, and
 writes `<venv>.sha256` plus `<venv>.build.json`; the build JSON is published
 last. The venv is non-relocatable. Every allocation rehashes and verifies the
-complete tree, receipt, exact base Python, environment lock, and `pip check`
-before running the exact `<venv>/bin/python` path. There is no activation.
+complete tree, receipt, environment lock, `pip check`, wheelhouse tree, canonical
+base-extraction receipt, and full base-Python runtime closure (resolved
+executable, stdlib/platstdlib without mutable caches or base site packages,
+libpython, and the probed mapped system libraries) before running the exact
+`<venv>/bin/python` path. Acceptance also compares a fresh scratch extraction
+to the persistent build extraction. There is no activation.
 
 The native process starts under `env -i` with an allocation-local home/cache,
 offline package/model settings, `PYTHONNOUSERSITE=1`, and only enumerated CUDA

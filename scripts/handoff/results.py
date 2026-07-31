@@ -133,6 +133,7 @@ def _result_identity(campaign: Mapping[str, object]) -> tuple[dict[str, object],
         "venv_sha256": campaign.get("venv_sha256"),
         "venv_build_sha256": campaign.get("venv_build_sha256"),
         "base_python": campaign.get("base_python"),
+        "wheelhouse": campaign.get("wheelhouse"),
         "base_payload": campaign.get("base_payload"),
         "runtime_amendment": campaign.get("runtime_amendment"),
         "acceptance_uuid": acceptance.get("uuid"),
@@ -366,7 +367,33 @@ def _validate_campaign(
     venv_build_sha256 = sha256_file(build_path)
     base_python = _mapping(accepted_venv.get("base_python"), "base-Python identity")
     base_python_sha256 = str(base_python.get("executable_sha256", ""))
-    if not _HEX64.fullmatch(venv_sha256) or not _HEX64.fullmatch(base_python_sha256):
+    base_python_runtime = _mapping(
+        base_python.get("runtime"), "base-Python runtime identity"
+    )
+    base_python_runtime_sha256 = str(base_python_runtime.get("sha256", ""))
+    wheelhouse = _mapping(
+        accepted_venv.get("wheelhouse"), "native-venv wheelhouse identity"
+    )
+    wheelhouse_identity = _mapping(
+        wheelhouse.get("identity"), "wheelhouse tree identity"
+    )
+    wheelhouse_sha256 = str(wheelhouse_identity.get("sha256", ""))
+    base_extraction = _mapping(
+        wheelhouse.get("base_extraction"), "base extraction identity"
+    )
+    base_extraction_receipt_sha256 = str(base_extraction.get("sha256", ""))
+    base_extraction_receipt = Path(str(base_extraction.get("path", "")))
+    wheelhouse_path = base_extraction_receipt.parent / "environment/wheelhouse"
+    if any(
+        not _HEX64.fullmatch(value)
+        for value in (
+            venv_sha256,
+            base_python_sha256,
+            base_python_runtime_sha256,
+            wheelhouse_sha256,
+            base_extraction_receipt_sha256,
+        )
+    ):
         raise PackageError("H100 acceptance native-venv identity is invalid")
     if accepted_venv.get("venv_build_sha256") != venv_build_sha256:
         raise PackageError("H100 acceptance native-venv receipt hash mismatch")
@@ -375,9 +402,18 @@ def _validate_campaign(
             repo=repo,
             venv_root=Path(str(accepted_venv.get("path", ""))),
             base_python=Path(str(base_python.get("requested_path", ""))),
+            wheelhouse=wheelhouse_path,
+            base_extraction_receipt=base_extraction_receipt,
             expected_venv_sha256=venv_sha256,
             expected_receipt_sha256=venv_build_sha256,
             expected_base_python_sha256=base_python_sha256,
+            expected_base_python_runtime_sha256=base_python_runtime_sha256,
+            expected_wheelhouse_sha256=wheelhouse_sha256,
+            expected_base_extraction_receipt_sha256=(
+                base_extraction_receipt_sha256
+            ),
+            expected_base_payload_package_id=base_payload["package_id"],
+            expected_base_payload_manifest_sha256=base_payload["manifest_sha256"],
         )
     except (OSError, RuntimeError, ValueError) as exc:
         raise PackageError(f"native venv failed reverse-package verification: {exc}") from exc
@@ -391,6 +427,9 @@ def _validate_campaign(
         venv_sha256=venv_sha256,
         venv_build_sha256=venv_build_sha256,
         base_python_sha256=base_python_sha256,
+        base_python_runtime_sha256=base_python_runtime_sha256,
+        wheelhouse_sha256=wheelhouse_sha256,
+        base_extraction_receipt_sha256=base_extraction_receipt_sha256,
         base_payload=base_payload,
         runtime_amendment=runtime_amendment,
     )
@@ -407,6 +446,11 @@ def _validate_campaign(
         expected_venv_sha256=venv_sha256,
         expected_venv_build_sha256=venv_build_sha256,
         expected_base_python_sha256=base_python_sha256,
+        expected_base_python_runtime_sha256=base_python_runtime_sha256,
+        expected_wheelhouse_sha256=wheelhouse_sha256,
+        expected_base_extraction_receipt_sha256=(
+            base_extraction_receipt_sha256
+        ),
         expected_base_payload=base_payload,
         expected_runtime_amendment=runtime_amendment,
         expected_frozen_sha256=expected_frozen,
@@ -515,6 +559,7 @@ def _validate_campaign(
             "venv_sha256": venv_sha256,
             "venv_build_sha256": venv_build_sha256,
             "base_python": base_python,
+            "wheelhouse": wheelhouse,
             "base_payload": base_payload,
             "runtime_amendment": runtime_amendment,
             "strict_fp32": strict_fp32,
@@ -674,6 +719,7 @@ def _validate_campaign(
         "venv_sha256": venv_sha256,
         "venv_build_sha256": venv_build_sha256,
         "base_python": base_python,
+        "wheelhouse": wheelhouse,
         "base_payload": base_payload,
         "runtime_amendment": runtime_amendment,
         "strict_fp32": strict_fp32,
@@ -800,6 +846,7 @@ def _run_entries(
         venv_sha256=str(campaign["venv_sha256"]),
         venv_build_sha256=str(campaign["venv_build_sha256"]),
         base_python=context["base_python"],  # type: ignore[arg-type]
+        wheelhouse=context["wheelhouse"],  # type: ignore[arg-type]
         base_payload=context["base_payload"],  # type: ignore[arg-type]
         runtime_amendment=context["runtime_amendment"],  # type: ignore[arg-type]
         acceptance_uuid=str(
@@ -1234,6 +1281,7 @@ def build_results_package(
                 "venv_sha256": campaign.get("venv_sha256"),
                 "venv_build_sha256": campaign.get("venv_build_sha256"),
                 "base_python": campaign.get("base_python"),
+                "wheelhouse": context["wheelhouse"],
                 "base_payload": context["base_payload"],
                 "runtime_amendment": context["runtime_amendment"],
                 "acceptance_uuid": _mapping(

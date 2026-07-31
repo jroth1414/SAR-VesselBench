@@ -6,6 +6,11 @@ import copy
 
 import pytest
 
+from scripts.h100.lightning_contract import (
+    CUDA_ACCELERATOR,
+    PRECISION_PLUGIN,
+    SINGLE_DEVICE_STRATEGY,
+)
 from scripts.h100.strict_fp32_probe import bind_child_probes
 
 
@@ -14,6 +19,47 @@ BACKEND = {
     "cudnn_conv_fp32_precision": "ieee",
     "cudnn_rnn_fp32_precision": "ieee",
 }
+
+
+def _runtime_contract() -> dict:
+    return {
+        "schema": 1,
+        "status": "verified",
+        "pre_trainer": {
+            "schema": 1,
+            "status": "verified",
+            "stage": "pre-trainer",
+            "precision": "32-true",
+            "devices": 1,
+            "micro_batch": 16,
+            "gradient_accumulation": 1,
+            "effective_batch": 16,
+            "strict_fp32": dict(BACKEND),
+            "autocast": {"global": False, "cuda": False, "cpu": False},
+            "process": {
+                "WORLD_SIZE": "unset",
+                "SLURM_NTASKS": "unset",
+                "effective_world_size": 1,
+            },
+            "model": {
+                "floating_parameter_count": 2,
+                "floating_parameter_dtypes": ["torch.float32"],
+            },
+        },
+        "resolved_trainer": {
+            "accelerator": CUDA_ACCELERATOR,
+            "precision_plugin": PRECISION_PLUGIN,
+            "precision": "32-true",
+            "gradient_scaler": None,
+            "strategy": SINGLE_DEVICE_STRATEGY,
+            "root_device_type": "cuda",
+            "root_device_index": 0,
+            "num_devices": 1,
+            "world_size": 1,
+            "device_ids": [0],
+            "gradient_accumulation": 1,
+        },
+    }
 
 
 def _inventory() -> list[dict]:
@@ -35,6 +81,7 @@ def _children(inventory: list[dict]) -> list[dict]:
             "device": {**device, "index": 0},
             "backend": dict(BACKEND),
             "finite": True,
+            "runtime_contract": _runtime_contract(),
         }
         for device in inventory
     ]
@@ -57,7 +104,10 @@ def test_child_probes_bind_each_visible_device_to_requested_parent_gpu():
     ]
 
 
-@pytest.mark.parametrize("failure", ["wrong_uuid", "reused_uuid", "wrong_backend"])
+@pytest.mark.parametrize(
+    "failure",
+    ["wrong_uuid", "reused_uuid", "wrong_backend", "runtime_contract"],
+)
 def test_child_probe_mapping_rejects_mismatched_or_reused_devices(failure):
     inventory = _inventory()
     children = _children(inventory)
@@ -65,8 +115,10 @@ def test_child_probe_mapping_rejects_mismatched_or_reused_devices(failure):
         children[3]["device"]["uuid"] = "GPU-NOT-THE-REQUESTED-CARD"
     elif failure == "reused_uuid":
         children[3]["device"] = copy.deepcopy(children[2]["device"])
-    else:
+    elif failure == "wrong_backend":
         children[3]["backend"]["cuda_matmul_fp32_precision"] = "tf32"
+    else:
+        children[3]["runtime_contract"]["resolved_trainer"]["world_size"] = 8
 
     with pytest.raises(RuntimeError, match="child probe"):
         bind_child_probes(

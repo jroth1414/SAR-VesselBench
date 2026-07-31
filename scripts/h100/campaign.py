@@ -34,6 +34,7 @@ from scripts.h100.contracts import (
     validate_bound_cutover_forecast,
     validate_gpu_inventory,
 )
+from scripts.h100.lightning_contract import validate_trainer_contract_evidence
 from scripts.h100.precision import assert_sitecustomize_active
 from scripts.h100.source_validation import validate_source_receipt
 
@@ -96,6 +97,7 @@ def validate_runtime_provenance(
     venv_sha256: str,
     venv_build_sha256: str,
     base_python: Mapping[str, object],
+    wheelhouse: Mapping[str, object],
     base_payload: Mapping[str, str],
     runtime_amendment: Mapping[str, str],
     acceptance_uuid: str,
@@ -114,6 +116,7 @@ def validate_runtime_provenance(
         "venv_sha256": venv_sha256,
         "venv_build_sha256": venv_build_sha256,
         "base_python": dict(base_python),
+        "wheelhouse": dict(wheelhouse),
         "base_payload": dict(base_payload),
         "runtime_amendment": dict(runtime_amendment),
         "acceptance_uuid": acceptance_uuid,
@@ -189,6 +192,10 @@ def validate_scored_completion(
         checkpoint = run_dir / "checkpoints" / name
         if not checkpoint.is_file() or checkpoint.stat().st_size <= 0:
             mismatches[name] = ("nonempty checkpoint", None)
+    try:
+        validate_trainer_contract_evidence(payload.get("h100_runtime_contract"))
+    except RuntimeError as exc:
+        mismatches["h100_runtime_contract"] = ("valid", str(exc))
     if mismatches:
         raise RuntimeError(f"{cell.exp_id} is not fully train+test complete: {mismatches}")
     return payload
@@ -220,6 +227,7 @@ def existing_cell_state(
     venv_sha256: str,
     venv_build_sha256: str,
     base_python: Mapping[str, object],
+    wheelhouse: Mapping[str, object],
     base_payload: Mapping[str, str],
     runtime_amendment: Mapping[str, str],
     acceptance_uuid: str,
@@ -270,6 +278,7 @@ def existing_cell_state(
         venv_sha256=venv_sha256,
         venv_build_sha256=venv_build_sha256,
         base_python=base_python,
+        wheelhouse=wheelhouse,
         base_payload=base_payload,
         runtime_amendment=runtime_amendment,
         acceptance_uuid=acceptance_uuid,
@@ -318,6 +327,7 @@ def finalized_cell_runtime(
         or provenance.get("epochs_run") != marker.get("epochs_run")
         or provenance.get("best_dev_f1") != marker.get("best_dev_f1")
         or provenance.get("test_f1") != marker.get("test_f1")
+        or provenance.get("h100_runtime_contract") != marker.get("h100_runtime_contract")
     ):
         raise RuntimeError(f"{exp_id}: finalized runtime/marker binding mismatch")
     return {
@@ -338,6 +348,7 @@ def validate_failed_namespace(
     venv_sha256: str,
     venv_build_sha256: str,
     base_python: Mapping[str, object],
+    wheelhouse: Mapping[str, object],
     base_payload: Mapping[str, str],
     runtime_amendment: Mapping[str, str],
     acceptance_uuid: str,
@@ -361,6 +372,7 @@ def validate_failed_namespace(
         venv_sha256=venv_sha256,
         venv_build_sha256=venv_build_sha256,
         base_python=base_python,
+        wheelhouse=wheelhouse,
         base_payload=base_payload,
         runtime_amendment=runtime_amendment,
         acceptance_uuid=acceptance_uuid,
@@ -545,8 +557,27 @@ class Controller:
             raise RuntimeError("campaign accepted base-Python identity is invalid")
         self.base_payload = dict(self.acceptance.get("base_payload", {}))
         self.runtime_amendment = dict(self.acceptance.get("runtime_amendment", {}))
-        if not self.base_payload or not self.runtime_amendment:
-            raise RuntimeError("campaign transfer identities are absent")
+        self.wheelhouse = dict(accepted_venv.get("wheelhouse", {}))
+        wheelhouse_identity = self.wheelhouse.get("identity")
+        base_extraction = self.wheelhouse.get("base_extraction")
+        extraction_receipt = (
+            base_extraction.get("receipt")
+            if isinstance(base_extraction, Mapping)
+            else None
+        )
+        if (
+            not self.base_payload
+            or not self.runtime_amendment
+            or not isinstance(wheelhouse_identity, Mapping)
+            or not str(wheelhouse_identity.get("sha256", ""))
+            or not isinstance(extraction_receipt, Mapping)
+            or extraction_receipt.get("package_id")
+            != self.base_payload.get("package_id")
+            or extraction_receipt.get("manifest_sha256")
+            != self.base_payload.get("manifest_sha256")
+            or extraction_receipt.get("wheelhouse") != wheelhouse_identity
+        ):
+            raise RuntimeError("campaign transfer/wheelhouse identities are invalid")
         self.acceptance_uuid = str(self.acceptance.get("acceptance_uuid", ""))
         if not self.acceptance_uuid:
             raise RuntimeError("campaign acceptance UUID is absent")
@@ -697,6 +728,7 @@ class Controller:
             "venv_sha256": self.venv_sha256,
             "venv_build_sha256": self.venv_build_sha256,
             "base_python": self.base_python,
+            "wheelhouse": self.wheelhouse,
             "base_payload": self.base_payload,
             "runtime_amendment": self.runtime_amendment,
             "acceptance_uuid": self.acceptance_uuid,
@@ -768,6 +800,7 @@ class Controller:
                 "venv_sha256": self.venv_sha256,
                 "venv_build_sha256": self.venv_build_sha256,
                 "base_python": self.base_python,
+                "wheelhouse": self.wheelhouse,
                 "base_payload": self.base_payload,
                 "runtime_amendment": self.runtime_amendment,
                 "acceptance_uuid": self.acceptance_uuid,
@@ -797,6 +830,7 @@ class Controller:
                     venv_sha256=self.venv_sha256,
                     venv_build_sha256=self.venv_build_sha256,
                     base_python=self.base_python,
+                    wheelhouse=self.wheelhouse,
                     base_payload=self.base_payload,
                     runtime_amendment=self.runtime_amendment,
                     acceptance_uuid=self.acceptance_uuid,
@@ -816,6 +850,7 @@ class Controller:
                 venv_sha256=self.venv_sha256,
                 venv_build_sha256=self.venv_build_sha256,
                 base_python=self.base_python,
+                wheelhouse=self.wheelhouse,
                 base_payload=self.base_payload,
                 runtime_amendment=self.runtime_amendment,
                 acceptance_uuid=self.acceptance_uuid,
@@ -882,6 +917,7 @@ class Controller:
             "venv_sha256": self.venv_sha256,
             "venv_build_sha256": self.venv_build_sha256,
             "base_python": self.base_python,
+            "wheelhouse": self.wheelhouse,
             "base_payload": self.base_payload,
             "runtime_amendment": self.runtime_amendment,
             "acceptance_uuid": self.acceptance_uuid,
@@ -946,11 +982,29 @@ class Controller:
         self.running[gpu] = (process, cell, time.monotonic())
         self.record("cell_launched", gpu=gpu, exp_id=cell.exp_id)
 
-    def poll(self) -> None:
+    def requeue_request_ready(self, gpu: int) -> bool:
+        request = self.request_dir / f"gpu-{gpu}.request"
+        try:
+            return (
+                request.is_file()
+                and not request.is_symlink()
+                and request.read_text(encoding="utf-8").strip()
+                == os.environ["SLURM_JOB_ID"]
+            )
+        except (OSError, UnicodeError):
+            return False
+
+    def poll(self, *, preemption_barrier: bool = False) -> None:
         for gpu in list(self.running):
             process, cell, started = self.running[gpu]
             code = process.poll()
             if code is None:
+                continue
+            if (
+                preemption_barrier
+                and code == HOST_REQUEUE_EXIT_CODE
+                and self.requeue_request_ready(gpu)
+            ):
                 continue
             elapsed = time.monotonic() - started
             del self.running[gpu]
@@ -976,6 +1030,7 @@ class Controller:
                         venv_sha256=self.venv_sha256,
                         venv_build_sha256=self.venv_build_sha256,
                         base_python=self.base_python,
+                        wheelhouse=self.wheelhouse,
                         base_payload=self.base_payload,
                         runtime_amendment=self.runtime_amendment,
                         acceptance_uuid=self.acceptance_uuid,
@@ -1005,6 +1060,7 @@ class Controller:
                         "best_dev_f1": payload.get("best_dev_f1"),
                         "test_f1": payload.get("test_f1"),
                         "test_scored_at": payload.get("test_scored_at"),
+                        "h100_runtime_contract": payload["h100_runtime_contract"],
                     }
                 )
                 atomic_write_json(provenance_path, provenance)
@@ -1056,34 +1112,99 @@ class Controller:
                 process.kill()
                 process.wait()
 
+    def finalize_grid(self) -> int:
+        if self.running or len(self.complete_ids) != len(self.cells):
+            raise RuntimeError("campaign grid finalization requires every cell complete")
+        try:
+            grid = collect_and_validate_grid(
+                repo=self.repo,
+                runs_root=self.runs_root,
+                cells=self.cells,
+                git_sha=self.git_sha,
+                detector_sha256=self.detector_sha256,
+            )
+        except (OSError, RuntimeError, subprocess.CalledProcessError) as exc:
+            self.failure_seen = True
+            self.record("grid_validation_failed", error=str(exc))
+            self.write_manifest(status="failed")
+            return 1
+        self.record(
+            "grid_validated",
+            path=str(grid),
+            sha256=sha256_file(grid),
+            rows=32,
+        )
+        self.write_manifest(status="complete")
+        return 0
+
     def preempt_and_requeue(self) -> int:
+        # A child may finish between the main-loop poll and SIGUSR1 forwarding.
+        # Finalize valid completions first; invalid or unbound exits fail closed.
+        self.poll(preemption_barrier=True)
+        if self.failure_seen:
+            self._stop_children()
+            self.running.clear()
+            self.record(
+                "preemption_invalid_child_exit",
+                failed_ids=sorted(self.failed_ids),
+            )
+            return 1
         if not self.running:
-            if self.failure_seen:
-                self.write_manifest(status="failed")
-                return 1
+            if len(self.complete_ids) == len(self.cells):
+                return self.finalize_grid()
             self.write_manifest(status="host-requeue-required")
-            if len(self.complete_ids) != len(self.cells):
-                return HOST_REQUEUE_EXIT_CODE
-            return 0
+            return HOST_REQUEUE_EXIT_CODE
         if not self.preemption_forwarded:
+            forwarded = 0
             for process, _cell, _started in self.running.values():
-                os.kill(process.pid, signal.SIGUSR1)
+                if process.poll() is not None:
+                    continue
+                try:
+                    os.kill(process.pid, signal.SIGUSR1)
+                    forwarded += 1
+                except ProcessLookupError:
+                    pass
             self.preemption_forwarded = True
-            self.record("usr1_forwarded", count=len(self.running))
+            self.record("usr1_forwarded", count=forwarded)
 
         deadline = time.monotonic() + self.args.checkpoint_timeout
-        expected = {
-            gpu: self.request_dir / f"gpu-{gpu}.request" for gpu in self.running
-        }
-        while time.monotonic() < deadline and not all(path.exists() for path in expected.values()):
+        while True:
+            self.poll(preemption_barrier=True)
+            if self.failure_seen:
+                self._stop_children()
+                self.running.clear()
+                self.record(
+                    "preemption_invalid_child_exit",
+                    failed_ids=sorted(self.failed_ids),
+                )
+                return 1
+            expected = list(self.running)
+            if all(self.requeue_request_ready(gpu) for gpu in expected):
+                break
+            if time.monotonic() >= deadline:
+                break
             time.sleep(1)
-        missing = [gpu for gpu, path in expected.items() if not path.exists()]
+        missing = [
+            gpu
+            for gpu in self.running
+            if not self.requeue_request_ready(gpu)
+        ]
         if missing:
             self.failure_seen = True
             self._stop_children()
             self.running.clear()
             self.record("preemption_checkpoint_timeout", missing_gpus=missing)
             return 1
+
+        # Every child may have completed successfully while the checkpoint
+        # barrier was polling. A fully complete matrix must still pass the
+        # same grid finalization as the normal controller loop; otherwise the
+        # allocation requeues to launch the remaining cells.
+        if not self.running:
+            if len(self.complete_ids) == len(self.cells):
+                return self.finalize_grid()
+            self.write_manifest(status="host-requeue-required")
+            return HOST_REQUEUE_EXIT_CODE
 
         for _gpu, (_process, cell, started) in self.running.items():
             checkpoint = checkpoint_for_preemption(self.runs_root / cell.exp_id)
@@ -1141,27 +1262,7 @@ class Controller:
                 self.write_manifest(status="failed")
                 return 1
             if len(self.complete_ids) == len(self.cells) and not self.running:
-                try:
-                    grid = collect_and_validate_grid(
-                        repo=self.repo,
-                        runs_root=self.runs_root,
-                        cells=self.cells,
-                        git_sha=self.git_sha,
-                        detector_sha256=self.detector_sha256,
-                    )
-                except (OSError, RuntimeError, subprocess.CalledProcessError) as exc:
-                    self.failure_seen = True
-                    self.record("grid_validation_failed", error=str(exc))
-                    self.write_manifest(status="failed")
-                    return 1
-                self.record(
-                    "grid_validated",
-                    path=str(grid),
-                    sha256=sha256_file(grid),
-                    rows=32,
-                )
-                self.write_manifest(status="complete")
-                return 0
+                return self.finalize_grid()
             time.sleep(self.args.poll_seconds)
 
 

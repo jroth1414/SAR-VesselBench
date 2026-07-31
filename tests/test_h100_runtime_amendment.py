@@ -35,6 +35,8 @@ def _fixture_repo(root: Path) -> tuple[Path, str, str]:
     files = {
         "locks/env-v100node.txt": "torch==2.11.0+cu126\n",
         "scripts/h100/build_venv.py": "RUNTIME = 'native-venv'\n",
+        "scripts/h100/lightning_contract.py": "CONTRACT = 'strict-fp32'\n",
+        "scripts/h100/wheelhouse.py": "WHEELHOUSE = 'verified-offline'\n",
         "slurm/h100/campaign.sbatch": "#!/bin/bash\n# native venv campaign\n",
         "slurm/h100/smoke.sbatch": "#!/bin/bash\n# native venv smoke\n",
         "slurm/h100/submit.sh": "#!/bin/bash\n# native venv submit\n",
@@ -70,6 +72,10 @@ def test_runtime_package_is_deterministic_code_only_and_extracts(
     output_b = tmp_path / "out-b"
     output_a.mkdir()
     output_b.mkdir()
+    assert {"scripts/h100/lightning_contract.py", "scripts/h100/wheelhouse.py"} <= set(
+        amendment._REQUIRED_RUNTIME_FILES
+    )
+
 
     package_a = amendment._build_runtime_amendment(
         repo_root=repo,

@@ -12,6 +12,10 @@ import sys
 from pathlib import Path
 
 from scripts.h100.contracts import EXPECTED_PRECISION, atomic_write_json, atomic_write_text
+from scripts.h100.lightning_contract import (
+    assert_launch_process_contract,
+    validate_trainer_contract_evidence,
+)
 from scripts.h100.precision import assert_sitecustomize_active
 
 PREEMPTED_EXIT_CODE = 75
@@ -46,6 +50,10 @@ def _validate_scored(run_dir: Path, exp_id: str) -> dict:
         checkpoint = run_dir / "checkpoints" / name
         if not checkpoint.is_file() or checkpoint.stat().st_size <= 0:
             mismatches[name] = ("nonempty checkpoint", None)
+    try:
+        validate_trainer_contract_evidence(payload.get("h100_runtime_contract"))
+    except RuntimeError as exc:
+        mismatches["h100_runtime_contract"] = ("valid", str(exc))
     if mismatches:
         raise RuntimeError(f"{exp_id}: incomplete train+test cell: {mismatches}")
     return payload
@@ -53,11 +61,27 @@ def _validate_scored(run_dir: Path, exp_id: str) -> dict:
 
 def run_cell(args: argparse.Namespace) -> int:
     assert_sitecustomize_active()
+    assert_launch_process_contract()
     repo = args.repo.resolve()
     runs_root = args.runs_root.resolve()
     run_dir = runs_root / args.exp_id
     state_path = run_dir / "cell_wrapper.json"
     active: dict[str, object] = {"process": None, "phase": None, "preempted": False}
+
+    def request_if_completed_during_signal_race() -> None:
+        request = Path(os.environ["H100_REQUEUE_REQUEST_DIR"]) / (
+            f"gpu-{os.environ['CUDA_VISIBLE_DEVICES']}.request"
+        )
+        if request.is_file() and not request.is_symlink():
+            return
+        best = run_dir / "checkpoints/best.ckpt"
+        last = run_dir / "checkpoints/last.ckpt"
+        if all(path.is_file() and path.stat().st_size > 0 for path in (best, last)):
+            active["phase"] = "score-test"
+            atomic_write_json(
+                state_path, {"phase": "score-test", "exp_id": args.exp_id}
+            )
+            _request_requeue()
 
     def on_usr1(_signum, _frame) -> None:
         active["preempted"] = True
@@ -74,16 +98,23 @@ def run_cell(args: argparse.Namespace) -> int:
                 pass
         # Scoring is restartable from the already-durable best/last pair; it
         # has no Lightning loop that could issue the deferred request itself.
-        final = run_dir / "final_metrics.json"
         best = run_dir / "checkpoints/best.ckpt"
         last = run_dir / "checkpoints/last.ckpt"
-        if not final.is_file() or not best.is_file() or not last.is_file():
+        if (
+            not best.is_file()
+            or best.stat().st_size <= 0
+            or not last.is_file()
+            or last.stat().st_size <= 0
+        ):
             return
         active["phase"] = "score-test"
         atomic_write_json(state_path, {"phase": "score-test", "exp_id": args.exp_id})
         _request_requeue()
         if process is not None and process.poll() is None:
-            process.send_signal(signal.SIGINT)
+            try:
+                process.send_signal(signal.SIGINT)
+            except ProcessLookupError:
+                pass
 
     def on_stop(signum, _frame) -> None:
         process = active["process"]
@@ -118,6 +149,8 @@ def run_cell(args: argparse.Namespace) -> int:
             active["process"] = subprocess.Popen(train, cwd=repo)
             code = active["process"].wait()
             if active["preempted"]:
+                if code == 0:
+                    request_if_completed_during_signal_race()
                 return PREEMPTED_EXIT_CODE
             if code != 0:
                 return code
@@ -137,6 +170,8 @@ def run_cell(args: argparse.Namespace) -> int:
         active["process"] = subprocess.Popen(score, cwd=repo)
         code = active["process"].wait()
         if active["preempted"]:
+            if code == 0:
+                request_if_completed_during_signal_race()
             return PREEMPTED_EXIT_CODE
         if code != 0:
             return code

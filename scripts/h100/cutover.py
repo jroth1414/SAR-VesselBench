@@ -11,7 +11,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Mapping
 
-from scripts.h100.acceptance import EXPECTED_FRACTION_WORKLOAD
+from scripts.h100.acceptance import (
+    EXPECTED_FRACTION_WORKLOAD,
+    validate_hardware_runtime_contracts,
+)
 from scripts.h100.build_venv import EXPECTED_PYTHON_VERSION
 from scripts.h100.contracts import (
     FROZEN_PATHS,
@@ -205,6 +208,9 @@ def validate_h100_ready(
     expected_venv_sha256: str,
     expected_venv_build_sha256: str,
     expected_base_python_sha256: str,
+    expected_base_python_runtime_sha256: str,
+    expected_wheelhouse_sha256: str,
+    expected_base_extraction_receipt_sha256: str,
     expected_base_payload: Mapping[str, str],
     expected_runtime_amendment: Mapping[str, str],
     expected_frozen_sha256: Mapping[str, str],
@@ -227,12 +233,61 @@ def validate_h100_ready(
     if accepted_venv.get("venv_build_sha256") != expected_venv_build_sha256:
         raise RuntimeError("H100-ready native-venv build receipt mismatch")
     base_python = accepted_venv.get("base_python")
+    base_python_runtime = (
+        base_python.get("runtime") if isinstance(base_python, Mapping) else None
+    )
     if (
         not isinstance(base_python, Mapping)
         or base_python.get("version") != EXPECTED_PYTHON_VERSION
         or base_python.get("executable_sha256") != expected_base_python_sha256
+        or not isinstance(base_python_runtime, Mapping)
+        or base_python_runtime.get("sha256")
+        != expected_base_python_runtime_sha256
     ):
         raise RuntimeError("H100-ready base-Python identity mismatch")
+    wheelhouse = accepted_venv.get("wheelhouse")
+    wheelhouse_identity = (
+        wheelhouse.get("identity") if isinstance(wheelhouse, Mapping) else None
+    )
+    base_extraction = (
+        wheelhouse.get("base_extraction")
+        if isinstance(wheelhouse, Mapping)
+        else None
+    )
+    extraction_receipt = (
+        base_extraction.get("receipt")
+        if isinstance(base_extraction, Mapping)
+        else None
+    )
+    staged_base_extraction = accepted_venv.get("staged_base_extraction")
+    staged_extraction_receipt = (
+        staged_base_extraction.get("receipt")
+        if isinstance(staged_base_extraction, Mapping)
+        else None
+    )
+    if (
+        not isinstance(wheelhouse_identity, Mapping)
+        or wheelhouse_identity.get("sha256") != expected_wheelhouse_sha256
+        or not isinstance(base_extraction, Mapping)
+        or base_extraction.get("sha256")
+        != expected_base_extraction_receipt_sha256
+        or not isinstance(extraction_receipt, Mapping)
+        or extraction_receipt.get("package_id")
+        != expected_base_payload.get("package_id")
+        or extraction_receipt.get("manifest_sha256")
+        != expected_base_payload.get("manifest_sha256")
+        or extraction_receipt.get("wheelhouse") != wheelhouse_identity
+        or not isinstance(staged_base_extraction, Mapping)
+        or staged_base_extraction.get("sha256")
+        != expected_base_extraction_receipt_sha256
+        or not isinstance(staged_extraction_receipt, Mapping)
+        or staged_extraction_receipt.get("package_id")
+        != expected_base_payload.get("package_id")
+        or staged_extraction_receipt.get("manifest_sha256")
+        != expected_base_payload.get("manifest_sha256")
+        or staged_extraction_receipt.get("wheelhouse") != wheelhouse_identity
+    ):
+        raise RuntimeError("H100-ready wheelhouse/base-extraction identity mismatch")
     if payload.get("base_payload") != dict(expected_base_payload):
         raise RuntimeError("H100-ready base-payload bindings mismatch")
     if payload.get("runtime_amendment") != dict(expected_runtime_amendment):
@@ -265,6 +320,7 @@ def validate_h100_ready(
     if set(payload.get("strict_fp32", {}).values()) != {"ieee"}:
         raise RuntimeError("H100-ready marker does not assert strict IEEE FP32")
     validate_gpu_inventory(payload.get("hardware", {}).get("devices", []))
+    validate_hardware_runtime_contracts(payload.get("hardware"))
     for key in ("torch", "cuda_build", "driver_version"):
         if not str(payload.get("hardware", {}).get(key, "")).strip():
             raise RuntimeError(f"H100-ready hardware lacks {key}")
@@ -471,6 +527,11 @@ def main() -> int:
     parser.add_argument("--expected-venv-sha256", required=True)
     parser.add_argument("--expected-venv-build-sha256", required=True)
     parser.add_argument("--expected-base-python-sha256", required=True)
+    parser.add_argument("--expected-base-python-runtime-sha256", required=True)
+    parser.add_argument("--expected-wheelhouse-sha256", required=True)
+    parser.add_argument(
+        "--expected-base-extraction-receipt-sha256", required=True
+    )
     parser.add_argument("--expected-base-payload-package-id", required=True)
     parser.add_argument("--expected-base-payload-git-sha", required=True)
     parser.add_argument("--expected-base-payload-manifest-sha256", required=True)
@@ -526,6 +587,13 @@ def main() -> int:
         venv_sha256=args.expected_venv_sha256,
         venv_build_sha256=args.expected_venv_build_sha256,
         base_python_sha256=args.expected_base_python_sha256,
+        base_python_runtime_sha256=(
+            args.expected_base_python_runtime_sha256
+        ),
+        wheelhouse_sha256=args.expected_wheelhouse_sha256,
+        base_extraction_receipt_sha256=(
+            args.expected_base_extraction_receipt_sha256
+        ),
         base_payload=expected_base_payload,
         runtime_amendment=expected_runtime_amendment,
     )
@@ -545,6 +613,13 @@ def main() -> int:
         expected_venv_sha256=args.expected_venv_sha256,
         expected_venv_build_sha256=args.expected_venv_build_sha256,
         expected_base_python_sha256=args.expected_base_python_sha256,
+        expected_base_python_runtime_sha256=(
+            args.expected_base_python_runtime_sha256
+        ),
+        expected_wheelhouse_sha256=args.expected_wheelhouse_sha256,
+        expected_base_extraction_receipt_sha256=(
+            args.expected_base_extraction_receipt_sha256
+        ),
         expected_base_payload=expected_base_payload,
         expected_runtime_amendment=expected_runtime_amendment,
         expected_frozen_sha256=expected_frozen,

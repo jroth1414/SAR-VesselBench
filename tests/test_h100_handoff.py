@@ -16,6 +16,7 @@ import yaml
 import scripts.handoff.box as handoff_box
 import scripts.handoff.package as handoff_package
 from scripts.h100.contracts import cutover_acceptance_bindings, load_cells
+from scripts.h100.wheelhouse import wheelhouse_identity
 from scripts.handoff.box import (
     BoxTransferError,
     CHUNKED_UPLOAD_THRESHOLD,
@@ -634,6 +635,12 @@ def test_production_verifier_binds_bundle_split_and_definition(
     ).read_bytes() == (
         options.repo_root / "containers/h100-strict-fp32.def"
     ).read_bytes()
+    extraction_receipt = json.loads(
+        (extracted / "HANDOFF_EXTRACTED.json").read_text(encoding="utf-8")
+    )
+    assert extraction_receipt["wheelhouse"] == wheelhouse_identity(
+        extracted / "environment/wheelhouse"
+    )
 
     manifest["scenes"]["chips"] = list(reversed(manifest["scenes"]["chips"]))
     _rewrite_package_controls(package, manifest)
@@ -1628,6 +1635,11 @@ def _write_result_fixture(
         sha256_file,
     )
     from scripts.h100.host_test_gate import HOST_COMMAND, HOST_TESTS
+    from scripts.h100.lightning_contract import (
+        CUDA_ACCELERATOR,
+        PRECISION_PLUGIN,
+        SINGLE_DEVICE_STRATEGY,
+    )
     from scripts.h100.source_validation import expected_receipt
 
     arms = {
@@ -1667,6 +1679,44 @@ def _write_result_fixture(
         "cudnn_conv_fp32_precision": "ieee",
         "cudnn_rnn_fp32_precision": "ieee",
     }
+    runtime_contract = {
+        "schema": 1,
+        "status": "verified",
+        "pre_trainer": {
+            "schema": 1,
+            "status": "verified",
+            "stage": "pre-trainer",
+            "precision": "32-true",
+            "devices": 1,
+            "micro_batch": 16,
+            "gradient_accumulation": 1,
+            "effective_batch": 16,
+            "strict_fp32": strict_fp32,
+            "autocast": {"global": False, "cuda": False, "cpu": False},
+            "process": {
+                "WORLD_SIZE": "1",
+                "SLURM_NTASKS": "1",
+                "effective_world_size": 1,
+            },
+            "model": {
+                "floating_parameter_count": 1,
+                "floating_parameter_dtypes": ["torch.float32"],
+            },
+        },
+        "resolved_trainer": {
+            "accelerator": CUDA_ACCELERATOR,
+            "precision_plugin": PRECISION_PLUGIN,
+            "precision": "32-true",
+            "gradient_scaler": None,
+            "strategy": SINGLE_DEVICE_STRATEGY,
+            "root_device_type": "cuda",
+            "root_device_index": 0,
+            "num_devices": 1,
+            "world_size": 1,
+            "device_ids": [0],
+            "gradient_accumulation": 1,
+        },
+    }
     base_payload = {
         "package_id": (
             "xview3-h100-fp32-"
@@ -1691,11 +1741,48 @@ def _write_result_fixture(
 
     base_python_path = meta / "python311/bin/python3.11"
     _write(base_python_path, b"fixture Python 3.11.15\n")
+    base_python_runtime_sha256 = "6" * 64
     base_python = {
         "version": "3.11.15",
         "requested_path": str(base_python_path),
         "resolved_path": str(base_python_path.resolve()),
         "executable_sha256": sha256_file(base_python_path),
+        "runtime": {
+            "algorithm": "xview3-base-python-runtime-v1",
+            "sha256": base_python_runtime_sha256,
+        },
+    }
+    wheelhouse_path = meta / "base-extracted/environment/wheelhouse"
+    _write(wheelhouse_path / "fixture.whl", b"fixture wheel")
+    wheelhouse_identity = {
+        "algorithm": "xview3-wheelhouse-tree-v1",
+        "sha256": "7" * 64,
+        "files": 1,
+        "bytes": len(b"fixture wheel"),
+    }
+    extraction_receipt_payload = {
+        "format_version": 1,
+        "package_id": base_payload["package_id"],
+        "manifest_sha256": base_payload["manifest_sha256"],
+        "wheelhouse": wheelhouse_identity,
+    }
+    extraction_receipt_path = meta / "base-extracted/HANDOFF_EXTRACTED.json"
+    _write(extraction_receipt_path, json.dumps(extraction_receipt_payload))
+    extraction_receipt_sha256 = sha256_file(extraction_receipt_path)
+    wheelhouse = {
+        "identity": wheelhouse_identity,
+        "artifacts": {"fixture.whl": {"sha256": "8" * 64, "bytes": 13}},
+        "base_extraction": {
+            "path": str(extraction_receipt_path),
+            "sha256": extraction_receipt_sha256,
+            "receipt": extraction_receipt_payload,
+        },
+        "reverified_after_build": True,
+    }
+    staged_base_extraction = {
+        "path": "/scratch/payload/HANDOFF_EXTRACTED.json",
+        "sha256": extraction_receipt_sha256,
+        "receipt": extraction_receipt_payload,
     }
     venv_root = meta / "native-venv"
     _write(venv_root / "bin/python", b"fixture copied native Python\n")
@@ -1705,6 +1792,7 @@ def _write_result_fixture(
         "kind": RECEIPT_KIND,
         "status": "ready",
         "base_python": base_python,
+        "wheelhouse": wheelhouse,
         "venv": {
             "path": str(venv_root),
             "tree": {"sha256": venv_sha256},
@@ -1720,11 +1808,20 @@ def _write_result_fixture(
             "repo": repo,
             "venv_root": venv_root,
             "base_python": base_python_path,
+            "wheelhouse": wheelhouse_path,
+            "base_extraction_receipt": extraction_receipt_path,
             "expected_venv_sha256": venv_sha256,
             "expected_receipt_sha256": venv_build_sha256,
-            "expected_base_python_sha256": base_python[
-                "executable_sha256"
-            ],
+            "expected_base_python_sha256": base_python["executable_sha256"],
+            "expected_base_python_runtime_sha256": base_python_runtime_sha256,
+            "expected_wheelhouse_sha256": wheelhouse_identity["sha256"],
+            "expected_base_extraction_receipt_sha256": (
+                extraction_receipt_sha256
+            ),
+            "expected_base_payload_package_id": base_payload["package_id"],
+            "expected_base_payload_manifest_sha256": (
+                base_payload["manifest_sha256"]
+            ),
         }
         return venv_build
 
@@ -1739,6 +1836,9 @@ def _write_result_fixture(
             "cuda_build": "12.6",
             "driver_version": "590.1",
             "backend": strict_fp32,
+            "child_probes": [
+                {"runtime_contract": runtime_contract} for _ in range(8)
+            ],
             "devices": [
                 {
                     "name": "NVIDIA H100 80GB HBM3",
@@ -1763,6 +1863,9 @@ def _write_result_fixture(
         venv_sha256=venv_sha256,
         venv_build_sha256=venv_build_sha256,
         base_python_sha256=base_python["executable_sha256"],
+        base_python_runtime_sha256=base_python_runtime_sha256,
+        wheelhouse_sha256=wheelhouse_identity["sha256"],
+        base_extraction_receipt_sha256=extraction_receipt_sha256,
         base_payload=base_payload,
         runtime_amendment=runtime_amendment,
     )
@@ -1933,6 +2036,8 @@ def _write_result_fixture(
             "sha256": venv_sha256,
             "venv_build_sha256": venv_build_sha256,
             "base_python": base_python,
+            "wheelhouse": wheelhouse,
+            "staged_base_extraction": staged_base_extraction,
         },
         "base_payload": base_payload,
         "runtime_amendment": runtime_amendment,
@@ -2051,6 +2156,7 @@ def _write_result_fixture(
             "micro_batch": 16,
             "gradient_accumulation": 1,
             "effective_batch": 16,
+            "h100_runtime_contract": runtime_contract,
             "best_dev_f1": best_dev,
             "last_dev": {"threshold": 0.25},
             "test_inference_precision": "32-true",
@@ -2106,6 +2212,7 @@ def _write_result_fixture(
             "venv_sha256": venv_sha256,
             "venv_build_sha256": venv_build_sha256,
             "base_python": base_python,
+            "wheelhouse": wheelhouse,
             "base_payload": base_payload,
             "runtime_amendment": runtime_amendment,
             "acceptance_uuid": acceptance_uuid,
@@ -2206,6 +2313,7 @@ def _write_result_fixture(
         "venv_sha256": venv_sha256,
         "venv_build_sha256": venv_build_sha256,
         "base_python": base_python,
+        "wheelhouse": wheelhouse,
         "base_payload": base_payload,
         "runtime_amendment": runtime_amendment,
         "acceptance_uuid": acceptance_uuid,
