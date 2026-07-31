@@ -171,11 +171,15 @@ but are never the Judy execution checkout or runtime.
 
 ## Build the final-path native H100 venv
 
-Provide the exact Python 3.11.15 executable on Judy and build directly at the
-permanent path. The build is offline and consumes the verified Sprint 7d
+Provide Judy's exact Python 3.11.13 executable and canonical libpython
+directory, then build directly at the permanent path. The loader path is
+explicit because the shared interpreter cannot start without it and Slurm uses
+`--export=NONE`. The build is offline and consumes the verified Sprint 7d
 wheelhouse:
 
 ```bash
+export H100_BASE_PYTHON_LIB_DIR=/cm/shared/mitre-apps/python/3.11.13/build/lib
+export LD_LIBRARY_PATH="$H100_BASE_PYTHON_LIB_DIR"
 cd /scratch/xview3-sprint7e
 /path/to/bootstrap-python -m scripts.h100.build_venv build \
   --repo "$PWD" \
@@ -183,7 +187,7 @@ cd /scratch/xview3-sprint7e
   --base-extraction-receipt /scratch/xview3-base-extracted/HANDOFF_EXTRACTED.json \
   --expected-base-payload-package-id xview3-h100-fp32-2726199efcebbebc89156e708b89df2a3415468a \
   --expected-base-payload-manifest-sha256 fccb0b505c89836a148afec709bb799f7af4908d955ea1b142e153154d830896 \
-  --base-python /path/to/python-3.11.15/bin/python3.11 \
+  --base-python /cm/shared/mitre-apps/python/3.11.13/build/bin/python3.11 \
   --output /persistent/venvs/xview3-h100-fp32
 ```
 
@@ -206,11 +210,13 @@ The runtime digest covers the resolved executable, libpython, stdlib/platstdlib
 probed mapped system libraries:
 
 ```bash
+export H100_BASE_PYTHON_LIB_DIR=/cm/shared/mitre-apps/python/3.11.13/build/lib
+export LD_LIBRARY_PATH="$H100_BASE_PYTHON_LIB_DIR"
 cd /scratch/xview3-sprint7e
 /path/to/bootstrap-python -m scripts.h100.build_venv verify \
   --repo "$PWD" \
   --venv-root /persistent/venvs/xview3-h100-fp32 \
-  --base-python /path/to/python-3.11.15/bin/python3.11 \
+  --base-python /cm/shared/mitre-apps/python/3.11.13/build/bin/python3.11 \
   --wheelhouse /scratch/xview3-base-extracted/environment/wheelhouse \
   --base-extraction-receipt /scratch/xview3-base-extracted/HANDOFF_EXTRACTED.json \
   --expected-venv-sha256 VENV_TREE_64HEX \
@@ -293,7 +299,8 @@ campaign and cutover provenance, strict-FP32 hardware evidence,
 `venv_build.json`, and the dual base/runtime transfer identities.
 
 Status: the immutable Sprint 7d base upload and its remote verification are
-complete. Sprint 7e native-venv code, fixture packaging, and source-host
-validation are green; the production runtime amendment has not yet been built
-or uploaded. Judy venv build, H100 acceptance, throughput decision, cutover,
-and training remain pending.
+complete. The first uploaded Sprint 7e runtime amendment binds Python 3.11.15
+and is retained as superseded provenance. Only a new content-addressed package
+from the owner-approved 3.11.13 branch tip may be used, and it must go to a
+separate initially empty Box folder. Judy venv build, H100 acceptance,
+throughput decision, cutover, and training remain pending.

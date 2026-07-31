@@ -79,9 +79,9 @@ def runtime_amendment() -> dict[str, str]:
 
 def base_python() -> dict[str, object]:
     return {
-        "version": "3.11.15",
+        "version": "3.11.13",
         "implementation": "cpython",
-        "resolved_path": "/opt/python-3.11.15/bin/python3.11",
+        "resolved_path": "/opt/python-3.11.13/bin/python3.11",
         "executable_sha256": BASE_PYTHON_SHA256,
         "runtime": {
             "algorithm": build_venv.BASE_RUNTIME_DIGEST_ALGORITHM,
@@ -1369,7 +1369,10 @@ def test_slurm_smoke_binding_lock_distinguishes_both_transfers(tmp_path):
 
 def test_native_venv_builder_is_final_path_offline_and_copies_python():
     source = (REPO / "scripts/h100/build_venv.py").read_text()
-    assert 'EXPECTED_PYTHON_VERSION = "3.11.15"' in source
+    assert contracts.EXPECTED_NATIVE_PYTHON_VERSION == "3.11.13"
+    assert build_venv.EXPECTED_PYTHON_VERSION == (
+        contracts.EXPECTED_NATIVE_PYTHON_VERSION
+    )
     assert '"venv",\n                "--copies"' in source
     assert '"--no-index"' in source
     assert '"--only-binary=:all:"' in source
@@ -1412,6 +1415,10 @@ def test_slurm_native_defaults_identity_order_and_clean_runtime_are_static():
     assert "#SBATCH --time=1-12:30:00" in job
     assert "#SBATCH --signal=B:USR1@900" in job and "#SBATCH --requeue" in job
     assert job.index("export NVIDIA_TF32_OVERRIDE=0") < job.index('source "$compute_site"')
+    loader_export = 'export LD_LIBRARY_PATH="$H100_BASE_PYTHON_LIB_DIR"'
+    assert job.index('source "$compute_site"') < job.index(loader_export)
+    assert job.index(loader_export) < job.index('"$H100_TRANSFER_PYTHON"')
+    assert '"LD_LIBRARY_PATH=$H100_BASE_PYTHON_LIB_DIR"' in job
     assert job.index("scratch_free=") < job.index("scripts.handoff extract")
     assert 'git clone "$H100_RUNTIME_BUNDLE" "$repo"' in job
     assert 'git clone "$base_repo_bundle"' not in job
@@ -1445,6 +1452,7 @@ def test_submit_and_site_interfaces_are_safe_and_untracked():
     assert '--export=NONE' in submit
     for name in (
         "H100_BASE_PACKAGE_ROOT",
+        "H100_BASE_PYTHON_LIB_DIR",
         "H100_RUNTIME_PACKAGE_ROOT",
         "H100_RUNTIME_BUNDLE",
         "H100_BASE_PYTHON",
@@ -1477,6 +1485,8 @@ def test_smoke_batch_signals_direct_native_child_and_requeues_externally():
     assert 'kill -USR1 "$signal_pid"' in smoke
     assert '"${H100_REAL_SCONTROL:-/usr/bin/scontrol}" requeue' in smoke
     assert "unset BOX_JWT_CONFIG BOX_FOLDER_ID" in smoke
+    assert 'export LD_LIBRARY_PATH="$H100_BASE_PYTHON_LIB_DIR"' in smoke
+    assert '"LD_LIBRARY_PATH=$H100_BASE_PYTHON_LIB_DIR"' in smoke
 
 
 def test_cutover_validates_schema2_native_ready_and_rejects_v1_sif(tmp_path):

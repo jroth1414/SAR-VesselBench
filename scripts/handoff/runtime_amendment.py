@@ -17,8 +17,9 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Callable, Mapping
 
+from scripts.h100.runtime_versions import EXPECTED_NATIVE_PYTHON_VERSION
+
 from .package import (
-    EXPECTED_PYTHON,
     EXPECTED_TORCH,
     PackageError,
     _absolute_path,
@@ -73,6 +74,8 @@ RUNTIME_EXTRACTED_RECEIPT = "RUNTIME_AMENDMENT_EXTRACTED.json"
 _REQUIRED_RUNTIME_FILES = (
     ENVIRONMENT_LOCK_PATH,
     "scripts/h100/build_venv.py",
+    "scripts/h100/contracts.py",
+    "scripts/h100/runtime_versions.py",
     "scripts/h100/lightning_contract.py",
     "scripts/h100/wheelhouse.py",
     "slurm/h100/campaign.sbatch",
@@ -120,7 +123,7 @@ def _runtime_contract(
         "payload": "code-only-runtime-amendment",
         "base_payload_reused": True,
         "runtime": "native-venv",
-        "python": EXPECTED_PYTHON,
+        "python": EXPECTED_NATIVE_PYTHON_VERSION,
         "torch": EXPECTED_TORCH,
         "precision": "32-true",
         "strict_fp32": True,

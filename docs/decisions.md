@@ -382,13 +382,20 @@ identically to every arm. This committed log lives here; `runs/` is gitignored a
   no data, weights, wheelhouse, run, cache, venv, reference, eval-final, or
   secret material and uses a separate initially empty Box folder so a base
   payload transfer is never mutated or interrupted.
-- **Native environment:** owner-approved on 2026-07-30, require an exact Python 3.11.15 executable; the historical Sprint-7d OCI Python-3.11.15 metadata remains immutable base-payload provenance only;
-  build `python -m venv --copies` at the final persistent path; install entirely
-  offline with `--no-index` from the verified wheelhouse; require `pip check`,
-  exact normalized freeze, safe relative links, bytecode removal, read-only
-  tree modes, a deterministic tree digest, executable plus full base-Python
-  runtime hashes, and the canonical Sprint-7d extraction/wheelhouse identity. Invoke
-  `venv/bin/python` directly under a clean environment. Activation, relocation,
+- **Native environment (owner-amended 2026-07-31):** use Judy's exact Python
+  3.11.13 executable for one uniform H100 venv. Python 3.11.13 and 3.11.15
+  share the CPython 3.11 ABI and no measurable model-training, accuracy, or
+  strict-FP32-stability change is expected; that expectation never replaces
+  the complete target acceptance gates. The historical Sprint-7d OCI and
+  wheelhouse-resolution Python-3.11.15 metadata remain immutable base-payload
+  provenance only. Build `python -m venv --copies` at the final persistent
+  path; install entirely offline with `--no-index` from the verified
+  wheelhouse; require `pip check`, exact normalized freeze, safe relative
+  links, bytecode removal, read-only tree modes, a deterministic tree digest,
+  executable plus full base-Python-runtime hashes, and the canonical Sprint-7d
+  extraction/wheelhouse identity. Snapshot Judy's canonical libpython
+  directory and use it as the complete loader path under Slurm `--export=NONE`.
+  Activation, relocation, inherited loader paths, mixed Python patches,
   user-site packages, and inherited Box credentials are forbidden.
 - **Numerical and scheduling recipe unchanged:** torch remains
   `2.11.0+cu126`; every H100 core train and model-forward inference stays
@@ -403,8 +410,13 @@ identically to every arm. This committed log lives here; `runs/` is gitignored a
   Python, strict backend, and hardware. Legacy schema-1 SIF evidence cannot
   satisfy these gates. The Slurm smoke must prove external batch-shell to
   native-Python-child `SIGUSR1`, requeue, and checkpoint resume.
-- **Status:** this amendment authorizes code, packaging, and validation work.
-  It does not claim the runtime amendment was uploaded, Judy built the venv,
-  any H100 gate passed, V100 was stopped, cutover occurred, or H100 training
-  started. V100 continues until all acceptance, throughput, R2/R3, and human
-  operator gates pass.
+- **Superseded transfer:** runtime package
+  `xview3-h100-runtime-ad6226a14e8af61b400a0de44482441890b05d83-127e9181c298c2b6b517f533ff5e234f282cd191cfa356fe78017be544b9de3b`
+  was built and uploaded with `contract.python=3.11.15`. Retain it as immutable
+  provenance, but it cannot qualify or launch the Judy 3.11.13 lane. A new
+  content-addressed amendment from the current branch tip requires a separate,
+  initially empty Box folder; the 294 GB Sprint-7d base is reused unchanged.
+- **Status:** this amendment authorizes replacement packaging and validation.
+  It does not claim Judy built the 3.11.13 venv, any H100 gate passed, V100 was
+  stopped, cutover occurred, or H100 training started. V100 continues until all
+  acceptance, throughput, R2/R3, and human operator gates pass.

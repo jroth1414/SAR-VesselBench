@@ -16,14 +16,18 @@ live V100 campaign remains untouched until every H100 and cutover gate passes.
 - Native `python -m venv --copies` is the H100 runtime. Apptainer, Enroot,
   Pyxis, SIF, OCI, BF16, TF32, FP16, DDP, and per-arm exceptions are not part
   of the Sprint-7e H100 execution path.
-- The base interpreter is exactly Python 3.11.15. Packages install entirely
-  offline from Sprint 7d's verified wheelhouse; torch remains
-  `2.11.0+cu126` and the normalized freeze must match the exact lock.
+- The Judy base interpreter is exactly Python 3.11.13 for every H100 cell.
+  Packages install entirely offline from Sprint 7d's verified wheelhouse;
+  torch remains `2.11.0+cu126` and the normalized freeze must match the exact
+  lock. Sprint 7d's Python-3.11.15 OCI and wheelhouse-resolution metadata stay
+  immutable base-payload provenance and are not the Judy runtime contract.
 - The venv is built at its final persistent path, bytecode-cleaned, sealed
   read-only, tree-hashed, and bound to its executable/full base-Python-runtime,
   verified Sprint-7d wheelhouse/extraction, and build-receipt hashes.
-  Jobs invoke its `bin/python` directly under a clean environment; activation
-  and user-site packages are forbidden.
+  Judy's canonical libpython directory is a required, snapshotted site input
+  and the complete `LD_LIBRARY_PATH` under Slurm `--export=NONE`. Jobs invoke
+  the venv's `bin/python` directly under a clean environment; activation,
+  inherited loader paths, and user-site packages are forbidden.
 - All core training and model-forward inference remain Lightning `32-true`
   with CUDA matmul/cuDNN TF32 disabled before CUDA initialization,
   micro-batch 16, accumulation 1, effective batch 16, one process per GPU,

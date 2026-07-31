@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Iterable, Mapping
 
 import yaml
+from scripts.h100.runtime_versions import EXPECTED_NATIVE_PYTHON_VERSION
+
 
 EXPECTED_PRECISION = "32-true"
 MICRO_BATCH = 16

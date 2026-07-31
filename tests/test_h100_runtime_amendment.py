@@ -8,10 +8,14 @@ from pathlib import Path
 
 import pytest
 
+from scripts.h100 import build_venv
 from scripts.handoff import box
 from scripts.handoff import runtime_amendment as amendment
 from scripts.handoff.__main__ import _build_parser
-from scripts.handoff.package import PackageError
+from scripts.handoff.package import (
+    EXPECTED_PYTHON as BASE_EXPECTED_PYTHON,
+    PackageError,
+)
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -35,6 +39,10 @@ def _fixture_repo(root: Path) -> tuple[Path, str, str]:
     files = {
         "locks/env-v100node.txt": "torch==2.11.0+cu126\n",
         "scripts/h100/build_venv.py": "RUNTIME = 'native-venv'\n",
+        "scripts/h100/contracts.py": "PRECISION = '32-true'\n",
+        "scripts/h100/runtime_versions.py": (
+            "EXPECTED_NATIVE_PYTHON_VERSION = '3.11.13'\n"
+        ),
         "scripts/h100/lightning_contract.py": "CONTRACT = 'strict-fp32'\n",
         "scripts/h100/wheelhouse.py": "WHEELHOUSE = 'verified-offline'\n",
         "slurm/h100/campaign.sbatch": "#!/bin/bash\n# native venv campaign\n",
@@ -72,10 +80,12 @@ def test_runtime_package_is_deterministic_code_only_and_extracts(
     output_b = tmp_path / "out-b"
     output_a.mkdir()
     output_b.mkdir()
-    assert {"scripts/h100/lightning_contract.py", "scripts/h100/wheelhouse.py"} <= set(
-        amendment._REQUIRED_RUNTIME_FILES
-    )
-
+    assert {
+        "scripts/h100/contracts.py",
+        "scripts/h100/lightning_contract.py",
+        "scripts/h100/runtime_versions.py",
+        "scripts/h100/wheelhouse.py",
+    } <= set(amendment._REQUIRED_RUNTIME_FILES)
 
     package_a = amendment._build_runtime_amendment(
         repo_root=repo,
@@ -105,6 +115,9 @@ def test_runtime_package_is_deterministic_code_only_and_extracts(
     )
     assert manifest["source"]["git_commit"] == head
     assert manifest["base_payload"] == base
+    assert manifest["contract"]["python"] == build_venv.EXPECTED_PYTHON_VERSION
+    assert build_venv.EXPECTED_PYTHON_VERSION == "3.11.13"
+    assert BASE_EXPECTED_PYTHON == "3.11.15"
     assert manifest["contract"]["runtime"] == "native-venv"
     assert manifest["contract"]["precision"] == "32-true"
     assert manifest["contract"]["tf32"] is False

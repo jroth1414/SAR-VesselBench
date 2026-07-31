@@ -51,6 +51,7 @@ def _site_values(
         "H100_RUNTIME_READY_SHA256": SHA256,
         "H100_RUNTIME_SHA256SUMS_SHA256": SHA256,
         "H100_BASE_PYTHON": str(tmp_path / "python3.11"),
+        "H100_BASE_PYTHON_LIB_DIR": str(tmp_path / "python-lib"),
         "H100_BASE_PYTHON_SHA256": SHA256,
         "H100_VENV_ROOT": str(tmp_path / "venv"),
         "H100_BASE_PYTHON_RUNTIME_SHA256": SHA256,
@@ -106,6 +107,9 @@ def _run_submit(
         Path(values["H100_REFERENCES_ROOT"]).mkdir(parents=True, exist_ok=True)
         Path(values["H100_WHEELHOUSE"]).mkdir(parents=True, exist_ok=True)
         Path(values["H100_BASE_EXTRACTION_RECEIPT"]).write_text("{}\n")
+        python_lib = Path(values["H100_BASE_PYTHON_LIB_DIR"])
+        python_lib.mkdir(parents=True, exist_ok=True)
+        (python_lib / "libpython3.11.so.1.0").write_bytes(b"fixture libpython")
         base_python = Path(values["H100_BASE_PYTHON"])
         base_python.write_text("#!/bin/sh\nexit 0\n")
         base_python.chmod(0o755)
@@ -191,6 +195,28 @@ def test_submit_v100_guard_precedes_every_persistent_write():
         assert guard < source.index(marker)
 
 
+def test_submit_rejects_unbound_python_library_path_before_write(tmp_path: Path):
+    v100_runs = tmp_path / "v100-runs"
+    v100_runs.mkdir()
+    references = tmp_path / "v100-references"
+    references.mkdir()
+    h100_runs = tmp_path / "h100-runs"
+    result = _run_submit(
+        tmp_path,
+        mode="smoke",
+        h100_runs=h100_runs,
+        v100_runs=v100_runs,
+        reference_runs=references,
+        site_overrides={"H100_BASE_PYTHON_LIB_DIR": "relative/python-lib"},
+    )
+    assert result.returncode == 2
+    assert (
+        "H100_BASE_PYTHON_LIB_DIR must be an absolute existing directory"
+        in result.stderr
+    )
+    assert not h100_runs.exists()
+
+
 @pytest.mark.parametrize("mode", ["smoke", "acceptance", "cutover-check", "campaign"])
 def test_submit_rejects_h100_runs_overlap_with_v100_references_before_write(
     tmp_path: Path, mode: str
@@ -264,6 +290,7 @@ def test_submit_snapshots_sanitized_site_and_batches_reject_tampering(tmp_path: 
         extra_env={
             "PATH": f"{fake_bin}:{os.environ['PATH']}",
             "FAKE_SBATCH_ARGS": str(args_path),
+            "LD_LIBRARY_PATH": "/inherited/loader/path",
         },
     )
     assert result.returncode == 0, result.stderr
@@ -279,6 +306,8 @@ def test_submit_snapshots_sanitized_site_and_batches_reject_tampering(tmp_path: 
     assert "BOX_" not in snapshot_text
     assert "secret-folder-404384490657" not in snapshot_text
 
+    assert "H100_BASE_PYTHON_LIB_DIR=" in snapshot_text
+    assert "/inherited/loader/path" not in snapshot_text
     original_site = tmp_path / "site-smoke.env"
     original_site.write_text("H100_RUNS_ROOT=/now/different\n")
     assert snapshot.read_bytes() == snapshot_bytes

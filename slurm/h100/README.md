@@ -35,18 +35,22 @@ replaced. Both transfer identities remain bound in every readiness receipt.
 
 ## 2. Build the persistent native venv
 
-Provide an executable Python 3.11.15 installation on Judy, record the SHA-256
-of its resolved executable, and build directly at the final persistent path
-from the base payload's verified offline wheelhouse:
+Provide Judy's exact Python 3.11.13 installation and canonical libpython
+directory, record the SHA-256 of its resolved executable, and build directly
+at the final persistent path from the base payload's verified offline
+wheelhouse. The explicit loader path is required because Slurm submits with
+`--export=NONE`:
 
 ```bash
+export H100_BASE_PYTHON_LIB_DIR=/cm/shared/mitre-apps/python/3.11.13/build/lib
+export LD_LIBRARY_PATH="$H100_BASE_PYTHON_LIB_DIR"
 /path/to/requirements-transfer-python -m scripts.h100.build_venv build \
   --repo /path/to/cloned/repo \
   --wheelhouse /path/to/extracted/environment/wheelhouse \
   --base-extraction-receipt /path/to/extracted/HANDOFF_EXTRACTED.json \
   --expected-base-payload-package-id xview3-h100-fp32-2726199efcebbebc89156e708b89df2a3415468a \
   --expected-base-payload-manifest-sha256 fccb0b505c89836a148afec709bb799f7af4908d955ea1b142e153154d830896 \
-  --base-python /path/to/python-3.11.15/bin/python3.11 \
+  --base-python /cm/shared/mitre-apps/python/3.11.13/build/bin/python3.11 \
   --output /persistent/venvs/xview3-h100-fp32
 ```
 

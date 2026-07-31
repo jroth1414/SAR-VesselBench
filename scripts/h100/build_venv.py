@@ -22,7 +22,12 @@ from typing import Mapping
 
 from packaging.utils import canonicalize_name
 
-from scripts.h100.contracts import atomic_write_json, atomic_write_text, sha256_file
+from scripts.h100.contracts import (
+    EXPECTED_NATIVE_PYTHON_VERSION,
+    atomic_write_json,
+    atomic_write_text,
+    sha256_file,
+)
 from scripts.h100.wheelhouse import (
     assert_wheelhouse_unchanged,
     validate_base_extraction_receipt,
@@ -30,7 +35,7 @@ from scripts.h100.wheelhouse import (
     wheelhouse_manifest,
 )
 
-EXPECTED_PYTHON_VERSION = "3.11.15"
+EXPECTED_PYTHON_VERSION = EXPECTED_NATIVE_PYTHON_VERSION
 RECEIPT_SCHEMA = 1
 RECEIPT_KIND = "xview3-h100-native-venv"
 TREE_DIGEST_ALGORITHM = "xview3-venv-tree-v1"

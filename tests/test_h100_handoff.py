@@ -1740,10 +1740,10 @@ def _write_result_fixture(
     meta = campaign_path.parent
 
     base_python_path = meta / "python311/bin/python3.11"
-    _write(base_python_path, b"fixture Python 3.11.15\n")
+    _write(base_python_path, b"fixture Python 3.11.13\n")
     base_python_runtime_sha256 = "6" * 64
     base_python = {
-        "version": "3.11.15",
+        "version": "3.11.13",
         "requested_path": str(base_python_path),
         "resolved_path": str(base_python_path.resolve()),
         "executable_sha256": sha256_file(base_python_path),

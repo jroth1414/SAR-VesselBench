@@ -38,7 +38,8 @@ required=(
   H100_V100_RUNS_ROOT
   H100_EXPECTED_GIT_SHA H100_JOB_LOG_DIR
   H100_PROJECT H100_PROJECT_ROOT H100_TRANSFER_PYTHON H100_ENV_LOCK_SHA256
-  H100_BASE_PYTHON H100_BASE_PYTHON_SHA256 H100_BASE_PYTHON_RUNTIME_SHA256
+  H100_BASE_PYTHON H100_BASE_PYTHON_LIB_DIR H100_BASE_PYTHON_SHA256
+  H100_BASE_PYTHON_RUNTIME_SHA256
   H100_DETECTOR_SHA256 H100_SCORER_SHA256
   H100_SPLITS_SHA256 H100_STATS_SHA256 H100_LSSSDD_SHA256
 )
@@ -160,6 +161,20 @@ if [[ "$(realpath -m "$H100_PROJECT_ROOT")" != "$repo" ]]; then
   echo "H100_PROJECT_ROOT does not match this checkout: $repo" >&2
   exit 2
 fi
+if [[ "$H100_BASE_PYTHON_LIB_DIR" != /* || ! -d "$H100_BASE_PYTHON_LIB_DIR" ]]; then
+  echo "H100_BASE_PYTHON_LIB_DIR must be an absolute existing directory" >&2
+  exit 2
+fi
+H100_BASE_PYTHON_LIB_DIR="$(realpath -e -- "$H100_BASE_PYTHON_LIB_DIR")"
+if [[ ! -r "$H100_BASE_PYTHON_LIB_DIR/libpython3.11.so.1.0" ]]; then
+  echo "H100_BASE_PYTHON_LIB_DIR must contain readable libpython3.11.so.1.0" >&2
+  exit 2
+fi
+# Judy's shared CPython build does not carry an executable-relative libpython
+# search path. Never inherit a mutable submit-host loader path: use this one
+# canonical, snapshot-bound directory for transfer, base, and venv Python.
+export LD_LIBRARY_PATH="$H100_BASE_PYTHON_LIB_DIR"
+readonly H100_BASE_PYTHON_LIB_DIR LD_LIBRARY_PATH
 if [[ ! -x "$H100_BASE_PYTHON" || ! -x "$H100_VENV_ROOT/bin/python" ]]; then
   echo "base Python and exact native venv Python must both be executable" >&2
   exit 2

@@ -23,9 +23,9 @@ def _metadata(path: Path, *, prefix: str, base_prefix: str) -> dict[str, object]
     resolved = path.resolve(strict=True)
     root = Path(base_prefix)
     metadata: dict[str, object] = {
-        "version": "3.11.15",
+        "version": "3.11.13",
         "implementation": "cpython",
-        "implementation_version": [3, 11, 15, "final", 0],
+        "implementation_version": [3, 11, 13, "final", 0],
         "soabi": "cpython-311-x86_64-linux-gnu",
         "platform": "Linux-fixture-x86_64",
         "libc": ["glibc", "2.36"],
@@ -166,6 +166,14 @@ def _verify(runtime: dict, payload: dict[str, object]) -> dict[str, object]:
         expected_base_payload_package_id=runtime["base_package_id"],
         expected_base_payload_manifest_sha256=runtime["base_manifest_sha256"],
     )
+
+
+def test_native_python_patch_contract_rejects_superseded_runtime() -> None:
+    assert build_venv.EXPECTED_PYTHON_VERSION == "3.11.13"
+    with pytest.raises(RuntimeError, match="expected 3.11.13, got 3.11.15"):
+        build_venv._assert_python_version(
+            {"version": "3.11.15"}, label="base"
+        )
 
 
 def test_build_seals_and_verifies_native_venv(

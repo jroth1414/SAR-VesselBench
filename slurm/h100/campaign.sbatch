@@ -42,6 +42,15 @@ readonly H100_MODE compute_site compute_site_sha256
 source "$compute_site"
 # Transfer credentials are never needed by a compute allocation.
 unset BOX_JWT_CONFIG BOX_FOLDER_ID
+if [[ "$H100_BASE_PYTHON_LIB_DIR" != /* ||
+      ! -d "$H100_BASE_PYTHON_LIB_DIR" ||
+      "$(realpath -e -- "$H100_BASE_PYTHON_LIB_DIR")" != "$H100_BASE_PYTHON_LIB_DIR" ||
+      ! -r "$H100_BASE_PYTHON_LIB_DIR/libpython3.11.so.1.0" ]]; then
+  echo "snapshotted H100_BASE_PYTHON_LIB_DIR is not a canonical Judy libpython directory" >&2
+  exit 2
+fi
+export LD_LIBRARY_PATH="$H100_BASE_PYTHON_LIB_DIR"
+readonly H100_BASE_PYTHON_LIB_DIR LD_LIBRARY_PATH
 
 # Repeat the submission-time isolation check from the verified snapshot before
 # the allocation writes campaign metadata. This protects queued jobs and every
@@ -282,7 +291,7 @@ native_env=(
   "CUDA_DEVICE_ORDER=PCI_BUS_ID"
   "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-}"
   "NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-}"
-  "LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}"
+  "LD_LIBRARY_PATH=$H100_BASE_PYTHON_LIB_DIR"
   "SLURM_JOB_ID=${SLURM_JOB_ID:?SLURM_JOB_ID is required}"
   "SLURM_RESTART_COUNT=${SLURM_RESTART_COUNT:-0}"
   "SLURM_CLUSTER_NAME=${SLURM_CLUSTER_NAME:-unknown}"
