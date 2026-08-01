@@ -704,6 +704,9 @@ def build(
         if venv_python.is_symlink():
             raise RuntimeError("venv Python interpreter must be copied, not symlinked")
         with tempfile.NamedTemporaryFile(suffix=".json") as report:
+            # The exact wheelhouse intentionally excludes venv bootstrap packages.
+            # Keep the bundled setuptools visible so dependency checks such as
+            # torch's ``setuptools<82`` resolve exactly as they do at install time.
             _run(
                 [
                     str(resolved_venv_python),
@@ -712,7 +715,6 @@ def build(
                     "pip",
                     "install",
                     "--dry-run",
-                    "--ignore-installed",
                     "--no-index",
                     f"--find-links={wheelhouse}",
                     "--only-binary=:all:",

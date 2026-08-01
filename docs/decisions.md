@@ -390,9 +390,14 @@ identically to every arm. This committed log lives here; `runs/` is gitignored a
   wheelhouse-resolution Python-3.11.15 metadata remain immutable base-payload
   provenance only. Build `python -m venv --copies` at the final persistent
   path; install entirely offline with `--no-index` from the verified
-  wheelhouse; require `pip check`, exact normalized freeze, safe relative
-  links, bytecode removal, read-only tree modes, a deterministic tree digest,
-  executable plus full base-Python-runtime hashes, and the canonical Sprint-7d
+  wheelhouse. The wheelhouse intentionally excludes the venv bootstrap packages
+  `pip`, `setuptools`, and `wheel`; dependency resolution must retain the
+  interpreter-bundled bootstrap packages rather than use `--ignore-installed`.
+  Judy's clean Python 3.11.13 venv supplies `setuptools==65.5.0`, satisfying
+  torch's `setuptools<82` requirement. Require `pip check`, exact normalized
+  freeze with only those bootstrap extras, safe relative links, bytecode
+  removal, read-only tree modes, a deterministic tree digest, executable plus
+  full base-Python-runtime hashes, and the canonical Sprint-7d
   extraction/wheelhouse identity. Snapshot Judy's canonical libpython
   directory and use it as the complete loader path under Slurm `--export=NONE`.
   Activation, relocation, inherited loader paths, mixed Python patches,

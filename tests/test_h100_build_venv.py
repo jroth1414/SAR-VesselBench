@@ -89,7 +89,10 @@ def _fixture_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
     (stdlib / "site-packages/ignored.py").write_text("MUTABLE = 1\n")
     (Path(base_prefix) / "lib/libpython3.11.so").write_bytes(b"fixture libpython")
     (Path(base_prefix) / "lib/libsystem-runtime.so").write_bytes(b"fixture system")
-    state = {"freeze": "demo-pkg==1.0\npip==24.0\n"}
+    state = {
+        "commands": [],
+        "freeze": "demo-pkg==1.0\npip==24.0\nsetuptools==65.5.0\n",
+    }
 
     def fake_inspect(path: str | Path) -> dict[str, object]:
         candidate = Path(path)
@@ -111,6 +114,7 @@ def _fixture_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
         capture_output: bool = False,
     ) -> subprocess.CompletedProcess[str]:
         del capture_output
+        state["commands"].append(command.copy())
         if "venv" in command:
             target = Path(command[-1])
             _write_executable(target / "bin/python", b"fixture copied python")
@@ -209,6 +213,26 @@ def test_build_seals_and_verifies_native_venv(
         expected_base_payload_package_id=runtime["base_package_id"],
         expected_base_payload_manifest_sha256=runtime["base_manifest_sha256"],
     ) == payload
+
+
+def test_build_resolver_keeps_venv_bootstrap_packages_visible(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = _fixture_runtime(tmp_path, monkeypatch)
+    _build(runtime)
+
+    install_commands = [
+        command
+        for command in runtime["state"]["commands"]
+        if "pip" in command and "install" in command
+    ]
+    assert len(install_commands) == 2
+    dry_run = next(command for command in install_commands if "--dry-run" in command)
+    assert "--ignore-installed" not in dry_run
+    assert "--no-index" in dry_run
+    assert "--only-binary=:all:" in dry_run
+    assert f"--find-links={runtime['wheelhouse'].resolve()}" in dry_run
 
 
 def test_build_rejects_base_extraction_format_mismatch(
