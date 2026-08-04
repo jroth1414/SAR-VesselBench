@@ -7,6 +7,10 @@ if [[ "$mode" != "smoke" && "$mode" != "acceptance" && \
   echo "usage: $0 smoke|acceptance|cutover-check|campaign" >&2
   exit 2
 fi
+if [[ "$mode" == "cutover-check" || "$mode" == "campaign" ]]; then
+  echo "$mode is not authorized until the content-addressed dynamic Box control-transfer protocol is implemented and reviewed" >&2
+  exit 2
+fi
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd -- "$script_dir/../.." && pwd)"
@@ -35,8 +39,7 @@ required=(
   H100_RUNTIME_MANIFEST_SHA256 H100_RUNTIME_READY_SHA256
   H100_RUNTIME_SHA256SUMS_SHA256 H100_VENV_ROOT H100_VENV_SHA256
   H100_VENV_BUILD_JSON H100_VENV_BUILD_SHA256 H100_RUNS_ROOT
-  H100_V100_RUNS_ROOT
-  H100_EXPECTED_GIT_SHA H100_JOB_LOG_DIR
+  H100_EXPECTED_GIT_SHA H100_JOB_LOG_DIR H100_V100_CONTROL_PLANE
   H100_PROJECT H100_PROJECT_ROOT H100_TRANSFER_PYTHON H100_ENV_LOCK_SHA256
   H100_BASE_PYTHON H100_BASE_PYTHON_LIB_DIR H100_BASE_PYTHON_SHA256
   H100_BASE_PYTHON_RUNTIME_SHA256
@@ -48,9 +51,11 @@ if [[ "$mode" == "acceptance" || "$mode" == "cutover-check" ]]; then
 fi
 if [[ "$mode" == "cutover-check" || "$mode" == "campaign" ]]; then
   required+=(
-    H100_REFERENCES_ROOT H100_EXPECTED_REFERENCE_GIT_SHA
-    H100_REFERENCE_CAMPAIGN_ID H100_CUTOVER_READY
+    H100_EXPECTED_REFERENCE_GIT_SHA H100_REFERENCE_CAMPAIGN_ID H100_CUTOVER_READY
   )
+fi
+if [[ "$mode" == "cutover-check" ]]; then
+  required+=(H100_REFERENCES_ROOT)
 fi
 if [[ "$mode" == "campaign" ]]; then
   required+=(
@@ -65,6 +70,10 @@ for name in "${required[@]}"; do
     exit 2
   fi
 done
+if [[ "$H100_V100_CONTROL_PLANE" != "box-transfer-v1" ]]; then
+  echo "H100_V100_CONTROL_PLANE must be box-transfer-v1" >&2
+  exit 2
+fi
 if [[ "$H100_RUNTIME_GIT_SHA" != "$H100_EXPECTED_GIT_SHA" ]]; then
   echo "H100_RUNTIME_GIT_SHA must equal H100_EXPECTED_GIT_SHA" >&2
   exit 2
@@ -93,11 +102,10 @@ for name in "${hash_names[@]}"; do
   fi
 done
 
-# The live V100 campaign is an immutable, read-only input to this submission
-# lane. Canonicalize every submit-owned persistent write root and reject both
-# directions of tree overlap before the first mkdir, receipt write, or Slurm
-# submission. The ancestor check matters: merely requiring unequal strings
-# would still allow H100_RUNS_ROOT="$H100_V100_RUNS_ROOT/h100" (or reverse).
+# Judy and the live V100 host have separate filesystems. Canonicalize the two
+# Judy-owned persistent write roots and reject overlap in either direction
+# before the first mkdir, receipt write, or Slurm submission. V100 references
+# enter Judy only as transferred, provenance-bound cutover evidence.
 canonical_write_root() {
   local name="$1"
   local raw="${!name}"
@@ -129,21 +137,29 @@ assert_disjoint_from_protected_root() {
 
 h100_runs_root="$(canonical_write_root H100_RUNS_ROOT)"
 h100_job_log_root="$(canonical_write_root H100_JOB_LOG_DIR)"
-v100_runs_root="$(canonical_write_root H100_V100_RUNS_ROOT)"
-if [[ ! -d "$v100_runs_root" ]]; then
-  echo "H100_V100_RUNS_ROOT must resolve to the existing live V100 runs directory: $v100_runs_root" >&2
-  exit 2
-fi
 assert_disjoint_from_protected_root \
-  H100_RUNS_ROOT "$h100_runs_root" "live V100 runs root" "$v100_runs_root"
-assert_disjoint_from_protected_root \
-  H100_JOB_LOG_DIR "$h100_job_log_root" "live V100 runs root" "$v100_runs_root"
+  H100_JOB_LOG_DIR "$h100_job_log_root" "H100 runs root" "$h100_runs_root"
+for protected_name in \
+  H100_PROJECT_ROOT H100_BASE_PACKAGE_ROOT H100_RUNTIME_PACKAGE_ROOT \
+  H100_WHEELHOUSE H100_VENV_ROOT
+do
+  protected_value="${!protected_name}"
+  if [[ "$protected_value" != /* ]]; then
+    echo "$protected_name must be an absolute protected path" >&2
+    exit 2
+  fi
+  protected_root="$(realpath -m -- "$protected_value")"
+  assert_disjoint_from_protected_root \
+    H100_RUNS_ROOT "$h100_runs_root" "$protected_name" "$protected_root"
+  assert_disjoint_from_protected_root \
+    H100_JOB_LOG_DIR "$h100_job_log_root" "$protected_name" "$protected_root"
+done
 
 reference_runs_root=""
-if [[ -n "${H100_REFERENCES_ROOT:-}" ]]; then
+if [[ "$mode" == "cutover-check" ]]; then
   reference_runs_root="$(canonical_write_root H100_REFERENCES_ROOT)"
   if [[ ! -d "$reference_runs_root" ]]; then
-    echo "H100_REFERENCES_ROOT must resolve to the existing V100 reference runs directory: $reference_runs_root" >&2
+    echo "H100_REFERENCES_ROOT must resolve to verified transferred V100 reference evidence: $reference_runs_root" >&2
     exit 2
   fi
   assert_disjoint_from_protected_root \
@@ -151,11 +167,12 @@ if [[ -n "${H100_REFERENCES_ROOT:-}" ]]; then
   assert_disjoint_from_protected_root \
     H100_JOB_LOG_DIR "$h100_job_log_root" "V100 reference runs root" "$reference_runs_root"
   H100_REFERENCES_ROOT="$reference_runs_root"
+else
+  unset H100_REFERENCES_ROOT
 fi
 H100_RUNS_ROOT="$h100_runs_root"
 H100_JOB_LOG_DIR="$h100_job_log_root"
-H100_V100_RUNS_ROOT="$v100_runs_root"
-readonly H100_RUNS_ROOT H100_JOB_LOG_DIR H100_V100_RUNS_ROOT H100_REFERENCES_ROOT
+readonly H100_RUNS_ROOT H100_JOB_LOG_DIR H100_REFERENCES_ROOT
 
 if [[ "$(realpath -m "$H100_PROJECT_ROOT")" != "$repo" ]]; then
   echo "H100_PROJECT_ROOT does not match this checkout: $repo" >&2
@@ -287,7 +304,7 @@ fi
 # snapshot. Campaign mode runs this after canonical operator evidence paths
 # have replaced their mutable source paths above.
 snapshot_names=("${required[@]}")
-for optional_name in H100_REFERENCES_ROOT H100_REAL_SCONTROL; do
+for optional_name in H100_REAL_SCONTROL; do
   if [[ -n "${!optional_name:-}" ]]; then
     snapshot_names+=("$optional_name")
   fi

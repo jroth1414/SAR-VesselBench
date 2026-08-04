@@ -14,6 +14,12 @@ The Apptainer definition retained in the Sprint 7d package is historical,
 non-executed provenance; do not remove it from, rebuild, or otherwise mutate
 that verified package. This native venv applies to the H100 lane only; it
 does not change the live V100 environment, references, or fallback campaign.
+Judy and the live V100 host have completely separate filesystems. The Judy
+runtime requires `H100_V100_CONTROL_PLANE=box-transfer-v1`; do not create a
+dummy Judy path for the V100 runs tree. Smoke and H100 acceptance use only
+Judy-local immutable inputs. Final R2/R3 evidence, CUTOVER_READY, and V100
+archive evidence cross Box later as small dynamic control transfers and never
+enter either forward package.
 
 ## Immutable Sprint 7d base identity
 
@@ -52,6 +58,25 @@ export BOX_FOLDER_ID=REPLACE_WITH_NEW_EMPTY_RUNTIME_AMENDMENT_FOLDER_ID
 `requirements-transfer.txt` pins the compatible `boxsdk[jwt]` v4 line and the
 other transfer-only dependencies. Keep the JWT outside the repository at mode
 `0600`; its path and contents must never be logged or archived.
+
+## Dynamic V100 cutover evidence
+
+V100 continues while Judy is qualified, so finalized reference and archive
+evidence cannot be part of the immutable Sprint 7e runtime package. After H100
+acceptance, transfer only each completed reference's `final_metrics.json` and
+`runtime_provenance.json` to a read-only Judy staging directory and verify
+their out-of-band SHA-256 values before `cutover-check`. Transfer the resulting
+`CUTOVER_READY.json` to the V100 operator before stop/archive. Transfer the
+final archive manifest back to Judy, then bind its canonical Judy copy and
+SHA-256 in the external operator attestation. Campaign uses the identities
+already frozen into those receipts and never requires a mounted V100 or
+reference filesystem.
+
+This runtime amendment does not implement that later dynamic-control transfer.
+The `box-transfer-v1` literal declares the isolated topology; it is not a Box
+receipt. Proceed with runtime upload, Slurm smoke, and H100 acceptance, but STOP
+before `cutover-check` or `campaign` until a reviewed content-addressed helper
+binds the exact source hashes and atomic Box download receipts.
 
 The Sprint 7e amendment must use its own newly created, initially empty Box
 folder. Do not point `BOX_FOLDER_ID` at the Sprint 7d base folder, an active

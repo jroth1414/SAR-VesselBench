@@ -15,6 +15,7 @@ from scripts.h100.source_validation import HEX64
 
 HOST_TESTS = [
     "tests/test_h100_handoff.py",
+    "tests/test_h100_submit_isolation.py",
     "tests/test_experiment_manifest.py",
 ]
 HOST_COMMAND = ["-m", "pytest", "-q", *HOST_TESTS]

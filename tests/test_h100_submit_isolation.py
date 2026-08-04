@@ -20,8 +20,6 @@ def _site_values(
     tmp_path: Path,
     *,
     h100_runs: Path,
-    v100_runs: Path,
-    reference_runs: Path | None = None,
 ) -> dict[str, str]:
     return {
         "H100_ACCOUNT": "geofam",
@@ -60,8 +58,6 @@ def _site_values(
         "H100_VENV_BUILD_SHA256": SHA256,
         "H100_ENV_LOCK_SHA256": SHA256,
         "H100_RUNS_ROOT": str(h100_runs),
-        "H100_V100_RUNS_ROOT": str(v100_runs),
-        "H100_REFERENCES_ROOT": str(reference_runs or tmp_path / "references"),
         "H100_CAMPAIGN_ID": "h100-campaign",
         "H100_REFERENCE_CAMPAIGN_ID": "v100-references",
         "H100_EXPECTED_GIT_SHA": GIT_SHA,
@@ -78,6 +74,7 @@ def _site_values(
         "H100_STATS_SHA256": SHA256,
         "H100_LSSSDD_SHA256": SHA256,
         "H100_REMAINING_V100_WALL_HOURS": "100",
+        "H100_V100_CONTROL_PLANE": "box-transfer-v1",
     }
 
 
@@ -86,7 +83,6 @@ def _run_submit(
     *,
     mode: str,
     h100_runs: Path,
-    v100_runs: Path,
     job_logs: Path | None = None,
     reference_runs: Path | None = None,
     extra_env: dict[str, str] | None = None,
@@ -96,15 +92,13 @@ def _run_submit(
     values = _site_values(
         tmp_path,
         h100_runs=h100_runs,
-        v100_runs=v100_runs,
-        reference_runs=reference_runs,
     )
+    if reference_runs is not None:
+        values["H100_REFERENCES_ROOT"] = str(reference_runs)
     values.update(site_overrides or {})
     if job_logs is not None:
         values["H100_JOB_LOG_DIR"] = str(job_logs)
     if prepare_runtime_paths:
-        Path(values["H100_V100_RUNS_ROOT"]).mkdir(parents=True, exist_ok=True)
-        Path(values["H100_REFERENCES_ROOT"]).mkdir(parents=True, exist_ok=True)
         Path(values["H100_WHEELHOUSE"]).mkdir(parents=True, exist_ok=True)
         Path(values["H100_BASE_EXTRACTION_RECEIPT"]).write_text("{}\n")
         python_lib = Path(values["H100_BASE_PYTHON_LIB_DIR"])
@@ -135,56 +129,116 @@ def _run_submit(
     )
 
 
-@pytest.mark.parametrize("mode", ["smoke", "acceptance", "cutover-check", "campaign"])
-@pytest.mark.parametrize("relationship", ["equal", "h100-child", "h100-parent"])
-def test_submit_rejects_v100_runs_overlap_before_any_write(
+@pytest.mark.parametrize("mode", ["smoke", "acceptance"])
+@pytest.mark.parametrize("relationship", ["equal", "logs-child", "logs-parent"])
+def test_submit_rejects_h100_write_root_overlap_before_any_write(
     tmp_path: Path, mode: str, relationship: str
 ):
-    tree = tmp_path / "campaigns"
+    tree = tmp_path / "h100-output"
+    references = tmp_path / "transferred-v100-references"
+    references.mkdir()
     if relationship == "equal":
-        h100_runs = v100_runs = tree / "v100"
-    elif relationship == "h100-child":
-        v100_runs = tree / "v100"
-        h100_runs = v100_runs / "h100"
-    else:
+        h100_runs = job_logs = tree
+    elif relationship == "logs-child":
         h100_runs = tree
-        v100_runs = h100_runs / "v100"
-    v100_runs.mkdir(parents=True)
+        job_logs = h100_runs / "logs"
+    else:
+        job_logs = tree
+        h100_runs = job_logs / "runs"
     result = _run_submit(
         tmp_path,
         mode=mode,
         h100_runs=h100_runs,
-        v100_runs=v100_runs,
+        job_logs=job_logs,
+        reference_runs=references,
     )
     assert result.returncode == 2
-    assert "H100_RUNS_ROOT overlaps live V100 runs root" in result.stderr
+    assert "H100_JOB_LOG_DIR overlaps H100 runs root" in result.stderr
     assert not (h100_runs / ".h100").exists()
-    assert not (tmp_path / "h100-job-logs").exists()
+    assert not job_logs.exists()
 
 
-@pytest.mark.parametrize("mode", ["smoke", "acceptance", "cutover-check", "campaign"])
-def test_submit_rejects_job_log_overlap_with_live_v100_before_write(
-    tmp_path: Path, mode: str
+@pytest.mark.parametrize("mode", ["smoke", "acceptance"])
+@pytest.mark.parametrize(
+    ("write_name", "expected"),
+    (
+        ("runs", "H100_RUNS_ROOT overlaps H100_BASE_PACKAGE_ROOT"),
+        ("logs", "H100_JOB_LOG_DIR overlaps H100_BASE_PACKAGE_ROOT"),
+    ),
+)
+def test_submit_rejects_write_overlap_with_immutable_input_before_write(
+    tmp_path: Path, mode: str, write_name: str, expected: str
 ):
-    v100_runs = tmp_path / "v100-runs"
-    v100_runs.mkdir()
+    protected = tmp_path / "base-package"
+    protected.mkdir()
+    references = tmp_path / "transferred-v100-references"
+    references.mkdir()
+    h100_runs = (
+        protected / "nested-runs"
+        if write_name == "runs"
+        else tmp_path / "h100-runs"
+    )
+    job_logs = (
+        protected / "nested-logs"
+        if write_name == "logs"
+        else tmp_path / "h100-job-logs"
+    )
+    result = _run_submit(
+        tmp_path,
+        mode=mode,
+        h100_runs=h100_runs,
+        job_logs=job_logs,
+        reference_runs=references,
+    )
+    assert result.returncode == 2
+    assert expected in result.stderr
+    assert not (h100_runs / ".h100").exists()
+    assert not job_logs.exists()
+
+
+@pytest.mark.parametrize(
+    ("site_overrides", "expected"),
+    (
+        ({"H100_RUNS_ROOT": "relative/runs"}, "H100_RUNS_ROOT must be an absolute path"),
+        ({"H100_RUNS_ROOT": "/"}, "H100_RUNS_ROOT must not resolve to /"),
+        (
+            {"H100_JOB_LOG_DIR": "relative/logs"},
+            "H100_JOB_LOG_DIR must be an absolute path",
+        ),
+        ({"H100_JOB_LOG_DIR": "/"}, "H100_JOB_LOG_DIR must not resolve to /"),
+    ),
+)
+def test_submit_rejects_unsafe_write_root_before_write(
+    tmp_path: Path, site_overrides: dict[str, str], expected: str
+):
     h100_runs = tmp_path / "h100-runs"
     result = _run_submit(
         tmp_path,
-        mode=mode,
+        mode="smoke",
         h100_runs=h100_runs,
-        v100_runs=v100_runs,
-        job_logs=v100_runs / "slurm-logs",
+        site_overrides=site_overrides,
     )
     assert result.returncode == 2
-    assert "H100_JOB_LOG_DIR overlaps live V100 runs root" in result.stderr
+    assert expected in result.stderr
     assert not h100_runs.exists()
-    assert not (v100_runs / "slurm-logs").exists()
 
 
-def test_submit_v100_guard_precedes_every_persistent_write():
+def test_submit_requires_box_control_plane_before_write(tmp_path: Path):
+    h100_runs = tmp_path / "h100-runs"
+    result = _run_submit(
+        tmp_path,
+        mode="smoke",
+        h100_runs=h100_runs,
+        site_overrides={"H100_V100_CONTROL_PLANE": "shared-filesystem"},
+    )
+    assert result.returncode == 2
+    assert "H100_V100_CONTROL_PLANE must be box-transfer-v1" in result.stderr
+    assert not h100_runs.exists()
+
+
+def test_submit_write_root_guard_precedes_every_persistent_write():
     source = SUBMIT.read_text()
-    guard = source.index('H100_RUNS_ROOT "$h100_runs_root" "live V100 runs root"')
+    guard = source.index('H100_JOB_LOG_DIR "$h100_job_log_root" "H100 runs root"')
     for marker in (
         "mkdir -p \"$H100_RUNS_ROOT/.h100/slurm\"",
         "mkdir -p \"$H100_JOB_LOG_DIR\"",
@@ -196,17 +250,11 @@ def test_submit_v100_guard_precedes_every_persistent_write():
 
 
 def test_submit_rejects_unbound_python_library_path_before_write(tmp_path: Path):
-    v100_runs = tmp_path / "v100-runs"
-    v100_runs.mkdir()
-    references = tmp_path / "v100-references"
-    references.mkdir()
     h100_runs = tmp_path / "h100-runs"
     result = _run_submit(
         tmp_path,
         mode="smoke",
         h100_runs=h100_runs,
-        v100_runs=v100_runs,
-        reference_runs=references,
         site_overrides={"H100_BASE_PYTHON_LIB_DIR": "relative/python-lib"},
     )
     assert result.returncode == 2
@@ -217,49 +265,43 @@ def test_submit_rejects_unbound_python_library_path_before_write(tmp_path: Path)
     assert not h100_runs.exists()
 
 
-@pytest.mark.parametrize("mode", ["smoke", "acceptance", "cutover-check", "campaign"])
-def test_submit_rejects_h100_runs_overlap_with_v100_references_before_write(
+@pytest.mark.parametrize("mode", ["cutover-check", "campaign"])
+def test_dynamic_control_modes_fail_closed_before_any_write(
     tmp_path: Path, mode: str
 ):
-    v100_runs = tmp_path / "v100-runs"
-    v100_runs.mkdir()
-    references = tmp_path / "v100-references"
-    references.mkdir()
-    h100_runs = references / "nested-h100"
-    result = _run_submit(
-        tmp_path,
-        mode=mode,
-        h100_runs=h100_runs,
-        v100_runs=v100_runs,
-        reference_runs=references,
-    )
-    assert result.returncode == 2
-    assert "H100_RUNS_ROOT overlaps V100 reference runs root" in result.stderr
-    assert not (h100_runs / ".h100").exists()
-
-
-@pytest.mark.parametrize("mode", ["smoke", "acceptance", "cutover-check", "campaign"])
-def test_submit_rejects_job_log_overlap_with_v100_references_before_write(
-    tmp_path: Path, mode: str
-):
-    v100_runs = tmp_path / "v100-runs"
-    v100_runs.mkdir()
-    references = tmp_path / "v100-references"
-    references.mkdir()
     h100_runs = tmp_path / "h100-runs"
-    job_logs = references / "h100-logs"
+    job_logs = tmp_path / "h100-job-logs"
     result = _run_submit(
         tmp_path,
         mode=mode,
         h100_runs=h100_runs,
-        v100_runs=v100_runs,
         job_logs=job_logs,
-        reference_runs=references,
     )
     assert result.returncode == 2
-    assert "H100_JOB_LOG_DIR overlaps V100 reference runs root" in result.stderr
+    assert "is not authorized until the content-addressed dynamic Box" in result.stderr
     assert not h100_runs.exists()
     assert not job_logs.exists()
+
+
+@pytest.mark.parametrize("mode", ["smoke", "acceptance"])
+def test_pre_cutover_modes_do_not_require_v100_paths(
+    tmp_path: Path, mode: str
+):
+    fake_bin = tmp_path / f"fake-bin-{mode}"
+    fake_bin.mkdir()
+    fake_sbatch = fake_bin / "sbatch"
+    fake_sbatch.write_text("#!/bin/sh\nexit 0\n")
+    fake_sbatch.chmod(0o755)
+    h100_runs = tmp_path / f"h100-runs-{mode}"
+    result = _run_submit(
+        tmp_path,
+        mode=mode,
+        h100_runs=h100_runs,
+        prepare_runtime_paths=True,
+        extra_env={"PATH": f"{fake_bin}:{os.environ['PATH']}"},
+    )
+    assert result.returncode == 0, result.stderr
+    assert "H100_V100_RUNS_ROOT" not in (tmp_path / f"site-{mode}.env").read_text()
 
 
 def test_submit_snapshots_sanitized_site_and_batches_reject_tampering(tmp_path: Path):
@@ -274,14 +316,10 @@ def test_submit_snapshots_sanitized_site_and_batches_reject_tampering(tmp_path: 
     fake_sbatch.chmod(0o755)
 
     h100_runs = tmp_path / "h100-runs"
-    v100_runs = tmp_path / "v100-runs"
-    references = tmp_path / "v100-references"
     result = _run_submit(
         tmp_path,
         mode="smoke",
         h100_runs=h100_runs,
-        v100_runs=v100_runs,
-        reference_runs=references,
         prepare_runtime_paths=True,
         site_overrides={
             "BOX_JWT_CONFIG": "/secret/jwt.json",
@@ -304,6 +342,9 @@ def test_submit_snapshots_sanitized_site_and_batches_reject_tampering(tmp_path: 
     assert hashlib.sha256(snapshot_bytes).hexdigest() == digest
     snapshot_text = snapshot_bytes.decode()
     assert "BOX_" not in snapshot_text
+    assert "H100_V100_RUNS_ROOT" not in snapshot_text
+    assert "H100_REFERENCES_ROOT" not in snapshot_text
+    assert "H100_V100_CONTROL_PLANE=box-transfer-v1" in snapshot_text
     assert "secret-folder-404384490657" not in snapshot_text
 
     assert "H100_BASE_PYTHON_LIB_DIR=" in snapshot_text

@@ -73,16 +73,23 @@ command. Box variables never enter the child process.
 
 ## 3. Configure the site
 
-Copy `site.env.example` to ignored `site.env` and fill every hash/path.
-Set `H100_V100_RUNS_ROOT` to the existing live V100 campaign directory; it is
-an immutable, read-only isolation boundary, not an H100 output. Submission
-canonicalizes that path plus `H100_RUNS_ROOT` and `H100_JOB_LOG_DIR`, then
-rejects equality or ancestor overlap in either direction before its first
-directory creation, receipt write, or Slurm submission. Account, partition,
-reservation, log directory, mail, project name, reference paths, Box JWT
-path/folder, and the preflight result-part limit are site interfaces.
-Submission uses exact `--export=NONE`; mode and site-file path are validated
-positional batch arguments, not exported environment variables.
+Copy `site.env.example` to ignored `site.env` and fill the fields required
+for the next mode. Judy and the live V100 host have completely separate
+filesystems, so `H100_V100_CONTROL_PLANE` must be exactly
+`box-transfer-v1`; there is no live-V100 path on Judy and a dummy directory is
+forbidden. Submission canonicalizes `H100_RUNS_ROOT` and
+`H100_JOB_LOG_DIR`, then rejects equality or ancestor overlap between them
+and the immutable repo, base/runtime packages, wheelhouse, and sealed venv
+before its first directory creation, receipt write, or Slurm submission.
+Smoke and H100
+acceptance require no V100 or reference path. `cutover-check` alone consumes
+a Judy-local, verified copy of the finalized R2/R3 evidence transferred
+through Box. Campaign consumes only the reference identities already frozen in
+`CUTOVER_READY.json`, not that staging path. Account, partition, reservation,
+log directory, mail, project name, Box JWT path/folder, and the preflight
+result-part limit remain site interfaces. Submission uses exact
+`--export=NONE`; mode and the immutable site snapshot are validated positional
+batch arguments, not exported environment variables.
 
 ## 4. Slurm smoke, acceptance, and cutover
 
@@ -115,21 +122,31 @@ remaining V100 wall time. The forecast includes the measured package
 verification/clone/extraction cost once per projected Slurm allocation. It
 writes `runs/.h100/H100_READY.json`.
 
-Once that marker and fresh, provenance-bound R2/R3 results exist, run the
-read-only cutover guard:
+The current amendment stops at this acceptance boundary. Its control-plane
+literal is not transfer evidence, and the content-addressed helper for the
+dynamic files below is not implemented yet. Do not run `cutover-check` or
+`campaign` until that helper binds exact source hashes, atomic Box downloads,
+and reviewed receipts.
+
+Once that marker exists, transfer the finalized V100 R2/R3
+`final_metrics.json` and `runtime_provenance.json` files through Box, verify
+their out-of-band hashes on Judy, and point `H100_REFERENCES_ROOT` at that
+read-only local evidence. Then run the read-only cutover guard:
 
 ```bash
 slurm/h100/submit.sh cutover-check
 ```
 
 Refresh `H100_REMAINING_V100_WALL_HOURS` immediately before this command. The
-guard rechecks the accepted H100 wall clock against that current forecast and
-writes `CUTOVER_READY.json`; it never stops or signals V100. Only
-after that succeeds, the human operator gracefully stops the V100 core
-processes, archives their core artifacts as non-reportable diagnostics, and
-creates the external `V100_CORE_ARCHIVED.json` attestation plus its archive
-manifest using the tracked schemas. Record those two file hashes and the
-`CUTOVER_READY.json` hash in the untracked `site.env`, then launch:
+guard validates the transferred references, rechecks the accepted H100 wall
+clock against that current forecast, and writes `CUTOVER_READY.json`; it never
+stops or signals V100. Transfer that marker to the V100 operator through Box.
+Only after it succeeds may the human gracefully stop the V100 core processes
+and archive their core artifacts as non-reportable diagnostics. Transfer the
+resulting archive manifest back to Judy through Box, then create or update the
+external `V100_CORE_ARCHIVED.json` attestation so it binds the canonical Judy
+copy and all three out-of-band SHA-256 values. Record those hashes in the
+untracked `site.env`, then launch:
 
 ```bash
 slurm/h100/submit.sh campaign

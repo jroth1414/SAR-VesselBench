@@ -1461,11 +1461,22 @@ def test_submit_and_site_interfaces_are_safe_and_untracked():
         "H100_PROJECT_ROOT",
         "H100_TRANSFER_PYTHON",
         "H100_JOB_LOG_DIR",
+        "H100_V100_CONTROL_PLANE",
+        "H100_REFERENCES_ROOT",
         "BOX_JWT_CONFIG",
         "BOX_FOLDER_ID",
     ):
         assert name in example
     assert "H100_MAIL_TYPE=ALL" in example
+    operational = "\n".join(
+        path.read_text() for path in (SUBMIT, SBATCH, SMOKE_SBATCH)
+    )
+    assert "H100_V100_RUNS_ROOT" not in example
+    assert "H100_V100_RUNS_ROOT" not in operational
+    assert "H100_V100_CONTROL_PLANE=box-transfer-v1" in example
+    assert operational.count("box-transfer-v1") >= 3
+    assert "STOP before cutover-check or campaign" in example
+    assert '"$mode" == "cutover-check"' in submit
     assert (REPO / "slurm/h100/.gitignore").read_text().strip() == "site.env"
     assert "refusing tracked site.env" in submit
 
@@ -1730,6 +1741,7 @@ def test_host_gates_precede_native_pythonpath_and_campaign_resets_canonical_path
     assert 'PYTHONPATH="$repo" "$H100_TRANSFER_PYTHON"' in job
     assert "tests/test_h100_handoff.py" in host_test_gate.HOST_TESTS
     assert "tests/test_experiment_manifest.py" in host_test_gate.HOST_TESTS
+    assert "tests/test_h100_submit_isolation.py" in host_test_gate.HOST_TESTS
     for name in ("V100_CORE_ARCHIVED.json", "V100_CORE_ARCHIVE_MANIFEST.json"):
         assert name in job
 

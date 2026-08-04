@@ -39,6 +39,10 @@ fi
 readonly H100_MODE compute_site compute_site_sha256
 # shellcheck disable=SC1090
 source "$compute_site"
+if [[ "${H100_V100_CONTROL_PLANE:-}" != "box-transfer-v1" ]]; then
+  echo "compute-site V100 control plane must be box-transfer-v1" >&2
+  exit 2
+fi
 # Transfer credentials are never needed by a compute allocation.
 unset BOX_JWT_CONFIG BOX_FOLDER_ID
 if [[ "$H100_BASE_PYTHON_LIB_DIR" != /* ||
@@ -51,9 +55,9 @@ fi
 export LD_LIBRARY_PATH="$H100_BASE_PYTHON_LIB_DIR"
 readonly H100_BASE_PYTHON_LIB_DIR LD_LIBRARY_PATH
 
-# Repeat the submission-time isolation check from the verified snapshot before
-# the allocation writes smoke metadata. This protects queued jobs and every
-# requeue independently of the original mutable site.env.
+# Repeat the submission-time Judy write-root isolation check from the verified
+# snapshot before the allocation writes smoke metadata. This protects queued
+# jobs and every requeue independently of the original mutable site.env.
 canonical_write_root() {
   local name="$1"
   local raw="${!name}"
@@ -85,32 +89,26 @@ assert_disjoint_from_protected_root() {
 
 h100_runs_root="$(canonical_write_root H100_RUNS_ROOT)"
 h100_job_log_root="$(canonical_write_root H100_JOB_LOG_DIR)"
-v100_runs_root="$(canonical_write_root H100_V100_RUNS_ROOT)"
-if [[ ! -d "$v100_runs_root" ]]; then
-  echo "H100_V100_RUNS_ROOT is not the existing live V100 runs directory: $v100_runs_root" >&2
-  exit 2
-fi
 assert_disjoint_from_protected_root \
-  H100_RUNS_ROOT "$h100_runs_root" "live V100 runs root" "$v100_runs_root"
-assert_disjoint_from_protected_root \
-  H100_JOB_LOG_DIR "$h100_job_log_root" "live V100 runs root" "$v100_runs_root"
-reference_runs_root=""
-if [[ -n "${H100_REFERENCES_ROOT:-}" ]]; then
-  reference_runs_root="$(canonical_write_root H100_REFERENCES_ROOT)"
-  if [[ ! -d "$reference_runs_root" ]]; then
-    echo "H100_REFERENCES_ROOT is not the existing V100 reference runs directory: $reference_runs_root" >&2
+  H100_JOB_LOG_DIR "$h100_job_log_root" "H100 runs root" "$h100_runs_root"
+for protected_name in \
+  H100_PROJECT_ROOT H100_BASE_PACKAGE_ROOT H100_RUNTIME_PACKAGE_ROOT \
+  H100_WHEELHOUSE H100_VENV_ROOT
+do
+  protected_value="${!protected_name}"
+  if [[ "$protected_value" != /* ]]; then
+    echo "$protected_name must be an absolute protected path" >&2
     exit 2
   fi
+  protected_root="$(realpath -m -- "$protected_value")"
   assert_disjoint_from_protected_root \
-    H100_RUNS_ROOT "$h100_runs_root" "V100 reference runs root" "$reference_runs_root"
+    H100_RUNS_ROOT "$h100_runs_root" "$protected_name" "$protected_root"
   assert_disjoint_from_protected_root \
-    H100_JOB_LOG_DIR "$h100_job_log_root" "V100 reference runs root" "$reference_runs_root"
-  H100_REFERENCES_ROOT="$reference_runs_root"
-fi
+    H100_JOB_LOG_DIR "$h100_job_log_root" "$protected_name" "$protected_root"
+done
 H100_RUNS_ROOT="$h100_runs_root"
 H100_JOB_LOG_DIR="$h100_job_log_root"
-H100_V100_RUNS_ROOT="$v100_runs_root"
-readonly H100_RUNS_ROOT H100_JOB_LOG_DIR H100_V100_RUNS_ROOT H100_REFERENCES_ROOT
+readonly H100_RUNS_ROOT H100_JOB_LOG_DIR
 
 check_sha() {
   local expected="$1"

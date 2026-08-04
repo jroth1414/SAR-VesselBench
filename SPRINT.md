@@ -34,6 +34,11 @@ live V100 campaign remains untouched until every H100 and cutover gate passes.
   eight H100s, and no DDP.
 - V100 remains the unchanged fallback and continues to host R2/R3. All 32 core
   cells restart from empty H100 namespaces only after the atomic cutover.
+- Judy and V100 have completely separate filesystems. Every Judy submission
+  uses `H100_V100_CONTROL_PLANE=box-transfer-v1`; no live-V100 or dummy path
+  is accepted. Smoke and H100 acceptance are Judy-local. Final reference,
+  cutover, and archive evidence crosses Box at the declared gates; campaign
+  has no mounted V100/reference path dependency.
 - Frozen detector, scorer, splits, stats, and historical LS-SSDD split are not
   modified.
 
@@ -48,6 +53,13 @@ Sprint 7e adds a separate package containing only one exact Git bundle plus
 `manifest.json`, `SHA256SUMS`, and `READY.json`. Its identity binds the complete
 base-payload receipt and the Sprint-7e commit. It is uploaded to a new empty
 Box folder so an active 7d transfer is never mutated or interrupted.
+Dynamic R2/R3, CUTOVER_READY, and V100 archive evidence is deliberately absent
+from both forward packages because V100 remains live. Those small finalized
+receipts cross Box separately at cutover and are hash-bound before campaign.
+The content-addressed protocol and exact source-hash receipts for those dynamic
+transfers are not part of this amendment and remain NOT STARTED. This package
+authorizes Judy smoke and H100 acceptance only; STOP before `cutover-check` or
+`campaign` until that separate transfer gate is implemented and reviewed.
 
 ## Acceptance criteria
 
@@ -68,9 +80,12 @@ Box folder so an active 7d transfer is never mutated or interrupted.
    base payload and Sprint-7e bundle separately, proves batch-to-child
    `SIGUSR1`, requeues, and resumes a durable checkpoint without a duplicate
    cell.
+   The smoke and H100 acceptance snapshots contain no V100/reference filesystem
+   path and enforce the exact Box control-plane literal.
 6. The conservative H100 forecast, including per-allocation staging, beats the
    current V100 forecast at acceptance and again at cutover; fresh valid R2/R3
-   markers and the external V100 archive attestation remain mandatory.
+   markers transferred through Box and the returned external V100 archive
+   attestation remain mandatory.
 7. Campaign, per-cell, cutover, and reverse-result receipts bind the code SHA,
    base payload, runtime amendment, venv tree/build/base Python, strict-FP32
    backend, H100 UUIDs, throughput, and per-cell runtime. Schema-1 SIF receipts
@@ -84,8 +99,9 @@ Box folder so an active 7d transfer is never mutated or interrupted.
 Source work is complete only after clean tests, exact bundle round trips, and
 reviewable commits. Operational cutover remains incomplete until the runtime
 amendment is independently uploaded/downloaded, Judy builds and verifies the
-venv, every H100 acceptance gate passes, the measured speed advantage still
-holds, R2/R3 validate, and the human operator supplies the V100 archive
+venv (or re-verifies the already sealed matching venv), every H100 acceptance
+gate passes, the measured speed advantage still holds, transferred R2/R3
+evidence validates, and the human operator supplies the V100 archive
 attestation. Until then, no H100 training/result is claimed and V100 continues.
 
 ## Review scope

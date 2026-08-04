@@ -425,3 +425,48 @@ identically to every arm. This committed log lives here; `runs/` is gitignored a
   It does not claim Judy built the 3.11.13 venv, any H100 gate passed, V100 was
   stopped, cutover occurred, or H100 training started. V100 continues until all
   acceptance, throughput, R2/R3, and human operator gates pass.
+
+## Judy/V100 separate-filesystem control plane (human clarification, 2026-08-04)
+
+- **Topology:** Judy and the live V100 host have completely separate storage.
+  No V100 runs path is or will be mounted on Judy. A dummy Judy directory is
+  not an acceptable isolation surrogate.
+- **Correction:** runtime commit
+  `13110cec972f23b014e68043b9954ad577916031` incorrectly required
+  `H100_V100_RUNS_ROOT` in every mode. That package remains immutable
+  provenance but cannot submit even the one-GPU smoke honestly. Its scientific
+  and environment recipe is unchanged; a new code-only Sprint-7e package must
+  replace only the runtime-control layer.
+- **Control plane:** every Judy submission requires the exact
+  `H100_V100_CONTROL_PLANE=box-transfer-v1` literal in its immutable
+  compute-site snapshot. Smoke and H100 acceptance consume Judy-local inputs
+  only. Final R2/R3 metrics/provenance cross Box to Judy for
+  `cutover-check`; `CUTOVER_READY.json` crosses Box to the V100 operator
+  before stop/archive; the archive manifest crosses back to Judy before the
+  external operator attestation and campaign gate are validated. Campaign
+  execution has no mounted V100/reference path dependency.
+- **Write isolation:** before its first persistent write or Slurm submission,
+  Judy canonicalizes `H100_RUNS_ROOT` and `H100_JOB_LOG_DIR` and rejects
+  equality or ancestor overlap with each other or the immutable repo,
+  base/runtime packages, wheelhouse, and sealed venv. Cutover-check
+  additionally protects the local transferred-reference evidence root.
+- **Verified reusable environment:** Judy successfully built and independently
+  verified Python 3.11.13 with torch `2.11.0+cu126`. The sealed venv tree is
+  `101fd4571e3daaab97bf1d6d6f7a98fb6514e2b9bc54eab5d2b49e41ace4f8ca`;
+  its build receipt is
+  `c7051cb6d743923fcea64d618a59685620309e766cbc90e73179aee9fa8fc9be`.
+  The verified base-Python executable is
+  `dbbb197739dbd20dcae2eacc394b97e7d092a7512c60f54980075b7f037afd39`,
+  base runtime `cce52efebc4dbd691ffbdc46fac68efb9971dc89bd63dae34113bfcebc0f4739`,
+  wheelhouse `fb0106771ddb223ba2b93af3463f6accbc018ece18275975ef7770749fd11138`,
+  and extraction receipt `eb52d4e45083f55af3ae2e14be7fc2c8c610d0567454495542574c8e431a2b5d`.
+  The receipt is not source-SHA-bound, so it remains valid for this control-only
+  amendment while `locks/env-v100node.txt`, wheelhouse, base extraction, base
+  Python/runtime, final path, and tree remain exact.
+- **Status:** no GPU or Slurm gate has run. V100 continues; no cutover or H100
+  training is authorized until the replacement amendment is transferred and
+  every original acceptance gate passes.
+  The replacement amendment qualifies only smoke and H100 acceptance. The
+  content-addressed Box protocol and exact source-hash receipts for dynamic
+  cutover evidence remain NOT STARTED, so `cutover-check` and `campaign` are
+  still a mandatory STOP even after those target gates pass.
