@@ -22,7 +22,6 @@ Frozen-scorer adapters live here too:
 from __future__ import annotations
 
 import json
-import math
 from pathlib import Path
 from typing import Mapping, Sequence
 
@@ -30,12 +29,12 @@ import numpy as np
 import torch
 
 from src.eval.decode import DecodedPoint, decode_heatmap
-from src.eval.scorer import GroundTruthPoint, PredictionPoint
+from src.eval.ground_truth import ground_truth_from_labels, normalize_source
+from src.eval.scorer import PredictionPoint
 
 GSD_M = 10.0
 OUTPUT_STRIDE_PX = 4
 OUTPUT_STRIDE_M = OUTPUT_STRIDE_PX * GSD_M  # 40.0 — the P2.2 contract
-SOURCE_CASE = {"ais": "AIS", "ais/manual": "AIS/Manual", "manual": "Manual"}
 SUPPORTED_PRECISIONS = {"16-mixed", "32-true"}
 
 
@@ -45,32 +44,6 @@ def _autocast_enabled(precision: str, device_type: str) -> bool:
     if precision not in SUPPORTED_PRECISIONS:
         raise ValueError(f"unsupported shared inference precision: {precision}")
     return device_type == "cuda" and precision == "16-mixed"
-
-
-def normalize_source(source: object) -> str | None:
-    if source is None or (isinstance(source, float) and math.isnan(source)):
-        return None
-    return SOURCE_CASE.get(str(source).lower(), str(source))
-
-
-def ground_truth_from_labels(rows: Sequence[Mapping[str, object]]) -> list[GroundTruthPoint]:
-    """xView3 label rows (one scene) -> frozen-scorer GroundTruthPoints."""
-
-    points = []
-    for row in rows:
-        shore = row.get("distance_from_shore_km")
-        if isinstance(shore, float) and math.isnan(shore):
-            shore = None
-        points.append(
-            GroundTruthPoint(
-                x_m=float(row["detect_scene_column"]) * GSD_M,
-                y_m=float(row["detect_scene_row"]) * GSD_M,
-                confidence=str(row.get("confidence") or "HIGH"),
-                source=normalize_source(row.get("source")),
-                distance_from_shore_km=float(shore) if shore is not None else None,
-            )
-        )
-    return points
 
 
 class ShoreDistance:
@@ -272,6 +245,7 @@ def dev_f1(
         "tp": result.aggregate.tp,
         "fp": result.aggregate.fp,
         "fn": result.aggregate.fn,
+        "ignored_predictions": result.aggregate.ignored_predictions,
         "threshold": threshold,
         "n_candidates": sum(len(p) for p in pred_by_scene.values()),
     }
