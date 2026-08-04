@@ -19,14 +19,19 @@ prints raw generations for eyeball verification before the full run.
 from __future__ import annotations
 
 import argparse
+import datetime as dt
+import hashlib
 import json
 import re
+import subprocess
 from pathlib import Path
-from typing import Sequence
+from typing import Mapping, Sequence
 
 import numpy as np
 
 PROMPTS = ("ship", "vessel", "boat")
+MODEL_REVISION = "c32291ca5e996f5a7a485845b4f57a233936bba0"
+RESULT_SCHEMA = 2
 # The model card's canonical detection template (README):
 #   prompt = f"Locate all the instances that matches the following description: {cats}."
 QUESTION = "Locate all the instances that matches the following description: {prompt}."
@@ -69,13 +74,72 @@ def chip_image(chip_path: Path, mean: np.ndarray, std: np.ndarray):
     return Image.fromarray(_chip_to_uint8(chips, mean, std))
 
 
+def chip_ground_truth_from_labels(labels: Sequence[Mapping[str, object]]):
+    """Convert chip-local labels through the one shared evaluation contract."""
+
+    from src.eval.ground_truth import ground_truth_from_labels
+
+    adapted = []
+    for label in labels:
+        row = dict(label)
+        row["detect_scene_column"] = label["chip_col"]
+        row["detect_scene_row"] = label["chip_row"]
+        adapted.append(row)
+    return ground_truth_from_labels(adapted)
+
+
+def chip_label_counts(labels: Sequence[Mapping[str, object]]) -> dict[str, int]:
+    """Count every category, evaluating all rows so malformed data fails closed."""
+
+    from src.eval.ground_truth import classify_label
+
+    counts = {"positive": 0, "background": 0, "ignore": 0}
+    for label in labels:
+        counts[classify_label(label)] += 1
+    return counts
+
+
+def _sha256_file(path: Path, chunk_bytes: int = 8 * 2**20) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        while block := handle.read(chunk_bytes):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _git_sha() -> str:
+    repo = Path(__file__).resolve().parents[2]
+    value = subprocess.run(
+        ["git", "-c", f"safe.directory={repo}", "rev-parse", "HEAD"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    if re.fullmatch(r"[0-9a-f]{40}", value) is None:
+        raise RuntimeError("reference source did not resolve to a full Git SHA")
+    return value
+
+
+def _metrics_payload(metrics) -> dict[str, int | float]:
+    return {
+        "f1": metrics.f1,
+        "precision": metrics.precision,
+        "recall": metrics.recall,
+        "tp": metrics.tp,
+        "fp": metrics.fp,
+        "fn": metrics.fn,
+        "ignored_predictions": metrics.ignored_predictions,
+    }
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    import pandas as pd
     import torch
     import yaml
     from transformers import AutoModel, AutoProcessor, AutoTokenizer
 
-    from src.eval.scorer import GroundTruthPoint, PredictionPoint, score_dataset
+    from scripts.h100.contracts import atomic_write_json
+    from src.eval.scorer import PredictionPoint, score_dataset
     from src.eval.threshold import apply_threshold, select_f1_threshold
 
     parser = argparse.ArgumentParser(description=__doc__)
@@ -85,10 +149,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--smoke", type=int, default=0, help="probe N chips, print raw generations")
     parser.add_argument("--device", default="cuda")
     args = parser.parse_args(argv)
+    if args.n_chips <= 0:
+        parser.error("--n-chips must be positive")
+    if args.smoke < 0:
+        parser.error("--smoke must be nonnegative")
 
     weights_dir = Path(args.weights)
-    if not (weights_dir / "LICENSE").exists():
-        raise SystemExit("license gate: data/weights/locateanything/LICENSE missing")
+    license_path = weights_dir / "LICENSE"
+    source_note = weights_dir / "SOURCE.note"
+    if not license_path.is_file() or not source_note.is_file():
+        raise SystemExit(
+            "provenance gate: LocateAnything LICENSE and SOURCE.note are required"
+        )
 
     config = yaml.safe_load(Path(args.config).read_text())
     splits = json.loads(Path(config["paths"]["splits"]).read_text())["splits"]
@@ -107,12 +179,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     for scene_id in sorted(splits["dev"]):
         for sidecar in sorted((chips_root / scene_id).glob("*.json")):
             payload = json.loads(sidecar.read_text())
-            if any(
-                bool(l.get("is_vessel"))
-                and str(l.get("confidence") or "").upper() in ("HIGH", "MEDIUM")
-                for l in payload["labels"]
-            ):
-                labeled.append((sidecar.with_suffix(".npy"), payload))
+            counts = chip_label_counts(payload["labels"])
+            if counts["positive"]:
+                chip_path = sidecar.with_suffix(".npy")
+                labeled.append(
+                    (
+                        chip_path,
+                        payload,
+                        chip_path.relative_to(chips_root).as_posix(),
+                        _sha256_file(sidecar),
+                    )
+                )
     step = max(1, len(labeled) // args.n_chips)
     sample = labeled[::step][: args.n_chips]
     if args.smoke:
@@ -164,25 +241,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     results = {}
     for prompt in PROMPTS:
         gt_by_chip, pred_by_chip = {}, {}
-        for index, (chip_path, sidecar) in enumerate(sample):
+        for index, (
+            chip_path,
+            sidecar,
+            relative,
+            _sidecar_sha256,
+        ) in enumerate(sample):
             image = chip_image(chip_path, mean, std)
             generation = ask(image, prompt)
             if args.smoke:
                 print(f"--- {chip_path.name} [{prompt}]:\n{generation[-400:]}")
             centers = parse_box_centers(generation)
-            chip_id = chip_path.stem
-            gt_by_chip[chip_id] = [
-                GroundTruthPoint(
-                    x_m=float(l["chip_col"]) * 10.0,
-                    y_m=float(l["chip_row"]) * 10.0,
-                    confidence=str(l.get("confidence") or "HIGH"),
-                    source=None,
-                    distance_from_shore_km=l.get("distance_from_shore_km"),
-                )
-                for l in sidecar["labels"]
-                if bool(l.get("is_vessel"))
-                and str(l.get("confidence") or "").upper() in ("HIGH", "MEDIUM")
-            ]
+            chip_id = Path(relative).with_suffix("").as_posix()
+            if chip_id in gt_by_chip:
+                raise RuntimeError(f"duplicate sampled chip identity: {chip_id}")
+            gt_by_chip[chip_id] = chip_ground_truth_from_labels(sidecar["labels"])
             pred_by_chip[chip_id] = [
                 PredictionPoint(
                     x_m=col * 10.0,
@@ -199,6 +272,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             "precision": scored.aggregate.precision,
             "recall": scored.aggregate.recall,
             "threshold": threshold,
+            "aggregate": _metrics_payload(scored.aggregate),
+            "slices": {
+                name: _metrics_payload(metrics)
+                for name, metrics in sorted(scored.slices.items())
+            },
+            "per_chip": {
+                chip_id: {
+                    "aggregate": _metrics_payload(result.aggregate),
+                    "slices": {
+                        name: _metrics_payload(metrics)
+                        for name, metrics in sorted(result.slices.items())
+                    },
+                }
+                for chip_id, result in sorted(scored.scene_results.items())
+            },
         }
         print(f"[{prompt}] {results[prompt]}")
 
@@ -206,13 +294,51 @@ def main(argv: Sequence[str] | None = None) -> int:
         out = Path("runs/locateanything-zs/final_metrics.json")
         out.parent.mkdir(parents=True, exist_ok=True)
         best = max(results, key=lambda p: results[p]["f1"])
-        out.write_text(
+        sample_manifest = [
+            {"chip": relative, "sidecar_sha256": sidecar_sha256}
+            for _chip_path, _payload, relative, sidecar_sha256 in sample
+        ]
+        sample_sha256 = hashlib.sha256(
             json.dumps(
-                {"exp_id": "locateanything-zs", "per_prompt": results, "best_prompt": best},
-                indent=1,
-            ),
-            newline="\n",
-        )
+                sample_manifest, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+        ).hexdigest()
+        sample_counts = {"positive": 0, "background": 0, "ignore": 0}
+        for _chip_path, sidecar, _relative, _sidecar_sha256 in sample:
+            for category, count in chip_label_counts(sidecar["labels"]).items():
+                sample_counts[category] += count
+        payload = {
+            "result_schema": RESULT_SCHEMA,
+            "exp_id": "locateanything-zs",
+            "reference": "R3",
+            "source_git_sha": _git_sha(),
+            "scored_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+            "model": {
+                "id": "nvidia/LocateAnything-3B",
+                "revision": MODEL_REVISION,
+                "source_note_sha256": _sha256_file(source_note),
+                "license_sha256": _sha256_file(license_path),
+            },
+            "precision": "bfloat16",
+            "eval_contract_disposition": "full-rerun-under-corrected-contract",
+            "legacy_result_reused": False,
+            "ground_truth_contract": {
+                "version": 2,
+                "positive": "is_vessel=true and confidence in {HIGH,MEDIUM}",
+                "background": "is_vessel=false and confidence in {HIGH,MEDIUM}",
+                "ignore": "confidence=LOW",
+                "sample_counts": sample_counts,
+            },
+            "sample": {
+                "policy": "sorted-foreground-dev-chips-even-stride",
+                "n_chips": len(sample),
+                "sha256": sample_sha256,
+                "entries": sample_manifest,
+            },
+            "per_prompt": results,
+            "best_prompt": best,
+        }
+        atomic_write_json(out, payload)
         print(f"-> {out}")
     return 0
 

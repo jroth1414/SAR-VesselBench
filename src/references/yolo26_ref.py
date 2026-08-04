@@ -24,15 +24,107 @@ augmentation/optimizer defaults; val split = dev-split chips.
 from __future__ import annotations
 
 import argparse
+import datetime as dt
+import hashlib
 import json
+import re
+import subprocess
 from pathlib import Path
-from typing import Sequence
+from typing import Mapping, Sequence
 
 import numpy as np
 
 GSD_M = 10.0
 MIN_BOX_PX = 6.0
 CLIP_SIGMA = 3.0
+RESULT_SCHEMA = 2
+EXPECTED_R2_BEST_SHA256 = (
+    "15520cb6cff9d4b01ed5c4a7e039fab763e8e5b0ca5b8e6bffd591ef0d7b8064"
+)
+EXPECTED_GT_COUNTS = {
+    "dev": {"positive": 1479, "background": 804, "ignore": 441},
+    "test": {"positive": 1165, "background": 420, "ignore": 325},
+}
+
+
+def _sha256_file(path: Path, chunk_bytes: int = 8 * 2**20) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        while block := handle.read(chunk_bytes):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _git_sha() -> str:
+    repo = Path(__file__).resolve().parents[2]
+    value = subprocess.run(
+        ["git", "-c", f"safe.directory={repo}", "rev-parse", "HEAD"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    if re.fullmatch(r"[0-9a-f]{40}", value) is None:
+        raise RuntimeError("reference source did not resolve to a full Git SHA")
+    return value
+
+
+def _metrics_payload(metrics) -> dict[str, int | float]:
+    return {
+        "f1": metrics.f1,
+        "precision": metrics.precision,
+        "recall": metrics.recall,
+        "tp": metrics.tp,
+        "fp": metrics.fp,
+        "fn": metrics.fn,
+        "ignored_predictions": metrics.ignored_predictions,
+    }
+
+
+def _score_payload(result) -> dict[str, object]:
+    return {
+        "aggregate": _metrics_payload(result.aggregate),
+        "slices": {
+            name: _metrics_payload(metrics)
+            for name, metrics in sorted(result.slices.items())
+        },
+        "per_scene": {
+            scene_id: {
+                "aggregate": _metrics_payload(scene.aggregate),
+                "slices": {
+                    name: _metrics_payload(metrics)
+                    for name, metrics in sorted(scene.slices.items())
+                },
+            }
+            for scene_id, scene in sorted(result.scene_results.items())
+        },
+    }
+
+
+def _label_counts(rows: Sequence[Mapping[str, object]]) -> dict[str, int]:
+    from src.eval.ground_truth import classify_label
+
+    counts = {"positive": 0, "background": 0, "ignore": 0}
+    for row in rows:
+        counts[classify_label(row)] += 1
+    return counts
+
+
+def _known_r2_checkpoint(weights: Path) -> tuple[Path, str]:
+    expected = Path("runs/yolo26-f100/weights/best.pt")
+    if weights.resolve() != expected.resolve():
+        raise RuntimeError(
+            "R2 correction must rescore the preserved runs/yolo26-f100/weights/best.pt"
+        )
+    if weights.is_symlink() or not weights.is_file():
+        raise RuntimeError(f"R2 preserved checkpoint is absent or unsafe: {weights}")
+    actual_sha256 = _sha256_file(weights)
+    if actual_sha256 != EXPECTED_R2_BEST_SHA256:
+        raise RuntimeError(
+            "R2 preserved best.pt SHA-256 mismatch: "
+            f"{actual_sha256} != {EXPECTED_R2_BEST_SHA256}"
+        )
+    return weights, actual_sha256
 
 
 def _chip_to_uint8(chips: np.ndarray, mean: np.ndarray, std: np.ndarray) -> np.ndarray:
@@ -48,10 +140,11 @@ def _chip_to_uint8(chips: np.ndarray, mean: np.ndarray, std: np.ndarray) -> np.n
 def yolo_label_lines(labels: Sequence[dict], chip_px: int) -> list[str]:
     """Sidecar labels -> YOLO txt lines (class cx cy w h, normalized)."""
 
+    from src.eval.ground_truth import classify_label
+
     lines = []
     for label in labels:
-        confidence = str(label.get("confidence") or "").upper()
-        if not (bool(label.get("is_vessel")) and confidence in ("HIGH", "MEDIUM")):
+        if classify_label(label) != "positive":
             continue
         length_m = label.get("vessel_length_m")
         side_px = MIN_BOX_PX
@@ -190,11 +283,14 @@ def score(
     import torch
     from ultralytics import YOLO
 
+    from scripts.h100.contracts import atomic_write_json
+
     from src.eval.decode import DecodedPoint, distance_nms
     from src.eval.infer_scene import GSD_M, ShoreDistance, ground_truth_from_labels
     from src.eval.scorer import PredictionPoint, score_dataset
     from src.eval.threshold import apply_threshold, select_f1_threshold
 
+    weights, checkpoint_sha256 = _known_r2_checkpoint(weights)
     model = YOLO(str(weights))
     splits = json.loads(Path(data_cfg["paths"]["splits"]).read_text())["splits"]
     stats = json.loads(Path(data_cfg["paths"]["stats"]).read_text())
@@ -227,7 +323,12 @@ def score(
             if not batch_imgs:
                 return
             results = model.predict(
-                batch_imgs, imgsz=tile, conf=0.01, verbose=False, device=device
+                batch_imgs,
+                imgsz=tile,
+                conf=0.01,
+                verbose=False,
+                device=device,
+                half=False,
             )
             for (row0, col0), result in zip(batch_origins, results):
                 boxes = result.boxes
@@ -277,25 +378,60 @@ def score(
 
     def collect(scene_ids: list[str]):
         gt, preds = {}, {}
+        counts = {"positive": 0, "background": 0, "ignore": 0}
         for scene_id in scene_ids:
             print(f"  {scene_id}", flush=True)
             rows = labels[labels["scene_id"] == scene_id].to_dict(orient="records")
+            for category, count in _label_counts(rows).items():
+                counts[category] += count
             gt[scene_id] = ground_truth_from_labels(rows)
             preds[scene_id] = predict_scene(scene_id)
-        return gt, preds
+        return gt, preds, counts
 
     print("dev scenes (threshold selection):")
-    dev_gt, dev_pred = collect(sorted(splits["dev"]))
+    dev_gt, dev_pred, dev_counts = collect(sorted(splits["dev"]))
     threshold = select_f1_threshold(dev_gt, dev_pred)
     dev_result = score_dataset(dev_gt, apply_threshold(dev_pred, threshold))
 
     print("test scenes (frozen threshold):")
-    test_gt, test_pred = collect(sorted(splits["test"]))
+    test_gt, test_pred, test_counts = collect(sorted(splits["test"]))
     test_result = score_dataset(test_gt, apply_threshold(test_pred, threshold))
 
+    observed_counts = {"dev": dev_counts, "test": test_counts}
+    if observed_counts != EXPECTED_GT_COUNTS:
+        raise RuntimeError(
+            "R2 corrected GT count gate failed: "
+            f"{observed_counts} != {EXPECTED_GT_COUNTS}"
+        )
+
     payload = {
+        "result_schema": RESULT_SCHEMA,
         "exp_id": "yolo26-f100",
+        "reference": "R2",
+        "source_git_sha": _git_sha(),
+        "scored_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+        "inference_precision": "float32",
+        "training_disposition": "preserved-best-pt-rescore-only",
+        "checkpoint": {
+            "relative_path": "weights/best.pt",
+            "sha256": checkpoint_sha256,
+        },
+        "ground_truth_contract": {
+            "version": 2,
+            "positive": "is_vessel=true and confidence in {HIGH,MEDIUM}",
+            "background": "is_vessel=false and confidence in {HIGH,MEDIUM}",
+            "ignore": "confidence=LOW",
+            "dev_counts": dev_counts,
+            "test_counts": test_counts,
+        },
+        "threshold_source": {
+            "split": "dev",
+            "checkpoint_sha256": checkpoint_sha256,
+        },
         "threshold": threshold,
+        "dev": _score_payload(dev_result),
+        "test": _score_payload(test_result),
+        # Stable flat aliases retained for reference-summary consumers.
         "dev_f1": dev_result.aggregate.f1,
         "test_f1": test_result.aggregate.f1,
         "test_precision": test_result.aggregate.precision,
@@ -304,7 +440,7 @@ def score(
     }
     out = Path("runs/yolo26-f100/final_metrics.json")
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(payload, indent=1), newline="\n")
+    atomic_write_json(out, payload)
     print(json.dumps(payload, indent=1))
     torch.cuda.empty_cache()
     return payload
