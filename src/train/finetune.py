@@ -17,11 +17,21 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import re
 from pathlib import Path
 from typing import Sequence
 
 from lightning.pytorch.callbacks import Callback
+
+from src.eval.result_contract import (
+    RESULT_SCHEMA,
+    ResultContractError,
+    atomic_write_json,
+    create_best_checkpoint_binding,
+    validate_completion_payload,
+    validate_dev_result,
+)
 
 INIT_SHORT = {
     "vit_random": "vitrand",
@@ -157,18 +167,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         or (1 if args.smoke else det_cfg["eval"]["n_dev_scenes"]),
         final_epoch=epochs,
     )
+    checkpoint_callback = ModelCheckpoint(
+        dirpath=run_dir / "checkpoints",
+        filename="best",
+        monitor="dev_f1",
+        mode="max",
+        save_last=True,
+        save_top_k=1,
+        every_n_epochs=dev_eval.every,
+        save_on_train_epoch_end=True,
+        # A stable filename is convenient but is not itself the binding:
+        # consumers must follow best_checkpoint.relative_path from schema 2.
+        enable_version_counter=False,
+    )
     callbacks = [
         dev_eval,
-        ModelCheckpoint(
-            dirpath=run_dir / "checkpoints",
-            filename="best",
-            monitor="dev_f1",
-            mode="max",
-            save_last=True,
-            save_top_k=1,
-            every_n_epochs=dev_eval.every,
-            save_on_train_epoch_end=True,
-        ),
+        checkpoint_callback,
         EarlyStopping(
             monitor="dev_f1",
             mode="max",
@@ -247,7 +261,27 @@ def main(argv: Sequence[str] | None = None) -> int:
         ckpt_path=str(last_ckpt) if last_ckpt.exists() else None,
     )
 
+    candidate_floor = det_cfg["decode"]["candidate_floor"]
+    try:
+        best_dev = validate_dev_result(
+            dev_eval.best_result,
+            candidate_floor=candidate_floor,
+        )
+        if dev_eval.best is None or float(dev_eval.best) != best_dev["f1"]:
+            raise ResultContractError("callback best scalar does not equal best_dev.f1")
+        best_checkpoint = create_best_checkpoint_binding(
+            run_dir=run_dir,
+            checkpoint_path=checkpoint_callback.best_model_path,
+            best_dev=best_dev,
+            candidate_floor=candidate_floor,
+        )
+    except ResultContractError as exc:
+        raise RuntimeError(
+            "training finished without a valid checkpoint-bound best-dev result"
+        ) from exc
+
     final = {
+        "result_schema": RESULT_SCHEMA,
         "exp_id": run_id,
         "git_sha": git_sha,
         "detector_sha256": detector_sha256,
@@ -256,13 +290,33 @@ def main(argv: Sequence[str] | None = None) -> int:
         "gradient_accumulation": accumulate,
         "effective_batch": batch_size * accumulate,
         "epochs_run": trainer.current_epoch,
-        "best_dev_f1": dev_eval.best,
+        "best_dev_f1": best_dev["f1"],
+        "best_dev": best_dev,
+        "best_checkpoint": best_checkpoint,
         "last_dev": dev_eval.last_result,
         "train_loss": float(trainer.callback_metrics.get("train_loss", float("nan"))),
     }
     if h100_runtime_contract is not None:
         final["h100_runtime_contract"] = h100_runtime_contract
-    (run_dir / "final_metrics.json").write_text(json.dumps(final, indent=1), newline="\n")
+    expected_recipe = {
+        name: final[name]
+        for name in (
+            "exp_id",
+            "git_sha",
+            "detector_sha256",
+            "precision",
+            "micro_batch",
+            "gradient_accumulation",
+            "effective_batch",
+        )
+    }
+    validate_completion_payload(
+        final,
+        run_dir=run_dir,
+        candidate_floor=candidate_floor,
+        expected_recipe=expected_recipe,
+    )
+    atomic_write_json(run_dir / "final_metrics.json", final)
     print(json.dumps(final, indent=1))
     return 0
 
@@ -291,6 +345,7 @@ class DevSceneEval(Callback):
         self.n_scenes = n_scenes
         self.final_epoch = final_epoch
         self.best: float | None = None
+        self.best_result: dict | None = None
         self.last_result: dict | None = None
 
     # Lightning duck-typed callback hooks -------------------------------
@@ -299,8 +354,8 @@ class DevSceneEval(Callback):
         self.scene_ids = sorted(splits["dev"])[: self.n_scenes]
 
     def on_train_epoch_end(self, trainer, pl_module):
-        epoch = trainer.current_epoch + 1
-        if epoch % self.every and epoch != self.final_epoch:
+        completed_epoch = trainer.current_epoch + 1
+        if completed_epoch % self.every and completed_epoch != self.final_epoch:
             return
         from src.eval.infer_scene import dev_f1
 
@@ -318,20 +373,67 @@ class DevSceneEval(Callback):
             device=pl_module.device,
             precision=self.det_cfg["schedule"]["precision"],
         )
-        self.last_result = result
+        # Lightning checkpoint metadata uses a zero-based epoch. Persist that
+        # exact value so checkpoint and operating-point binding is unambiguous.
+        result = {**result, "epoch": int(trainer.current_epoch)}
+        result = validate_dev_result(
+            result,
+            candidate_floor=self.det_cfg["decode"]["candidate_floor"],
+        )
+        self.last_result = dict(result)
         if self.best is None or result["f1"] > self.best:
             self.best = result["f1"]
+            self.best_result = dict(result)
         pl_module.log("dev_f1", result["f1"], prog_bar=True)
         pl_module.log("dev_recall", result["recall"])
         pl_module.log("dev_precision", result["precision"])
-        print(f"[dev eval, epoch {epoch}] {result}")
+        print(f"[dev eval, checkpoint epoch {trainer.current_epoch}] {result}")
         pl_module.train()
 
     def state_dict(self):
-        return {"best": self.best}
+        return {
+            "best": self.best,
+            "best_result": self.best_result,
+            "last_result": self.last_result,
+        }
 
     def load_state_dict(self, state):
-        self.best = state.get("best")
+        if not isinstance(state, dict):
+            raise ResultContractError("DevSceneEval checkpoint state must be a mapping")
+        best = state.get("best")
+        best_result = state.get("best_result")
+        last_result = state.get("last_result")
+        if best is None:
+            if best_result is not None or last_result is not None:
+                raise ResultContractError(
+                    "DevSceneEval empty best state cannot contain dev results"
+                )
+            self.best = None
+            self.best_result = None
+            self.last_result = None
+            return
+        validated_best = validate_dev_result(
+            best_result,
+            candidate_floor=self.det_cfg["decode"]["candidate_floor"],
+        )
+        validated_last = validate_dev_result(
+            last_result,
+            candidate_floor=self.det_cfg["decode"]["candidate_floor"],
+            description="last_result",
+        )
+        if isinstance(best, bool):
+            raise ResultContractError("DevSceneEval best must be a finite number")
+        try:
+            normalized_best = float(best)
+        except (TypeError, ValueError) as exc:
+            raise ResultContractError("DevSceneEval best must be a finite number") from exc
+        if not math.isfinite(normalized_best):
+            raise ResultContractError("DevSceneEval best must be a finite number")
+        if normalized_best != validated_best["f1"]:
+            raise ResultContractError("DevSceneEval best does not equal best_result.f1")
+        self.best = normalized_best
+        self.best_result = validated_best
+        self.last_result = validated_last
 
 
 if __name__ == "__main__":
