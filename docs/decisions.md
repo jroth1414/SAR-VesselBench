@@ -636,3 +636,38 @@ identically to every arm. This committed log lives here; `runs/` is gitignored a
   splits, stats, labels, evaluation contract, precision, batch, model,
   optimizer, schedule, seed, or campaign grid. No smoke, H100 acceptance, or
   H100 training is claimed; the V100 diagnostic remains untouched.
+
+## H100 readiness receipt integration correction (operational correction, 2026-08-05)
+
+- **Pre-acceptance audit finding:** before submitting the first eight-H100
+  acceptance allocation, a producer/consumer audit found that phase-isolation
+  commit `e4be3c3` correctly replaced the scratch
+  `staged_base_extraction` record with `venv.staged_data_view`, but the cutover
+  validator and synthetic fixtures still required the retired field. An
+  otherwise successful acceptance would therefore have written
+  `H100_READY.json` that cutover rejected. No H100 acceptance or training job
+  had started, so no result or marker was invalidated.
+- **Canonical contract:** acceptance now embeds the canonical
+  `H100_DATA_VIEW.json` digest and receipt in `venv.staged_data_view`.
+  Downstream validation requires the exact TRAIN/DEV8 acceptance purpose,
+  source and dual-package identities, absent cohort, 111 TRAIN chip scenes,
+  fixed DEV8 rasters, six weights, offline environment, and the 13,911-row
+  TRAIN+DEV8 label contract. The allocation-private path is provenance only
+  and need not survive guarded scratch cleanup. Never recreate a full
+  `HANDOFF_EXTRACTED.json` beneath allocation scratch.
+- **Persistent extraction identity:** `H100_READY.json` intentionally omits
+  only the site-local path from
+  `venv.wheelhouse.base_extraction`; package/manifest/wheelhouse identity
+  remains embedded. Reverse-results verification recovers the full path from
+  the already verified, persistent `venv_build.json`, requires its pathless
+  identity to equal acceptance, and then revalidates the sealed venv and
+  source bytes.
+- **Additional fail-closed checks:** cutover now binds the immutable corrected
+  evaluation-ground-truth file, its SHA-256, and its embedded receipt, and
+  requires the exact three-key IEEE backend to equal the hardware probe
+  backend. Regression tests cover receipt digest, phase/package,
+  scene/label inventory, cutover consumption, and reverse-result packaging.
+- **Scientific scope and status:** this changes no detector, scorer, frozen
+  split/stat, label rule, precision, batch, model, optimizer, schedule, seed,
+  or campaign cell. Repackage Sprint 7f and rerun smoke before acceptance; the
+  V100 campaign continues untouched as a non-reportable diagnostic.

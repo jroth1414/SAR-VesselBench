@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import os
 import re
@@ -24,6 +25,7 @@ from scripts.h100 import (
     acceptance,
     build_venv,
     campaign,
+    data_staging,
     cell as h100_cell,
     contracts,
     cutover,
@@ -117,11 +119,96 @@ def wheelhouse() -> dict[str, object]:
     }
 
 
-def staged_base_extraction() -> dict[str, object]:
+def accepted_wheelhouse() -> dict[str, object]:
+    payload = json.loads(json.dumps(wheelhouse()))
+    del payload["base_extraction"]["path"]
+    return payload
+
+
+def acceptance_data_view_binding() -> dict[str, object]:
+    scope = data_staging.split_scope(REPO / "data/splits.json", production=True)
+    chips = list(scope["train"])
+    rasters = list(scope["dev8"])
+    scenes = sorted((*scope["train"], *scope["dev8"]))
+    selected = [
+        *(
+            {
+                "kind": "chip_scene",
+                "name": name,
+                "archive_sha256": "a" * 64,
+                "extraction_root": f"data/chips/{name}",
+            }
+            for name in chips
+        ),
+        *(
+            {
+                "kind": "raster_scene",
+                "name": name,
+                "archive_sha256": "b" * 64,
+                "extraction_root": f"data/raw/xview3/GRD/{name}",
+            }
+            for name in rasters
+        ),
+        *(
+            {
+                "kind": "core_weight",
+                "name": name,
+                "archive_sha256": "c" * 64,
+                "extraction_root": f"data/weights/{name}",
+            }
+            for name in data_staging.EXPECTED_WEIGHT_DIRS
+        ),
+        {
+            "kind": "offline_environment",
+            "name": "cp311-cu126",
+            "archive_sha256": "d" * 64,
+            "extraction_root": "environment",
+        },
+    ]
+    receipt = {
+        "schema": data_staging.DATA_VIEW_SCHEMA,
+        "status": "ready",
+        "phase": "train",
+        "purpose": "acceptance",
+        "contract": data_staging.TRAINING_VIEW_CONTRACT,
+        "git_sha": RUNTIME_GIT_SHA,
+        "base_package": {
+            "package_id": base_payload()["package_id"],
+            "manifest_sha256": base_payload()["manifest_sha256"],
+        },
+        "runtime_package": {
+            "package_id": runtime_amendment()["package_id"],
+            "manifest_sha256": runtime_amendment()["manifest_sha256"],
+        },
+        "training_cohort": None,
+        "labels": {
+            "source": "runtime-train-dev8-artifact",
+            "exposed_path": data_staging.TRAINING_LABELS_EXPOSED_PATH,
+            "artifact_path": data_staging.TRAINING_LABELS_ARTIFACT_PATH,
+            "sha256": "e" * 64,
+            "bytes": 2_422_671,
+            "row_count": data_staging.EXPECTED_TRAINING_LABEL_ROWS,
+            "scene_count": len(scenes),
+            "scene_ids": scenes,
+            "scene_ids_sha256": data_staging.scene_ids_sha256(scenes),
+            "train_scene_ids_sha256": data_staging.scene_ids_sha256(scope["train"]),
+            "dev8_scene_ids": rasters,
+            "dev8_scene_ids_sha256": data_staging.scene_ids_sha256(scope["dev8"]),
+            "forbidden_test_scene_ids_sha256": data_staging.scene_ids_sha256(
+                scope["test"]
+            ),
+            "contract": data_staging.TRAINING_VIEW_CONTRACT,
+        },
+        "chips": chips,
+        "rasters": rasters,
+        "weights": list(data_staging.EXPECTED_WEIGHT_DIRS),
+        "selected_artifacts": selected,
+    }
+    raw = (json.dumps(receipt, sort_keys=True, separators=(",", ":")) + "\n").encode()
     return {
-        "path": "/scratch/payload/HANDOFF_EXTRACTED.json",
-        "sha256": BASE_EXTRACTION_RECEIPT_SHA256,
-        "receipt": wheelhouse()["base_extraction"]["receipt"],
+        "path": "/local/xview3-fixture-r0/payload",
+        "sha256": hashlib.sha256(raw).hexdigest(),
+        "receipt": receipt,
     }
 
 
@@ -474,6 +561,20 @@ def add_acceptance_receipts(root: Path, ready: dict) -> None:
     contracts.atomic_write_json(source_path, source_receipt)
     source_sha = contracts.sha256_file(source_path)
 
+    evaluation_path = root / "EVAL_GROUND_TRUTH_VALIDATED.json"
+    evaluation_receipt = {
+        "audit_schema": 1,
+        "contract": "fixture-vessel-positive-low-ignore",
+        "verified": True,
+    }
+    contracts.atomic_write_json(evaluation_path, evaluation_receipt)
+    evaluation_path.chmod(0o444)
+    ready["evaluation_ground_truth"] = {
+        "path": str(evaluation_path),
+        "sha256": contracts.sha256_file(evaluation_path),
+        "receipt": evaluation_receipt,
+    }
+
     host_log = root / "acceptance-logs/pytest-handoff-host.log"
     host_log.parent.mkdir(parents=True, exist_ok=True)
     host_log.write_text("host tests passed\n")
@@ -551,8 +652,8 @@ def ready_payload(smoke_path: Path, smoke_receipt: dict, bindings: dict) -> dict
             "sha256": bindings["venv"]["sha256"],
             "venv_build_sha256": bindings["venv"]["build_receipt_sha256"],
             "base_python": base_python(),
-            "wheelhouse": wheelhouse(),
-            "staged_base_extraction": staged_base_extraction(),
+            "wheelhouse": accepted_wheelhouse(),
+            "staged_data_view": acceptance_data_view_binding(),
         },
         "base_payload": dict(bindings["base_payload"]),
         "runtime_amendment": dict(bindings["runtime_amendment"]),
@@ -2128,33 +2229,76 @@ def test_smoke_batch_signals_direct_native_child_and_requeues_externally():
     assert "\ncreate_allocation_scratch\n" in smoke
 
 
-def test_cutover_validates_schema2_native_ready_and_rejects_v1_sif(tmp_path):
+def test_acceptance_data_view_binding_is_canonical_and_fail_closed():
+    expected_base = base_payload()
+    expected_runtime = runtime_amendment()
+    kwargs = {
+        "repo": REPO,
+        "expected_git_sha": RUNTIME_GIT_SHA,
+        "expected_base_package_id": expected_base["package_id"],
+        "expected_base_manifest_sha256": expected_base["manifest_sha256"],
+        "expected_runtime_package_id": expected_runtime["package_id"],
+        "expected_runtime_manifest_sha256": expected_runtime["manifest_sha256"],
+    }
+    binding = acceptance_data_view_binding()
+    assert data_staging.validate_acceptance_data_view_binding(
+        binding, **kwargs
+    ) == binding["receipt"]
+
+    digest_tamper = json.loads(json.dumps(binding))
+    digest_tamper["sha256"] = "0" * 64
+    with pytest.raises(RuntimeError, match="data-view binding"):
+        data_staging.validate_acceptance_data_view_binding(
+            digest_tamper, **kwargs
+        )
+
+    semantic_tampers = []
+    phase = json.loads(json.dumps(binding))
+    phase["receipt"]["phase"] = "score-test"
+    semantic_tampers.append(phase)
+    package = json.loads(json.dumps(binding))
+    package["receipt"]["runtime_package"]["package_id"] = "wrong-runtime"
+    semantic_tampers.append(package)
+    inventory = json.loads(json.dumps(binding))
+    inventory["receipt"]["chips"][0] = inventory["receipt"]["rasters"][0]
+    semantic_tampers.append(inventory)
+    labels = json.loads(json.dumps(binding))
+    labels["receipt"]["labels"]["scene_ids"].append(
+        data_staging.split_scope(REPO / "data/splits.json")["test"][0]
+    )
+    semantic_tampers.append(labels)
+    artifacts = json.loads(json.dumps(binding))
+    artifacts["receipt"]["selected_artifacts"].append(
+        {
+            "kind": "labels",
+            "name": "train.csv",
+            "archive_sha256": "f" * 64,
+            "extraction_root": "data/raw/xview3/labels/train.csv",
+        }
+    )
+    semantic_tampers.append(artifacts)
+
+    for tampered in semantic_tampers:
+        receipt = tampered["receipt"]
+        raw = (
+            json.dumps(receipt, sort_keys=True, separators=(",", ":")) + "\n"
+        ).encode()
+        tampered["sha256"] = hashlib.sha256(raw).hexdigest()
+        with pytest.raises(RuntimeError, match="H100 acceptance"):
+            data_staging.validate_acceptance_data_view_binding(
+                tampered, **kwargs
+            )
+
+
+def test_cutover_validates_schema2_native_ready_and_rejects_tampering(tmp_path):
     smoke_path, bindings, smoke_receipt = completed_smoke(tmp_path)
     ready = ready_payload(smoke_path, smoke_receipt, bindings)
     add_acceptance_receipts(tmp_path, ready)
     ready_path = tmp_path / "H100_READY.json"
-    contracts.atomic_write_json(ready_path, ready)
-    assert cutover.validate_h100_ready(
-        ready_path,
-        expected_git_sha=RUNTIME_GIT_SHA,
-        expected_venv_sha256=VENV_SHA256,
-        expected_venv_build_sha256=VENV_BUILD_SHA256,
-        expected_base_python_sha256=BASE_PYTHON_SHA256,
-        expected_base_python_runtime_sha256=BASE_PYTHON_RUNTIME_SHA256,
-        expected_wheelhouse_sha256=WHEELHOUSE_SHA256,
-        expected_base_extraction_receipt_sha256=BASE_EXTRACTION_RECEIPT_SHA256,
-        expected_base_payload=base_payload(),
-        expected_runtime_amendment=runtime_amendment(),
-        expected_frozen_sha256=frozen_hashes(),
-        expected_smoke_receipt=smoke_receipt,
-        expected_smoke_sha256=contracts.sha256_file(smoke_path),
-    ) == ready
-    legacy = dict(ready)
-    legacy["schema"] = 1
-    legacy["sif"] = {"sha256": "0" * 64}
-    contracts.atomic_write_json(ready_path, legacy)
-    with pytest.raises(RuntimeError, match="schema-2"):
-        cutover.validate_h100_ready(
+
+    def validate(payload):
+        contracts.atomic_write_json(ready_path, payload)
+        return cutover.validate_h100_ready(
             ready_path,
             expected_git_sha=RUNTIME_GIT_SHA,
             expected_venv_sha256=VENV_SHA256,
@@ -2162,15 +2306,50 @@ def test_cutover_validates_schema2_native_ready_and_rejects_v1_sif(tmp_path):
             expected_base_python_sha256=BASE_PYTHON_SHA256,
             expected_base_python_runtime_sha256=BASE_PYTHON_RUNTIME_SHA256,
             expected_wheelhouse_sha256=WHEELHOUSE_SHA256,
-            expected_base_extraction_receipt_sha256=(
-                BASE_EXTRACTION_RECEIPT_SHA256
-            ),
+            expected_base_extraction_receipt_sha256=BASE_EXTRACTION_RECEIPT_SHA256,
             expected_base_payload=base_payload(),
             expected_runtime_amendment=runtime_amendment(),
             expected_frozen_sha256=frozen_hashes(),
             expected_smoke_receipt=smoke_receipt,
             expected_smoke_sha256=contracts.sha256_file(smoke_path),
         )
+
+    assert validate(ready) == ready
+
+    retired_staging_tamper = json.loads(json.dumps(ready))
+    retired_staging_tamper["venv"]["staged_base_extraction"] = {}
+    with pytest.raises(RuntimeError, match="native-venv binding schema"):
+        validate(retired_staging_tamper)
+
+    path_tamper = json.loads(json.dumps(ready))
+    path_tamper["venv"]["wheelhouse"]["base_extraction"]["path"] = (
+        "/persistent/base/HANDOFF_EXTRACTED.json"
+    )
+    with pytest.raises(RuntimeError, match="wheelhouse/base-extraction schema"):
+        validate(path_tamper)
+
+    evaluation_tamper = json.loads(json.dumps(ready))
+    evaluation_tamper["evaluation_ground_truth"]["receipt"]["verified"] = False
+    with pytest.raises(
+        RuntimeError, match="embedded evaluation-ground-truth receipt"
+    ):
+        validate(evaluation_tamper)
+
+    strict_tamper = json.loads(json.dumps(ready))
+    strict_tamper["strict_fp32"]["extra"] = "not-allowed"
+    with pytest.raises(RuntimeError, match="strict IEEE FP32"):
+        validate(strict_tamper)
+
+    hardware_tamper = json.loads(json.dumps(ready))
+    hardware_tamper["hardware"]["backend"]["cudnn_rnn_fp32_precision"] = "tf32"
+    with pytest.raises(RuntimeError, match="strict IEEE FP32"):
+        validate(hardware_tamper)
+
+    legacy = json.loads(json.dumps(ready))
+    legacy["schema"] = 1
+    legacy["sif"] = {"sha256": "0" * 64}
+    with pytest.raises(RuntimeError, match="schema-2"):
+        validate(legacy)
 
 
 

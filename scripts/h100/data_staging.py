@@ -603,6 +603,171 @@ def stage_data_view(
     return receipt
 
 
+def validate_acceptance_data_view_binding(
+    binding: Mapping[str, object],
+    *,
+    repo: Path,
+    expected_git_sha: str,
+    expected_base_package_id: str,
+    expected_base_manifest_sha256: str,
+    expected_runtime_package_id: str,
+    expected_runtime_manifest_sha256: str,
+) -> dict[str, object]:
+    """Validate the immutable acceptance-view binding after scratch is gone.
+
+    Acceptance physically validates the allocation-private view before writing
+    H100_READY.json. Later control-plane and result-packaging steps cannot
+    reopen that reconstructible scratch tree, so they validate this embedded
+    canonical receipt instead. Keep this pure: it must not require the staged
+    path to remain present after allocation cleanup.
+    """
+
+    if not isinstance(binding, Mapping) or set(binding) != {
+        "path",
+        "sha256",
+        "receipt",
+    }:
+        raise RuntimeError("H100 acceptance data-view binding is invalid")
+    raw_path = binding.get("path")
+    digest = binding.get("sha256")
+    receipt = binding.get("receipt")
+    if (
+        not isinstance(raw_path, str)
+        or not Path(raw_path).is_absolute()
+        or not isinstance(digest, str)
+        or len(digest) != 64
+        or any(character not in "0123456789abcdef" for character in digest)
+        or not isinstance(receipt, Mapping)
+        or hashlib.sha256(_canonical_json(receipt)).hexdigest() != digest
+    ):
+        raise RuntimeError("H100 acceptance data-view binding is invalid")
+
+    scope = split_scope(repo / "data/splits.json", production=True)
+    expected_chips = list(scope["train"])
+    expected_rasters = list(scope["dev8"])
+    expected_label_scenes = sorted((*scope["train"], *scope["dev8"]))
+    expected_base = {
+        "package_id": expected_base_package_id,
+        "manifest_sha256": expected_base_manifest_sha256,
+    }
+    expected_runtime = {
+        "package_id": expected_runtime_package_id,
+        "manifest_sha256": expected_runtime_manifest_sha256,
+    }
+    expected_receipt_keys = {
+        "schema",
+        "status",
+        "phase",
+        "purpose",
+        "contract",
+        "git_sha",
+        "base_package",
+        "runtime_package",
+        "training_cohort",
+        "labels",
+        "chips",
+        "rasters",
+        "weights",
+        "selected_artifacts",
+    }
+    if (
+        set(receipt) != expected_receipt_keys
+        or receipt.get("schema") != DATA_VIEW_SCHEMA
+        or receipt.get("status") != "ready"
+        or receipt.get("phase") != "train"
+        or receipt.get("purpose") != "acceptance"
+        or receipt.get("contract") != TRAINING_VIEW_CONTRACT
+        or receipt.get("git_sha") != expected_git_sha
+        or receipt.get("base_package") != expected_base
+        or receipt.get("runtime_package") != expected_runtime
+        or receipt.get("training_cohort") is not None
+        or receipt.get("chips") != expected_chips
+        or receipt.get("rasters") != expected_rasters
+        or receipt.get("weights") != list(EXPECTED_WEIGHT_DIRS)
+    ):
+        raise RuntimeError("H100 acceptance data-view receipt binding mismatch")
+
+    labels = receipt.get("labels")
+    expected_label_keys = {
+        "source",
+        "exposed_path",
+        "artifact_path",
+        "sha256",
+        "bytes",
+        "row_count",
+        "scene_count",
+        "scene_ids",
+        "scene_ids_sha256",
+        "train_scene_ids_sha256",
+        "dev8_scene_ids",
+        "dev8_scene_ids_sha256",
+        "forbidden_test_scene_ids_sha256",
+        "contract",
+    }
+    label_sha256 = labels.get("sha256") if isinstance(labels, Mapping) else None
+    label_bytes = labels.get("bytes") if isinstance(labels, Mapping) else None
+    if (
+        not isinstance(labels, Mapping)
+        or set(labels) != expected_label_keys
+        or labels.get("source") != "runtime-train-dev8-artifact"
+        or labels.get("exposed_path") != TRAINING_LABELS_EXPOSED_PATH
+        or labels.get("artifact_path") != TRAINING_LABELS_ARTIFACT_PATH
+        or not isinstance(label_sha256, str)
+        or len(label_sha256) != 64
+        or any(character not in "0123456789abcdef" for character in label_sha256)
+        or not isinstance(label_bytes, int)
+        or isinstance(label_bytes, bool)
+        or label_bytes <= 0
+        or labels.get("row_count") != EXPECTED_TRAINING_LABEL_ROWS
+        or labels.get("scene_count") != len(expected_label_scenes)
+        or labels.get("scene_ids") != expected_label_scenes
+        or labels.get("scene_ids_sha256") != scene_ids_sha256(expected_label_scenes)
+        or labels.get("train_scene_ids_sha256") != scene_ids_sha256(scope["train"])
+        or labels.get("dev8_scene_ids") != expected_rasters
+        or labels.get("dev8_scene_ids_sha256") != scene_ids_sha256(scope["dev8"])
+        or labels.get("forbidden_test_scene_ids_sha256")
+        != scene_ids_sha256(scope["test"])
+        or labels.get("contract") != TRAINING_VIEW_CONTRACT
+    ):
+        raise RuntimeError("H100 acceptance data-view label binding mismatch")
+
+    selected = receipt.get("selected_artifacts")
+    if not isinstance(selected, list) or any(
+        not isinstance(item, Mapping)
+        or set(item) != {"kind", "name", "archive_sha256", "extraction_root"}
+        or not isinstance(item.get("name"), str)
+        or not item.get("name")
+        or not isinstance(item.get("archive_sha256"), str)
+        or len(str(item.get("archive_sha256"))) != 64
+        or any(
+            character not in "0123456789abcdef"
+            for character in str(item.get("archive_sha256"))
+        )
+        or not isinstance(item.get("extraction_root"), str)
+        or not item.get("extraction_root")
+        for item in selected
+    ):
+        raise RuntimeError("H100 acceptance selected-artifact binding is invalid")
+    selected_pairs = [(str(item["kind"]), str(item["name"])) for item in selected]
+    expected_pairs = {
+        *(("chip_scene", name) for name in expected_chips),
+        *(("raster_scene", name) for name in expected_rasters),
+        *(("core_weight", name) for name in EXPECTED_WEIGHT_DIRS),
+    }
+    offline = [pair for pair in selected_pairs if pair[0] == "offline_environment"]
+    non_environment = {
+        pair for pair in selected_pairs if pair[0] != "offline_environment"
+    }
+    if (
+        len(selected_pairs) != len(set(selected_pairs))
+        or non_environment != expected_pairs
+        or len(offline) != 1
+        or len(selected_pairs) != len(expected_pairs) + 1
+    ):
+        raise RuntimeError("H100 acceptance selected-artifact inventory mismatch")
+    return dict(receipt)
+
+
 def validate_data_view(
     path: Path,
     *,

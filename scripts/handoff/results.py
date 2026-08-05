@@ -568,6 +568,25 @@ def _validate_campaign(
     wheelhouse = _mapping(
         accepted_venv.get("wheelhouse"), "native-venv wheelhouse identity"
     )
+    build_wheelhouse = _mapping(
+        venv_build.get("wheelhouse"), "persisted native-venv wheelhouse identity"
+    )
+    build_base_extraction = _mapping(
+        build_wheelhouse.get("base_extraction"),
+        "persisted base extraction identity",
+    )
+    expected_accepted_wheelhouse = {
+        **build_wheelhouse,
+        "base_extraction": {
+            key: value
+            for key, value in build_base_extraction.items()
+            if key != "path"
+        },
+    }
+    if wheelhouse != expected_accepted_wheelhouse:
+        raise PackageError(
+            "H100 acceptance wheelhouse differs from the persisted venv receipt"
+        )
     wheelhouse_identity = _mapping(
         wheelhouse.get("identity"), "wheelhouse tree identity"
     )
@@ -576,7 +595,9 @@ def _validate_campaign(
         wheelhouse.get("base_extraction"), "base extraction identity"
     )
     base_extraction_receipt_sha256 = str(base_extraction.get("sha256", ""))
-    base_extraction_receipt = Path(str(base_extraction.get("path", "")))
+    base_extraction_receipt = Path(str(build_base_extraction.get("path", "")))
+    if not base_extraction_receipt.is_absolute():
+        raise PackageError("persisted base-extraction receipt path is not absolute")
     wheelhouse_path = base_extraction_receipt.parent / "environment/wheelhouse"
     if any(
         not _HEX64.fullmatch(value)

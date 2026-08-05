@@ -7,6 +7,7 @@ import hashlib
 import json
 import math
 import re
+import stat
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,6 +29,9 @@ from scripts.h100.contracts import (
     staging_aware_wall_clock,
     validate_bound_cutover_forecast,
     validate_gpu_inventory,
+)
+from scripts.h100.data_staging import (
+    validate_acceptance_data_view_binding,
 )
 from scripts.h100.host_test_gate import HOST_TESTS, validate_host_gate
 from scripts.h100.slurm_smoke import make_bindings as make_smoke_bindings
@@ -649,6 +653,17 @@ def validate_h100_ready(
     accepted_venv = payload.get("venv")
     if not isinstance(accepted_venv, Mapping):
         raise RuntimeError("H100-ready native-venv binding is absent")
+    if set(accepted_venv) != {
+        "path",
+        "sha256",
+        "venv_build_sha256",
+        "base_python",
+        "wheelhouse",
+        "staged_data_view",
+    } or not Path(str(accepted_venv.get("path", ""))).is_absolute():
+        raise RuntimeError(
+            "H100-ready native-venv binding schema is not canonical"
+        )
     if accepted_venv.get("sha256") != expected_venv_sha256:
         raise RuntimeError("H100-ready native-venv tree digest mismatch")
     if accepted_venv.get("venv_build_sha256") != expected_venv_build_sha256:
@@ -667,6 +682,16 @@ def validate_h100_ready(
     ):
         raise RuntimeError("H100-ready base-Python identity mismatch")
     wheelhouse = accepted_venv.get("wheelhouse")
+    if (
+        not isinstance(wheelhouse, Mapping)
+        or set(wheelhouse)
+        != {"identity", "artifacts", "base_extraction", "reverified_after_build"}
+        or not isinstance(wheelhouse.get("artifacts"), Mapping)
+        or wheelhouse.get("reverified_after_build") is not True
+    ):
+        raise RuntimeError(
+            "H100-ready wheelhouse/base-extraction schema is not canonical"
+        )
     wheelhouse_identity = (
         wheelhouse.get("identity") if isinstance(wheelhouse, Mapping) else None
     )
@@ -675,15 +700,16 @@ def validate_h100_ready(
         if isinstance(wheelhouse, Mapping)
         else None
     )
+    if (
+        not isinstance(base_extraction, Mapping)
+        or set(base_extraction) != {"sha256", "receipt"}
+    ):
+        raise RuntimeError(
+            "H100-ready wheelhouse/base-extraction schema is not canonical"
+        )
     extraction_receipt = (
         base_extraction.get("receipt")
         if isinstance(base_extraction, Mapping)
-        else None
-    )
-    staged_base_extraction = accepted_venv.get("staged_base_extraction")
-    staged_extraction_receipt = (
-        staged_base_extraction.get("receipt")
-        if isinstance(staged_base_extraction, Mapping)
         else None
     )
     if (
@@ -698,17 +724,21 @@ def validate_h100_ready(
         or extraction_receipt.get("manifest_sha256")
         != expected_base_payload.get("manifest_sha256")
         or extraction_receipt.get("wheelhouse") != wheelhouse_identity
-        or not isinstance(staged_base_extraction, Mapping)
-        or staged_base_extraction.get("sha256")
-        != expected_base_extraction_receipt_sha256
-        or not isinstance(staged_extraction_receipt, Mapping)
-        or staged_extraction_receipt.get("package_id")
-        != expected_base_payload.get("package_id")
-        or staged_extraction_receipt.get("manifest_sha256")
-        != expected_base_payload.get("manifest_sha256")
-        or staged_extraction_receipt.get("wheelhouse") != wheelhouse_identity
     ):
         raise RuntimeError("H100-ready wheelhouse/base-extraction identity mismatch")
+    validate_acceptance_data_view_binding(
+        accepted_venv.get("staged_data_view"),
+        repo=_REPO_ROOT,
+        expected_git_sha=expected_git_sha,
+        expected_base_package_id=str(expected_base_payload.get("package_id", "")),
+        expected_base_manifest_sha256=str(
+            expected_base_payload.get("manifest_sha256", "")
+        ),
+        expected_runtime_package_id=str(expected_runtime_amendment.get("package_id", "")),
+        expected_runtime_manifest_sha256=str(
+            expected_runtime_amendment.get("manifest_sha256", "")
+        ),
+    )
     if payload.get("base_payload") != dict(expected_base_payload):
         raise RuntimeError("H100-ready base-payload bindings mismatch")
     if payload.get("runtime_amendment") != dict(expected_runtime_amendment):
@@ -734,16 +764,52 @@ def validate_h100_ready(
     )
     if source_binding.get("receipt") != source_receipt:
         raise RuntimeError("H100-ready embedded source-validation receipt differs")
+
+    evaluation_binding = payload.get("evaluation_ground_truth")
+    expected_evaluation_path = path.parent / "EVAL_GROUND_TRUTH_VALIDATED.json"
+    if (
+        not isinstance(evaluation_binding, Mapping)
+        or set(evaluation_binding) != {"path", "sha256", "receipt"}
+        or evaluation_binding.get("path") != str(expected_evaluation_path)
+        or not HEX64.fullmatch(str(evaluation_binding.get("sha256", "")))
+        or expected_evaluation_path.is_symlink()
+        or not expected_evaluation_path.is_file()
+        or stat.S_IMODE(expected_evaluation_path.stat().st_mode) != 0o444
+        or sha256_file(expected_evaluation_path) != evaluation_binding.get("sha256")
+    ):
+        raise RuntimeError(
+            "H100-ready evaluation-ground-truth binding is invalid"
+        )
+    evaluation_receipt = json.loads(expected_evaluation_path.read_text())
+    if (
+        not isinstance(evaluation_receipt, Mapping)
+        or evaluation_binding.get("receipt") != evaluation_receipt
+    ):
+        raise RuntimeError(
+            "H100-ready embedded evaluation-ground-truth receipt differs"
+        )
+
     try:
         uuid.UUID(str(payload.get("acceptance_uuid")))
     except (ValueError, AttributeError) as exc:
         raise RuntimeError("H100-ready acceptance UUID is absent or invalid") from exc
-    if set(payload.get("strict_fp32", {}).values()) != {"ieee"}:
+    strict_fp32 = payload.get("strict_fp32")
+    hardware = payload.get("hardware")
+    expected_strict_fp32 = {
+        "cuda_matmul_fp32_precision": "ieee",
+        "cudnn_conv_fp32_precision": "ieee",
+        "cudnn_rnn_fp32_precision": "ieee",
+    }
+    if (
+        strict_fp32 != expected_strict_fp32
+        or not isinstance(hardware, Mapping)
+        or hardware.get("backend") != expected_strict_fp32
+    ):
         raise RuntimeError("H100-ready marker does not assert strict IEEE FP32")
-    validate_gpu_inventory(payload.get("hardware", {}).get("devices", []))
-    validate_hardware_runtime_contracts(payload.get("hardware"))
+    validate_gpu_inventory(hardware.get("devices", []))
+    validate_hardware_runtime_contracts(hardware)
     for key in ("torch", "cuda_build", "driver_version"):
-        if not str(payload.get("hardware", {}).get(key, "")).strip():
+        if not str(hardware.get(key, "")).strip():
             raise RuntimeError(f"H100-ready hardware lacks {key}")
     gates = payload.get("gates")
     required_gates = {

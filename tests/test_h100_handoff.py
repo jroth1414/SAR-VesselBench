@@ -1628,6 +1628,7 @@ def _write_result_fixture(
 
     import torch
 
+    from scripts.h100 import data_staging
     from scripts.h100 import slurm_smoke
     from scripts.h100.acceptance import EXPECTED_FRACTION_WORKLOAD
     from scripts.h100.build_venv import RECEIPT_KIND
@@ -1783,6 +1784,95 @@ def _write_result_fixture(
         "sha256sums_sha256": "3" * 64,
         "runtime_bundle_sha256": "4" * 64,
     }
+    production_repo = Path(__file__).resolve().parents[1]
+    scope = data_staging.split_scope(
+        production_repo / "data/splits.json", production=True
+    )
+    view_chips = list(scope["train"])
+    view_rasters = list(scope["dev8"])
+    view_scenes = sorted((*scope["train"], *scope["dev8"]))
+    selected_artifacts = [
+        *(
+            {
+                "kind": "chip_scene",
+                "name": name,
+                "archive_sha256": "6" * 64,
+                "extraction_root": f"data/chips/{name}",
+            }
+            for name in view_chips
+        ),
+        *(
+            {
+                "kind": "raster_scene",
+                "name": name,
+                "archive_sha256": "7" * 64,
+                "extraction_root": f"data/raw/xview3/GRD/{name}",
+            }
+            for name in view_rasters
+        ),
+        *(
+            {
+                "kind": "core_weight",
+                "name": name,
+                "archive_sha256": "8" * 64,
+                "extraction_root": f"data/weights/{name}",
+            }
+            for name in data_staging.EXPECTED_WEIGHT_DIRS
+        ),
+        {
+            "kind": "offline_environment",
+            "name": "cp311-cu126",
+            "archive_sha256": "9" * 64,
+            "extraction_root": "environment",
+        },
+    ]
+    data_view_receipt = {
+        "schema": data_staging.DATA_VIEW_SCHEMA,
+        "status": "ready",
+        "phase": "train",
+        "purpose": "acceptance",
+        "contract": data_staging.TRAINING_VIEW_CONTRACT,
+        "git_sha": git_sha,
+        "base_package": {
+            "package_id": base_payload["package_id"],
+            "manifest_sha256": base_payload["manifest_sha256"],
+        },
+        "runtime_package": {
+            "package_id": runtime_amendment["package_id"],
+            "manifest_sha256": runtime_amendment["manifest_sha256"],
+        },
+        "training_cohort": None,
+        "labels": {
+            "source": "runtime-train-dev8-artifact",
+            "exposed_path": data_staging.TRAINING_LABELS_EXPOSED_PATH,
+            "artifact_path": data_staging.TRAINING_LABELS_ARTIFACT_PATH,
+            "sha256": "a" * 64,
+            "bytes": 2_422_671,
+            "row_count": data_staging.EXPECTED_TRAINING_LABEL_ROWS,
+            "scene_count": len(view_scenes),
+            "scene_ids": view_scenes,
+            "scene_ids_sha256": data_staging.scene_ids_sha256(view_scenes),
+            "train_scene_ids_sha256": data_staging.scene_ids_sha256(scope["train"]),
+            "dev8_scene_ids": view_rasters,
+            "dev8_scene_ids_sha256": data_staging.scene_ids_sha256(scope["dev8"]),
+            "forbidden_test_scene_ids_sha256": data_staging.scene_ids_sha256(
+                scope["test"]
+            ),
+            "contract": data_staging.TRAINING_VIEW_CONTRACT,
+        },
+        "chips": view_chips,
+        "rasters": view_rasters,
+        "weights": list(data_staging.EXPECTED_WEIGHT_DIRS),
+        "selected_artifacts": selected_artifacts,
+    }
+    data_view_bytes = (
+        json.dumps(data_view_receipt, sort_keys=True, separators=(",", ":")) + "\n"
+    ).encode()
+    staged_data_view = {
+        "path": "/local/xview3-fixture-r0/payload",
+        "sha256": hashlib.sha256(data_view_bytes).hexdigest(),
+        "receipt": data_view_receipt,
+    }
     acceptance_uuid = str(uuid.uuid4())
     meta = campaign_path.parent
     evaluation_ground_truth = {
@@ -1847,11 +1937,8 @@ def _write_result_fixture(
         },
         "reverified_after_build": True,
     }
-    staged_base_extraction = {
-        "path": "/scratch/payload/HANDOFF_EXTRACTED.json",
-        "sha256": extraction_receipt_sha256,
-        "receipt": extraction_receipt_payload,
-    }
+    accepted_wheelhouse = json.loads(json.dumps(wheelhouse))
+    del accepted_wheelhouse["base_extraction"]["path"]
     venv_root = meta / "native-venv"
     _write(venv_root / "bin/python", b"fixture copied native Python\n")
     venv_sha256 = "b" * 64
@@ -2109,8 +2196,8 @@ def _write_result_fixture(
             "sha256": venv_sha256,
             "venv_build_sha256": venv_build_sha256,
             "base_python": base_python,
-            "wheelhouse": wheelhouse,
-            "staged_base_extraction": staged_base_extraction,
+            "wheelhouse": accepted_wheelhouse,
+            "staged_data_view": staged_data_view,
         },
         "base_payload": base_payload,
         "runtime_amendment": runtime_amendment,
@@ -2455,7 +2542,7 @@ def _write_result_fixture(
             "venv_sha256": venv_sha256,
             "venv_build_sha256": venv_build_sha256,
             "base_python": base_python,
-            "wheelhouse": wheelhouse,
+            "wheelhouse": accepted_wheelhouse,
             "base_payload": base_payload,
             "runtime_amendment": runtime_amendment,
             "acceptance_uuid": acceptance_uuid,
@@ -2561,7 +2648,7 @@ def _write_result_fixture(
         "venv_sha256": venv_sha256,
         "venv_build_sha256": venv_build_sha256,
         "base_python": base_python,
-        "wheelhouse": wheelhouse,
+        "wheelhouse": accepted_wheelhouse,
         "base_payload": base_payload,
         "runtime_amendment": runtime_amendment,
         "acceptance_uuid": acceptance_uuid,

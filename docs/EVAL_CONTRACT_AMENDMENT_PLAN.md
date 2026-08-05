@@ -362,22 +362,22 @@ Status note (2026-08-05): Slurm smoke 540200 exposed the absent
 `SLURM_TMPDIR`; corrected smoke 541320 and probe 541333 then exposed Judy's
 host-killed literal verifier path. Ladder 541341 completed the full venv-tree
 hash, module probe 541353 reached the strict provenance check, and job 541358
-proved the login runtime receipt differs from `dgx18`. None reached GPU
-discovery, native-runtime launch, signaling, or training; none produced a
-readiness marker or canonical campaign state or affected the live V100
-diagnostic. Scratch, verifier entry, and compute-runtime qualification remain
-open gates, not H100 acceptance results.
+proved the login runtime receipt differs from `dgx18`. Subsequent probes proved
+`dgx09` and `dgx18` share full runtime closure `a4af214a...`, and compute
+job 541574 built and strictly reverified the sealed venv at tree `d1237904...`
+with receipt `d84d60c8...`. Scratch portability, module-form verifier entry,
+and compute-runtime qualification are therefore resolved. None of these jobs
+produced an H100 acceptance marker or canonical campaign state or affected the
+live V100 diagnostic; the corrected runtime must still be repackaged and pass
+fresh smoke before H100 acceptance.
 
 After code and source acceptance pass:
 
-1. Retain the existing login-built Judy Python 3.11.13 native venv as
-   diagnostic evidence only. Before H100 qualification, prove the full
-   base-Python runtime fingerprint is identical on at least two eligible DGX
-   nodes, then build and seal one fresh venv inside a compute allocation at a
-   new final persistent path. This amendment requires no new Python packages.
-   Invoke its builder/verifier only as `python -B -m
-   scripts.h100.build_venv`; never execute the literal script path, and never
-   normalize away a host-runtime mismatch.
+1. Retain the login-built Judy Python 3.11.13 venv as diagnostic evidence only.
+   Use the compute-built sealed venv from job 541574, whose runtime closure
+   matched on `dgx09` and `dgx18`. Every Slurm allocation must reverify it
+   with `python -B -m scripts.h100.build_venv`; never execute the literal
+   script path or normalize away a host-runtime mismatch.
 2. Clone the corrected Git bundle into a new SHA-addressed Judy bootstrap
    directory. Do not overwrite the older Apptainer or native-venv bootstraps.
 3. Verify an explicit canonical, existing, non-symlink, compute-node-writable
@@ -425,6 +425,17 @@ chip, TEST raster, or TEST label row. After the cohort barrier, the new
 allocation receives 16 TEST raster directories, no chips, six weight
 directories, and an audited TRAIN+TEST CSV (15,079 rows). The full combined
 label archive is opened and filtered only after the cohort validates.
+
+Acceptance records that physical allowlist as
+`H100_READY.json:venv.staged_data_view`, binding the canonical
+`H100_DATA_VIEW.json` SHA-256 and embedded receipt. Cutover validates the
+embedded receipt after allocation cleanup; the scratch path is provenance and
+is not required to persist. This replaces, rather than supplements, the
+retired full-scratch `staged_base_extraction` contract. The persistent
+wheelhouse/base-extraction path remains only in the sealed `venv_build.json`;
+the acceptance marker carries its pathless identity, and final result
+packaging must require the two identities to match before using that
+persistent path.
 
 This is allocation-view isolation, not a claim of host-global ACL isolation.
 Judy's immutable Sprint-7d package already exists as plaintext under the same

@@ -200,6 +200,15 @@ probes, the corrected evaluation-GT receipt, and a 200-step CNN projection
 that conservatively beats the recorded remaining V100 wall time. It writes
 `runs/.h100/H100_READY.json` without touching V100.
 
+The readiness marker binds the exact acceptance
+`H100_DATA_VIEW.json` as `venv.staged_data_view`. Its canonical receipt
+remains verifiable after the allocation-private scratch path is removed and
+must prove TRAIN/DEV8-only data plus the offline wheelhouse. Do not restore the
+retired `staged_base_extraction`: acceptance no longer performs a full base
+extraction. The marker carries the persistent wheelhouse extraction identity
+without its site path; the path-bearing copy remains in the verified
+`venv_build.json` for final result revalidation.
+
 Next, use the JSON-only control-package commands documented in
 `scripts/handoff/README.md`:
 

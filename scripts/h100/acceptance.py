@@ -31,6 +31,7 @@ from scripts.h100.contracts import (
 from scripts.h100.build_venv import verify as verify_native_venv
 from scripts.h100.data_staging import (
     TRAINING_LABELS_EXPOSED_PATH,
+    validate_acceptance_data_view_binding,
     validate_data_view,
 )
 from scripts.h100.host_test_gate import HOST_TESTS, validate_host_gate
@@ -603,8 +604,24 @@ def run_acceptance(args: argparse.Namespace) -> dict:
         )
     atomic_write_json(meta_root / "throughput_projection.json", projection)
 
+
+    staged_data_view_binding = {
+        "path": str(staged_payload),
+        "sha256": args.data_view_receipt_sha256,
+        "receipt": staged_data_view,
+    }
+    validate_acceptance_data_view_binding(
+        staged_data_view_binding,
+        repo=repo,
+        expected_git_sha=args.expected_git_sha,
+        expected_base_package_id=expected_base_payload["package_id"],
+        expected_base_manifest_sha256=expected_base_payload["manifest_sha256"],
+        expected_runtime_package_id=expected_runtime_amendment["package_id"],
+        expected_runtime_manifest_sha256=expected_runtime_amendment["manifest_sha256"],
+    )
+
     # Publish the immutable GT audit only after every expensive acceptance gate
-    # has passed; READY remains the final acceptance artifact.
+    # and every pure receipt validator has passed; READY remains final.
     if evaluation_ground_truth_path.exists() or evaluation_ground_truth_path.is_symlink():
         raise RuntimeError("evaluation-ground-truth receipt appeared during acceptance")
     atomic_write_json(evaluation_ground_truth_path, evaluation_ground_truth)
@@ -647,11 +664,7 @@ def run_acceptance(args: argparse.Namespace) -> dict:
                     if key != "path"
                 },
             },
-            "staged_data_view": {
-                "path": str(staged_payload),
-                "sha256": args.data_view_receipt_sha256,
-                "receipt": staged_data_view,
-            },
+            "staged_data_view": staged_data_view_binding,
         },
         "base_payload": expected_base_payload,
         "runtime_amendment": expected_runtime_amendment,
