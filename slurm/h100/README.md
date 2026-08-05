@@ -66,15 +66,17 @@ isolation boundary.
 ## 2. Build the persistent native venv
 
 Provide Judy's exact Python 3.11.13 installation and canonical libpython
-directory, record the SHA-256 of its resolved executable, and build directly
-at the final persistent path from the base payload's verified offline
-wheelhouse. The explicit loader path is required because Slurm submits with
-`--export=NONE`:
+directory. First run the full base-runtime fingerprint probe on at least two
+eligible DGX nodes and require identical results. Then enter a CPU-only Judy
+compute allocation and build one fresh venv directly at a new final persistent
+path from the base payload's verified offline wheelhouse. A login-node build is
+not compute-qualified. The explicit loader path is required because Slurm
+submits with `--export=NONE`:
 
 ```bash
 export H100_BASE_PYTHON_LIB_DIR=/cm/shared/mitre-apps/python/3.11.13/build/lib
 export LD_LIBRARY_PATH="$H100_BASE_PYTHON_LIB_DIR"
-/path/to/requirements-transfer-python -m scripts.h100.build_venv build \
+/path/to/requirements-transfer-python -B -m scripts.h100.build_venv build \
   --repo /path/to/cloned/repo \
   --wheelhouse /path/to/extracted/environment/wheelhouse \
   --base-extraction-receipt /path/to/extracted/HANDOFF_EXTRACTED.json \
@@ -97,6 +99,17 @@ The native process starts under `env -i` with an allocation-local home/cache,
 offline package/model settings, `PYTHONNOUSERSITE=1`, and only enumerated CUDA
 and Slurm values. `NVIDIA_TF32_OVERRIDE=0` is exported before any CUDA-capable
 command. Box variables never enter the child process.
+
+Always launch the builder and verifier with `python -B -m
+scripts.h100.build_venv`. Judy's endpoint controls killed jobs 541320 and
+541333 when the literal `scripts/h100/build_venv.py` path appeared as the
+executed program. Job 541341 completed the full 7.4-GB tree hash, disproving a
+32-GB memory shortfall, and module-form job 541353 reached the strict
+provenance check. Job 541358 then measured identical Python executable bytes
+but different login and `dgx18` runtime closures (`cce52e...` versus
+`a4af21...`). Do not weaken or normalize that check. Keep the old login-built
+tree and receipt as diagnostics, and point `site.env` only at the new
+compute-built path and hashes after cross-DGX equality is established.
 
 ## 3. Configure the site
 
@@ -157,12 +170,14 @@ Run the lightweight one-GPU Slurm acceptance first:
 slurm/h100/submit.sh smoke
 ```
 
-Historical attempt 540200 is a failed portability diagnostic, not a passed
-smoke. It exited in one second because Judy did not define `SLURM_TMPDIR`,
-before GPU discovery, native-runtime launch, signaling, or training. It wrote
-no `SLURM_SMOKE_READY.json` and no canonical campaign state; the live V100
+Historical attempts 540200 and 541320 are failed diagnostics, not passed
+smokes. Job 540200 exited because Judy did not define `SLURM_TMPDIR`; job
+541320 then exposed the endpoint-killed direct verifier entry. Both failed
+before GPU discovery, native-runtime launch, signaling, or training and wrote
+no `SLURM_SMOKE_READY.json` or canonical campaign state; the live V100
 diagnostic was untouched. Use a runtime amendment containing the explicit
-`H100_SCRATCH_ROOT` contract before retrying.
+`H100_SCRATCH_ROOT` contract and module-form verifier, plus the fresh
+compute-qualified venv receipt, before retrying.
 
 The first allocation's exact venv Python publishes its PID. The outer batch
 verifies that direct-child identity, sends a real `SIGUSR1` across the

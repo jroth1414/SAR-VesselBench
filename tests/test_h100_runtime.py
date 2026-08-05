@@ -1989,7 +1989,11 @@ def test_slurm_native_defaults_identity_order_and_clean_runtime_are_static():
     assert "scripts.handoff extract" not in job
     assert 'git clone "$H100_RUNTIME_BUNDLE" "$repo"' in job
     assert 'git clone "$base_repo_bundle"' not in job
-    assert '"$repo/scripts/h100/build_venv.py" verify' in job
+    assert (
+        'PYTHONNOUSERSITE=1 PYTHONPATH="$repo" "$H100_TRANSFER_PYTHON" \\\n'
+        '  -B -m scripts.h100.build_venv verify \\\n'
+    ) in job
+    assert "scripts/h100/build_venv.py" not in job
     assert '"$H100_VENV_ROOT/bin/python"' in job
     assert "/usr/bin/env -i" in job
     assert "source " not in job[job.index("native_env=(") :]
@@ -2114,6 +2118,11 @@ def test_smoke_batch_signals_direct_native_child_and_requeues_externally():
     assert '"${H100_REAL_SCONTROL:-/usr/bin/scontrol}" requeue' in smoke
     assert "unset BOX_JWT_CONFIG BOX_FOLDER_ID" in smoke
     assert 'export LD_LIBRARY_PATH="$H100_BASE_PYTHON_LIB_DIR"' in smoke
+    assert (
+        'PYTHONNOUSERSITE=1 PYTHONPATH="$repo" "$H100_TRANSFER_PYTHON" \\\n'
+        '  -B -m scripts.h100.build_venv verify \\\n'
+    ) in smoke
+    assert "scripts/h100/build_venv.py" not in smoke
     assert '"LD_LIBRARY_PATH=$H100_BASE_PYTHON_LIB_DIR"' in smoke
     assert 'h100_scratch_root="$(canonical_write_root H100_SCRATCH_ROOT)"' in smoke
     assert "\ncreate_allocation_scratch\n" in smoke

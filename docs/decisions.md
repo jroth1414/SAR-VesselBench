@@ -451,8 +451,9 @@ identically to every arm. This committed log lives here; `runs/` is gitignored a
   equality or ancestor overlap with each other or the immutable repo,
   base/runtime packages, wheelhouse, and sealed venv. Cutover-check
   additionally protects the local transferred-reference evidence root.
-- **Verified reusable environment:** Judy successfully built and independently
-  verified Python 3.11.13 with torch `2.11.0+cu126`. The sealed venv tree is
+- **Verified login-node environment evidence; not compute-qualified:** Judy
+  successfully built and independently verified Python 3.11.13 with torch
+  `2.11.0+cu126` on the login-node runtime. The sealed venv tree is
   `101fd4571e3daaab97bf1d6d6f7a98fb6514e2b9bc54eab5d2b49e41ace4f8ca`;
   its build receipt is
   `c7051cb6d743923fcea64d618a59685620309e766cbc90e73179aee9fa8fc9be`.
@@ -461,9 +462,9 @@ identically to every arm. This committed log lives here; `runs/` is gitignored a
   base runtime `cce52efebc4dbd691ffbdc46fac68efb9971dc89bd63dae34113bfcebc0f4739`,
   wheelhouse `fb0106771ddb223ba2b93af3463f6accbc018ece18275975ef7770749fd11138`,
   and extraction receipt `eb52d4e45083f55af3ae2e14be7fc2c8c610d0567454495542574c8e431a2b5d`.
-  The receipt is not source-SHA-bound, so it remains valid for this control-only
-  amendment while `locks/env-v100node.txt`, wheelhouse, base extraction, base
-  Python/runtime, final path, and tree remain exact.
+  The receipt is not source-SHA-bound, but later compute job 541358 proved its
+  full base-Python runtime closure does not match `dgx18`. It therefore remains
+  useful diagnostic evidence and is not valid for H100 compute qualification.
 - **Historical status:** this was the Sprint-7e gap before Sprint 7f. No GPU or
   Slurm gate had run. The Sprint-7f decision and implementation below replace
   the code-only amendment and supply the content-addressed dynamic control
@@ -543,7 +544,8 @@ identically to every arm. This committed log lives here; `runs/` is gitignored a
   corrected-contract rerun. Both emit schema-2 provenance and retain their
   independent precision recipes.
 - **Box/Judy control:** Sprint 7f is a new content-addressed runtime amendment
-  reusing the verified Sprint-7d payload and sealed Judy venv. Besides its Git
+  reusing the verified Sprint-7d payload; a fresh compute-built sealed Judy
+  venv is required before acceptance. Besides its Git
   bundle/control metadata, its sole data artifact is the deterministic
   source-audited TRAIN+DEV8 CSV needed to keep TEST rows out of the pre-cohort
   view. Compute-time source validation hashes only pinned package controls and
@@ -600,3 +602,37 @@ identically to every arm. This committed log lives here; `runs/` is gitignored a
   campaign. A new content-addressed runtime amendment and a passing full smoke
   are required before H100 acceptance or training; V100 continues untouched as
   a non-reportable diagnostic.
+
+## Judy compute-runtime provenance and verifier-entry correction (operational correction, 2026-08-05)
+
+- **Observed entry-point behavior:** smoke 541320 and 32-GB probe 541333 were
+  killed with exit 137 only when invoking the literal
+  `scripts/h100/build_venv.py` path. Ladder 541341 imported the same module,
+  walked the read-only venv, and completed its full 7.4-GB deterministic tree
+  manifest. Module-form probe 541353 was not killed and reached the intended
+  strict provenance check. This rules out the requested-memory limit and
+  identifies the direct script path as incompatible with Judy endpoint
+  controls.
+- **Measured provenance difference:** job 541358 on `dgx18` found the same base
+  Python executable SHA-256 as the login build,
+  `dbbb197739dbd20dcae2eacc394b97e7d092a7512c60f54980075b7f037afd39`,
+  but a different full runtime closure. The login receipt records
+  `cce52efebc4dbd691ffbdc46fac68efb9971dc89bd63dae34113bfcebc0f4739`;
+  `dgx18` measured
+  `a4af214a34be0512d657350faed6aa76ab9f937d64e27858b043e0d147664733`.
+  The observed inputs include the kernel identity and an additional mapped
+  locale file on compute. The verifier correctly failed closed.
+- **Decision:** use only `python -B -m scripts.h100.build_venv` for build and
+  verification. Do not execute its literal file path, weaken the receipt, or
+  normalize host-runtime inputs. Before building again, measure at least one
+  additional eligible DGX node and require exact agreement with the accepted
+  compute fingerprint. If compute nodes agree, build one fresh sealed venv
+  inside a compute allocation at a new persistent path and update ignored
+  `site.env` from that receipt. Preserve the login-built venv and receipt as
+  diagnostic evidence; never overwrite them. If DGX fingerprints differ,
+  STOP for an owner decision.
+- **Scientific scope and status:** this changes only Judy runtime invocation
+  and provenance qualification. It does not modify the detector, scorer,
+  splits, stats, labels, evaluation contract, precision, batch, model,
+  optimizer, schedule, seed, or campaign grid. No smoke, H100 acceptance, or
+  H100 training is claimed; the V100 diagnostic remains untouched.

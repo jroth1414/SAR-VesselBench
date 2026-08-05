@@ -248,7 +248,7 @@ fi
 check_sha "$H100_DETECTOR_SHA256" "$repo/configs/detector.yaml"
 check_sha "$H100_ENV_LOCK_SHA256" "$repo/locks/env-v100node.txt"
 PYTHONNOUSERSITE=1 PYTHONPATH="$repo" "$H100_TRANSFER_PYTHON" \
-  "$repo/scripts/h100/build_venv.py" verify \
+  -B -m scripts.h100.build_venv verify \
   --repo "$repo" \
   --venv-root "$H100_VENV_ROOT" \
   --base-python "$H100_BASE_PYTHON" \

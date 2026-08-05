@@ -268,7 +268,7 @@ git clone "$H100_RUNTIME_BUNDLE" "$repo"
 git -C "$repo" checkout --detach "$H100_EXPECTED_GIT_SHA"
 check_sha "$H100_ENV_LOCK_SHA256" "$repo/locks/env-v100node.txt"
 PYTHONNOUSERSITE=1 PYTHONPATH="$repo" "$H100_TRANSFER_PYTHON" \
-  "$repo/scripts/h100/build_venv.py" verify \
+  -B -m scripts.h100.build_venv verify \
   --repo "$repo" \
   --venv-root "$H100_VENV_ROOT" \
   --base-python "$H100_BASE_PYTHON" \

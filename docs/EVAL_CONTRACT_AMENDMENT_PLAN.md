@@ -358,17 +358,26 @@ against the live V100 campaign.
 
 ## 7. Corrected Judy H100 campaign
 
-Status note (2026-08-05): Slurm smoke job 540200 failed after package-control
-verification but before GPU discovery, native-runtime launch, signaling, or
-training because Judy did not export `SLURM_TMPDIR`. It produced no readiness
-marker or canonical campaign state and did not affect the live V100 diagnostic.
-This is an open portability gate, not an H100 acceptance result.
+Status note (2026-08-05): Slurm smoke 540200 exposed the absent
+`SLURM_TMPDIR`; corrected smoke 541320 and probe 541333 then exposed Judy's
+host-killed literal verifier path. Ladder 541341 completed the full venv-tree
+hash, module probe 541353 reached the strict provenance check, and job 541358
+proved the login runtime receipt differs from `dgx18`. None reached GPU
+discovery, native-runtime launch, signaling, or training; none produced a
+readiness marker or canonical campaign state or affected the live V100
+diagnostic. Scratch, verifier entry, and compute-runtime qualification remain
+open gates, not H100 acceptance results.
 
 After code and source acceptance pass:
 
-1. Use the existing verified Judy Python 3.11.13 native venv only if its lock,
-   wheelhouse digest, torch `2.11.0+cu126`, and read-only tree hash remain
-   unchanged. This amendment should not require new Python packages.
+1. Retain the existing login-built Judy Python 3.11.13 native venv as
+   diagnostic evidence only. Before H100 qualification, prove the full
+   base-Python runtime fingerprint is identical on at least two eligible DGX
+   nodes, then build and seal one fresh venv inside a compute allocation at a
+   new final persistent path. This amendment requires no new Python packages.
+   Invoke its builder/verifier only as `python -B -m
+   scripts.h100.build_venv`; never execute the literal script path, and never
+   normalize away a host-runtime mismatch.
 2. Clone the corrected Git bundle into a new SHA-addressed Judy bootstrap
    directory. Do not overwrite the older Apptainer or native-venv bootstraps.
 3. Verify an explicit canonical, existing, non-symlink, compute-node-writable
@@ -482,7 +491,9 @@ Required contents:
   requiring Judy to open it before cohort freeze;
 - bootstrap/pull script pinned to the exact bundle SHA and branch;
 - amendment manifest with code SHA, bundle SHA-256, base payload identity,
-  unchanged environment-lock identity, and expected Judy venv receipt;
+  unchanged environment-lock identity, and the native Python/torch contract;
+  exact compute-venv root and receipt hashes bind later through ignored
+  `site.env`, its immutable submit snapshot, and allocation acceptance;
 - `SHA256SUMS`; and
 - `READY.json` written last.
 
@@ -496,9 +507,11 @@ Transfer requirements:
   SHA-256.
 - On Judy, download to `.partial`, verify, rename atomically, and clone into a
   new SHA-addressed bootstrap directory.
-- Preserve the existing base-extracted payload and read-only H100 venv when
-  their receipts match; the amendment contains code/control metadata plus only
-  the narrowly derived TRAIN+DEV8 label artifact above.
+- Preserve the existing base-extracted payload. Preserve the login-built
+  read-only venv only as diagnostic evidence; production uses the fresh
+  compute-built venv after cross-DGX runtime equality and exact receipt
+  verification. The amendment contains code/control metadata plus only the
+  narrowly derived TRAIN+DEV8 label artifact above.
 - Run package verification before changing any Judy launch pointer.
 
 Dynamic cross-site evidence uses the same verified, content-addressed package
@@ -525,6 +538,10 @@ The amendment is ready for reportable H100 training only when all are true:
   hash and epoch.
 - Test/final paths refuse last-dev thresholds and legacy unbound artifacts.
 - Full CPU and H100 GPU acceptance suites pass.
+- At least two eligible DGX nodes have identical preserved full base-runtime
+  fingerprints; the selected build node is remeasured immediately before the
+  build; and a fresh compute-built venv at a new persistent path has matching
+  tree, build, Python-runtime, wheelhouse, extraction, and lock receipts.
 - The external-signal Slurm smoke passes under the explicit
   `H100_SCRATCH_ROOT` contract, proves fresh scratch on requeue and persistent
   checkpoint resume, and leaves no allocation child after guarded cleanup.

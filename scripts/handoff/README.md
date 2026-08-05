@@ -16,8 +16,10 @@ Judy executes only a native, final-path Python virtual environment. There is no
 container build, container launch, or venv activation in the Judy path.
 The Apptainer definition retained in the Sprint 7d package is historical,
 non-executed provenance; do not remove it from, rebuild, or otherwise mutate
-that verified package. The already verified native venv applies to the H100
-lane only; Sprint 7f does not rebuild it when its receipts remain exact.
+that verified package. The login-built native venv is diagnostic evidence
+only. After at least two eligible DGX nodes produce the same full base-runtime
+fingerprint, build one fresh sealed venv inside a CPU-only task on an eligible
+DGX node at a new persistent path; Sprint 7f does not reuse the login receipt.
 Judy and the live V100 host have completely separate filesystems. The Judy
 runtime requires `H100_V100_CONTROL_PLANE=box-transfer-v1`; do not create a
 dummy Judy path for the V100 runs tree. Smoke and H100 acceptance use only
@@ -337,16 +339,20 @@ TRAIN+fixed-DEV8 CSV only for the training view.
 ## Build the final-path native H100 venv
 
 Provide Judy's exact Python 3.11.13 executable and canonical libpython
-directory, then build directly at the permanent path. The loader path is
-explicit because the shared interpreter cannot start without it and Slurm uses
-`--export=NONE`. The build is offline and consumes the verified Sprint 7d
-wheelhouse:
+directory. First require the complete base-runtime fingerprint to agree on at
+least two eligible DGX compute nodes and preserve each node/digest record.
+Then, from a CPU-only task on an eligible DGX node, remeasure that node and
+require the accepted digest immediately before building one fresh venv at a
+new permanent path. Never use a login-built receipt for H100 qualification.
+The loader path is explicit because the shared interpreter cannot start
+without it and Slurm uses `--export=NONE`. The build is offline and consumes
+the verified Sprint 7d wheelhouse:
 
 ```bash
 export H100_BASE_PYTHON_LIB_DIR=/cm/shared/mitre-apps/python/3.11.13/build/lib
 export LD_LIBRARY_PATH="$H100_BASE_PYTHON_LIB_DIR"
 cd /persistent/path/xview3-handoff/bootstrap-SPRINT7F_FULL_GIT_SHA
-/path/to/bootstrap-python -m scripts.h100.build_venv build \
+/path/to/bootstrap-python -B -m scripts.h100.build_venv build \
   --repo "$PWD" \
   --wheelhouse /scratch/xview3-base-extracted/environment/wheelhouse \
   --base-extraction-receipt /scratch/xview3-base-extracted/HANDOFF_EXTRACTED.json \
@@ -378,7 +384,7 @@ probed mapped system libraries:
 export H100_BASE_PYTHON_LIB_DIR=/cm/shared/mitre-apps/python/3.11.13/build/lib
 export LD_LIBRARY_PATH="$H100_BASE_PYTHON_LIB_DIR"
 cd /persistent/path/xview3-handoff/bootstrap-SPRINT7F_FULL_GIT_SHA
-/path/to/bootstrap-python -m scripts.h100.build_venv verify \
+/path/to/bootstrap-python -B -m scripts.h100.build_venv verify \
   --repo "$PWD" \
   --venv-root /persistent/venvs/xview3-h100-fp32 \
   --base-python /cm/shared/mitre-apps/python/3.11.13/build/bin/python3.11 \
@@ -393,6 +399,12 @@ cd /persistent/path/xview3-handoff/bootstrap-SPRINT7F_FULL_GIT_SHA
   --expected-base-payload-package-id xview3-h100-fp32-2726199efcebbebc89156e708b89df2a3415468a \
   --expected-base-payload-manifest-sha256 fccb0b505c89836a148afec709bb799f7af4908d955ea1b142e153154d830896
 ```
+
+Use only the module-form builder/verifier above. Judy endpoint controls killed
+the literal direct `scripts/h100/build_venv.py` entry, while the module form
+completed and correctly enforced the full base-runtime receipt. Preserve any
+login-built venv as diagnostic evidence, and do not normalize a node-runtime
+difference.
 
 Jobs invoke `/persistent/venvs/xview3-h100-fp32/bin/python` directly under a
 clean environment. They never activate the venv and never execute a container.
@@ -518,6 +530,7 @@ source /outside/repo/xview3-results-transfer.env
 Status: the immutable Sprint 7d base upload and its remote verification are
 complete. Earlier Sprint 7e runtime amendments remain immutable provenance.
 Only a new content-addressed Sprint 7f package may execute the corrected
-campaign, and it must go to a separate initially empty Box folder. Judy's
-verified venv is reusable; Sprint 7f transfer, H100 acceptance, corrected
+campaign, and it must go to a separate initially empty Box folder. The
+login-built Judy venv is diagnostic only; cross-DGX agreement and a fresh
+compute-built receipt, Sprint 7f transfer, H100 acceptance, corrected
 reference/control receipts, Slurm smoke, and training remain pending.
