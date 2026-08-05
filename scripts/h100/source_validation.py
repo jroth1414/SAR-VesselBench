@@ -193,15 +193,19 @@ def verify_transfer_bindings(
     expected_base_payload: Mapping[str, str],
     expected_runtime_amendment: Mapping[str, str],
 ) -> dict[str, dict[str, str]]:
-    """Verify both actual packages and compare every supplied identity field."""
+    """Verify safe base controls plus the amendment and compare identities.
+
+    This allocation-time gate deliberately does not run the full base-package
+    verifier.  The Box transfer already did that; phase staging hashes only the
+    specific archives authorized for the current allocation.
+    """
 
     # Keep the training/runtime import graph independent of Box tooling.  This
     # host-only entrypoint runs in the transfer environment before the native
-    # venv boundary.  The prepared verifier reads and verifies the 294 GB base
-    # exactly once, then verifies the small amendment against that identity.
-    from scripts.handoff.runtime_amendment import prepare_runtime_verifier
+    # venv boundary.  It never opens a base data archive.
+    from scripts.handoff.runtime_amendment import prepare_runtime_control_verifier
 
-    verifier = prepare_runtime_verifier(base_payload_root)
+    verifier = prepare_runtime_control_verifier(base_payload_root)
     manifest = verifier(runtime_amendment_root)
     base = manifest.get("base_payload")
     source = manifest.get("source")

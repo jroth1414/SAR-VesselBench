@@ -1882,10 +1882,11 @@ def _validate_artifact_schema(
             "results/provenance/venv_build.json",
             "results/provenance/CUTOVER_READY.json",
             "results/provenance/SOURCE_VALIDATED.json",
+            "results/provenance/EVAL_GROUND_TRUTH_VALIDATED.json",
+            "results/provenance/TRAINING_COHORT.json",
             "results/provenance/HOST_HANDOFF_TESTS.json",
             "results/provenance/PYTEST_ACCEPTANCE.json",
-            "results/provenance/V100_CORE_ARCHIVED.json",
-            "results/provenance/V100_CORE_ARCHIVE_MANIFEST.json",
+            "results/provenance/V100_DIAGNOSTIC_ISOLATION.json",
             "results/provenance/slurm-smoke/SLURM_SMOKE_READY.json",
             "results/provenance/slurm-smoke/SLURM_SMOKE_STATE.json",
             "results/provenance/summary/grid.csv",
@@ -1915,6 +1916,12 @@ def _validate_artifact_schema(
             "results/provenance/SOURCE_VALIDATED.json": source.get(
                 "source_validation_sha256"
             ),
+            "results/provenance/EVAL_GROUND_TRUTH_VALIDATED.json": source.get(
+                "evaluation_ground_truth_sha256"
+            ),
+            "results/provenance/TRAINING_COHORT.json": source.get(
+                "training_cohort_sha256"
+            ),
             "results/provenance/PYTEST_ACCEPTANCE.json": source.get(
                 "acceptance_test_suite_sha256"
             ),
@@ -1922,19 +1929,19 @@ def _validate_artifact_schema(
                 "summary_grid_sha256"
             ),
         }
-        operator_cutover = source.get("operator_cutover")
-        if not isinstance(operator_cutover, Mapping):
-            raise PackageError("result operator-cutover identity is absent")
+        diagnostic_isolation = source.get("v100_diagnostic_isolation")
+        if not isinstance(diagnostic_isolation, Mapping):
+            raise PackageError("result diagnostic-isolation identity is absent")
+        diagnostic_receipt = diagnostic_isolation.get("receipt")
+        if not isinstance(diagnostic_receipt, Mapping):
+            raise PackageError("result diagnostic-isolation receipt is absent")
         direct_provenance.update(
             {
-                "results/provenance/CUTOVER_READY.json": operator_cutover.get(
+                "results/provenance/CUTOVER_READY.json": diagnostic_receipt.get(
                     "cutover_ready_sha256"
                 ),
-                "results/provenance/V100_CORE_ARCHIVED.json": (
-                    operator_cutover.get("v100_core_archived_sha256")
-                ),
-                "results/provenance/V100_CORE_ARCHIVE_MANIFEST.json": (
-                    operator_cutover.get("archive_manifest_sha256")
+                "results/provenance/V100_DIAGNOSTIC_ISOLATION.json": (
+                    diagnostic_isolation.get("sha256")
                 ),
             }
         )
@@ -1947,12 +1954,15 @@ def _validate_artifact_schema(
                 "result campaign/grid digests are not campaign-archive-bound"
             )
         runtime_digests = source.get("runtime_provenance_sha256")
+        test_digests = source.get("test_metrics_sha256")
         if (
             not isinstance(runtime_digests, Mapping)
             or set(runtime_digests) != set(cells)
+            or not isinstance(test_digests, Mapping)
+            or set(test_digests) != set(cells)
         ):
             raise PackageError(
-                "result runtime-provenance digest index is not the exact cell grid"
+                "result runtime/test digest indexes are not the exact cell grid"
             )
         for cell in cells:
             name = str(cell)
@@ -1960,6 +1970,7 @@ def _validate_artifact_schema(
             root = f"results/core/{name}"
             expected_members = {
                 f"{root}/final_metrics.json",
+                f"{root}/test_metrics.json",
                 f"{root}/config.yaml",
                 f"{root}/metrics/metrics.csv",
                 f"{root}/runtime_provenance.json",
@@ -1972,6 +1983,7 @@ def _validate_artifact_schema(
                     f"{name} core-result archive is not the exact result allowlist"
                 )
             runtime_digest = runtime_digests.get(name)
+            test_digest = test_digests.get(name)
             if (
                 members.get(f"{root}/runtime_provenance.json")
                 != runtime_digest
@@ -1981,6 +1993,15 @@ def _validate_artifact_schema(
             ):
                 raise PackageError(
                     f"{name} runtime-provenance digest is not archive-bound"
+                )
+            if (
+                members.get(f"{root}/test_metrics.json") != test_digest
+                or not re.fullmatch(
+                    r"[0-9a-f]{64}", str(test_digest or "")
+                )
+            ):
+                raise PackageError(
+                    f"{name} held-out-result digest is not archive-bound"
                 )
         return
 
@@ -2138,11 +2159,21 @@ def _verify_package(
         if manifest.get("package_type") == "h100-core-results"
         else "xview3-h100-fp32-"
     )
+    result_artifact_digest_index: object | None = None
     if manifest.get("package_type") == "h100-core-results":
         identity = source.get("result_identity")
         identity_sha256 = source.get("result_identity_sha256")
         if not isinstance(identity, Mapping):
             raise PackageError("result package identity is absent")
+        if (
+            identity.get("schema") != 2
+            or identity.get("maximum_physical_file_bytes")
+            != maximum_physical_file_bytes
+        ):
+            raise PackageError("result package identity contract is invalid")
+        result_artifact_digest_index = identity.get("artifact_digest_index")
+        if not isinstance(result_artifact_digest_index, list):
+            raise PackageError("result package artifact digest index is absent")
         computed_identity = hashlib.sha256(_canonical_json(dict(identity))).hexdigest()
         if identity_sha256 != computed_identity:
             raise PackageError("result package identity digest mismatch")
@@ -2167,6 +2198,14 @@ def _verify_package(
         typed_artifacts,
         maximum_physical_file_bytes,
     )
+    if (
+        manifest.get("package_type") == "h100-core-results"
+        and result_artifact_digest_index != typed_artifacts
+    ):
+        raise PackageError(
+            "result package identity artifact digest index does not match "
+            "the validated manifest artifacts"
+        )
     physical: set[str] = set()
     if manifest.get("package_type") == "h100-core-results":
         observed_counts = {"core_result_archives": 0, "provenance_archives": 0}

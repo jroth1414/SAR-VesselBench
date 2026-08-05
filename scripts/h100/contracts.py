@@ -307,6 +307,7 @@ def assert_empty_core_namespaces(repo: str | Path, runs_root: str | Path) -> Non
         cell.exp_id
         for cell in load_cells(repo)
         if (Path(runs_root) / cell.exp_id).exists()
+        or (Path(runs_root) / cell.exp_id).is_symlink()
     ]
     if occupied:
         raise RuntimeError(

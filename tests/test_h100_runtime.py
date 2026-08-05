@@ -593,6 +593,61 @@ def ready_payload(smoke_path: Path, smoke_receipt: dict, bindings: dict) -> dict
 
 
 
+def test_first_campaign_start_requires_empty_core_and_absent_cohort(tmp_path):
+    runs_root = tmp_path / "runs"
+    meta_root = runs_root / ".h100"
+    meta_root.mkdir(parents=True)
+    manifest = meta_root / "campaign_manifest.json"
+    cohort = meta_root / "TRAINING_COHORT.json"
+
+    assert campaign.validate_campaign_start_state(
+        repo=REPO,
+        runs_root=runs_root,
+        manifest_path=manifest,
+        cohort_path=cohort,
+    ) is False
+
+    cell = contracts.load_cells(REPO)[0]
+    occupied = runs_root / cell.exp_id
+    occupied.mkdir()
+    with pytest.raises(RuntimeError, match="canonical namespaces are not empty"):
+        campaign.validate_campaign_start_state(
+            repo=REPO,
+            runs_root=runs_root,
+            manifest_path=manifest,
+            cohort_path=cohort,
+        )
+    occupied.rmdir()
+
+    cohort.write_text("{}\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="cohort exists without a campaign manifest"):
+        campaign.validate_campaign_start_state(
+            repo=REPO,
+            runs_root=runs_root,
+            manifest_path=manifest,
+            cohort_path=cohort,
+        )
+    cohort.unlink()
+
+    manifest.write_text("{}\n", encoding="utf-8")
+    occupied.mkdir()
+    assert campaign.validate_campaign_start_state(
+        repo=REPO,
+        runs_root=runs_root,
+        manifest_path=manifest,
+        cohort_path=cohort,
+    ) is True
+
+
+def test_empty_core_gate_rejects_broken_symlink_namespace(tmp_path):
+    runs_root = tmp_path / "runs"
+    runs_root.mkdir()
+    cell = contracts.load_cells(REPO)[0]
+    (runs_root / cell.exp_id).symlink_to(tmp_path / "absent")
+    with pytest.raises(RuntimeError, match="canonical namespaces are not empty"):
+        contracts.assert_empty_core_namespaces(REPO, runs_root)
+
+
 def test_matrix_is_exactly_32_and_expensive_first():
     cells = contracts.load_cells(REPO)
     assert len(cells) == len({cell.exp_id for cell in cells}) == 32
@@ -1928,7 +1983,8 @@ def test_slurm_native_defaults_identity_order_and_clean_runtime_are_static():
     assert job.index('source "$compute_site"') < job.index(loader_export)
     assert job.index(loader_export) < job.index('"$H100_TRANSFER_PYTHON"')
     assert '"LD_LIBRARY_PATH=$H100_BASE_PYTHON_LIB_DIR"' in job
-    assert job.index("scratch_free=") < job.index("scripts.handoff extract")
+    assert job.index("scratch_free=") < job.index("scripts.h100.data_staging")
+    assert "scripts.handoff extract" not in job
     assert 'git clone "$H100_RUNTIME_BUNDLE" "$repo"' in job
     assert 'git clone "$base_repo_bundle"' not in job
     assert '"$repo/scripts/h100/build_venv.py" verify' in job
@@ -2178,7 +2234,8 @@ def test_source_validation_cli_verifies_both_package_roots_before_receipt():
     for option in ("--base-payload-root", "--runtime-amendment-root"):
         assert f'parser.add_argument("{option}"' in source
         assert option in SBATCH.read_text()
-    assert "prepare_runtime_verifier" in source
+    assert "prepare_runtime_control_verifier" in source
+    assert "prepare_runtime_verifier" not in source
     assert "verify_transfer_bindings(" in source
 
 

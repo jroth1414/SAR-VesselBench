@@ -29,6 +29,10 @@ from scripts.h100.contracts import (
     verify_expected_hashes,
 )
 from scripts.h100.build_venv import verify as verify_native_venv
+from scripts.h100.data_staging import (
+    TRAINING_LABELS_EXPOSED_PATH,
+    validate_data_view,
+)
 from scripts.h100.host_test_gate import HOST_TESTS, validate_host_gate
 from scripts.h100.lightning_contract import validate_trainer_contract_evidence
 from scripts.h100.precision import assert_sitecustomize_active
@@ -37,8 +41,12 @@ from scripts.h100.slurm_smoke import (
     validate_smoke_receipt,
 )
 from scripts.h100.source_validation import validate_source_receipt
-from scripts.h100.wheelhouse import validate_base_extraction_receipt
-from src.eval.ground_truth_audit import audit_ground_truth_dataset
+from scripts.handoff.package import wheelhouse_identity
+from scripts.handoff.runtime_amendment import BASE_LABEL_BYTES, BASE_LABEL_SHA256
+from src.eval.ground_truth_audit import (
+    audit_ground_truth_scope,
+    validate_ground_truth_audit_receipt,
+)
 
 WEIGHT_SUBDIRS = (
     "satdino",
@@ -306,6 +314,22 @@ def run_acceptance(args: argparse.Namespace) -> dict:
         expected_base_payload=expected_base_payload,
         expected_runtime_amendment=expected_runtime_amendment,
     )
+    # Validate the phase allowlist before any semantic label/raster access.
+    # Acceptance is deliberately restricted to the TRAIN+fixed-DEV8 view.
+    staged_payload = args.data_view_root.resolve()
+    staged_data_view = validate_data_view(
+        staged_payload,
+        repo=repo,
+        runs_root=runs_root,
+        expected_sha256=args.data_view_receipt_sha256,
+        expected_git_sha=args.expected_git_sha,
+        expected_phase="train",
+        expected_purpose="acceptance",
+        expected_base_package_id=expected_base_payload["package_id"],
+        expected_base_manifest_sha256=expected_base_payload["manifest_sha256"],
+        expected_runtime_package_id=expected_runtime_amendment["package_id"],
+        expected_runtime_manifest_sha256=expected_runtime_amendment["manifest_sha256"],
+    )
     source = validate_runtime_source(
         repo=repo,
         receipt_path=args.source_validation_json,
@@ -318,9 +342,20 @@ def run_acceptance(args: argparse.Namespace) -> dict:
     evaluation_ground_truth_path = (
         runs_root / ".h100/EVAL_GROUND_TRUTH_VALIDATED.json"
     ).absolute()
-    evaluation_ground_truth = audit_ground_truth_dataset(
-        train_csv=repo / "data/raw/xview3/labels/train.csv",
+    runtime_manifest_path = args.runtime_package_root / "manifest.json"
+    if sha256_file(runtime_manifest_path) != args.runtime_amendment_manifest_sha256:
+        raise RuntimeError("acceptance runtime manifest SHA-256 mismatch")
+    runtime_manifest = json.loads(runtime_manifest_path.read_text(encoding="utf-8"))
+    evaluation_ground_truth = validate_ground_truth_audit_receipt(
+        runtime_manifest.get("evaluation_ground_truth", {}),
         splits_json=repo / "data/splits.json",
+        expected_train_csv_sha256=BASE_LABEL_SHA256,
+        expected_train_csv_bytes=BASE_LABEL_BYTES,
+    )
+    audit_ground_truth_scope(
+        train_csv=staged_payload / TRAINING_LABELS_EXPOSED_PATH,
+        splits_json=repo / "data/splits.json",
+        scope="dev8",
     )
     smoke_bindings = make_smoke_bindings(
         git_sha=args.expected_git_sha,
@@ -361,21 +396,11 @@ def run_acceptance(args: argparse.Namespace) -> dict:
             expected_base_payload["manifest_sha256"]
         ),
     )
-    staged_payload = scratch / "payload"
-    staged_base_extraction = validate_base_extraction_receipt(
-        staged_payload / "HANDOFF_EXTRACTED.json",
-        wheelhouse=staged_payload / "environment/wheelhouse",
-        expected_package_id=expected_base_payload["package_id"],
-        expected_manifest_sha256=expected_base_payload["manifest_sha256"],
-        expected_receipt_sha256=args.base_extraction_receipt_sha256,
-        expected_wheelhouse_sha256=args.wheelhouse_sha256,
-    )
-    if (
-        staged_base_extraction["receipt"].get("wheelhouse")
-        != venv_receipt.get("wheelhouse", {}).get("identity")
+    if wheelhouse_identity(staged_payload / "environment/wheelhouse") != (
+        venv_receipt.get("wheelhouse", {}).get("identity")
     ):
         raise RuntimeError(
-            "fresh scratch extraction wheelhouse differs from native-venv build"
+            "training-view wheelhouse differs from native-venv build"
         )
     meta_root = runs_root / ".h100"
     persisted_receipt = meta_root / "venv_build.json"
@@ -524,7 +549,7 @@ def run_acceptance(args: argparse.Namespace) -> dict:
         expected_detector_sha256=source["frozen_sha256"]["configs/detector.yaml"],
     )
     fraction_workload = derive_fraction_workload(
-        chips_root=repo / "data/chips",
+        chips_root=staged_payload / "data/chips",
         splits_path=repo / "data/splits.json",
     )
     exact_steps = {
@@ -614,8 +639,19 @@ def run_acceptance(args: argparse.Namespace) -> dict:
             "sha256": args.venv_sha256,
             "venv_build_sha256": args.venv_build_sha256,
             "base_python": venv_receipt["base_python"],
-            "wheelhouse": venv_receipt["wheelhouse"],
-            "staged_base_extraction": staged_base_extraction,
+            "wheelhouse": {
+                **venv_receipt["wheelhouse"],
+                "base_extraction": {
+                    key: value
+                    for key, value in venv_receipt["wheelhouse"]["base_extraction"].items()
+                    if key != "path"
+                },
+            },
+            "staged_data_view": {
+                "path": str(staged_payload),
+                "sha256": args.data_view_receipt_sha256,
+                "receipt": staged_data_view,
+            },
         },
         "base_payload": expected_base_payload,
         "runtime_amendment": expected_runtime_amendment,
@@ -666,6 +702,9 @@ def main() -> int:
     parser.add_argument("--expected-git-sha", required=True)
     parser.add_argument("--source-validation-json", type=Path, required=True)
     parser.add_argument("--source-validation-sha256", required=True)
+    parser.add_argument("--runtime-package-root", type=Path, required=True)
+    parser.add_argument("--data-view-root", type=Path, required=True)
+    parser.add_argument("--data-view-receipt-sha256", required=True)
     parser.add_argument("--host-test-receipt", type=Path, required=True)
     parser.add_argument("--host-test-receipt-sha256", required=True)
     parser.add_argument(

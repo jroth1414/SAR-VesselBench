@@ -138,8 +138,9 @@ check_sha "$H100_BASE_REPO_BUNDLE_SHA256" "$base_repo_bundle"
 check_sha "$H100_BASE_MANIFEST_SHA256" "$H100_BASE_PACKAGE_ROOT/manifest.json"
 check_sha "$H100_BASE_READY_SHA256" "$H100_BASE_PACKAGE_ROOT/READY.json"
 check_sha "$H100_BASE_SHA256SUMS_SHA256" "$H100_BASE_PACKAGE_ROOT/SHA256SUMS"
-# source_validation runs the complete immutable Sprint 7d verifier below; do
-# not add a redundant 294 GB checksum pass before that verifier.
+# source_validation performs control-only base validation below; phase staging
+# hashes only archives authorized for the current phase. Never add a full base
+# checksum pass before the immutable 32-cell held-out cohort exists.
 check_sha "$H100_RUNTIME_BUNDLE_SHA256" "$H100_RUNTIME_BUNDLE"
 check_sha "$H100_RUNTIME_MANIFEST_SHA256" "$H100_RUNTIME_PACKAGE_ROOT/manifest.json"
 check_sha "$H100_RUNTIME_READY_SHA256" "$H100_RUNTIME_PACKAGE_ROOT/READY.json"
@@ -227,16 +228,32 @@ if [[ "${H100_MODE:?H100_MODE missing}" == "acceptance" ]]; then
   )
   host_test_receipt_sha256="$(sha256sum "$host_test_receipt" | awk '{print $1}')"
 fi
-# Handoff owns archive verification/extraction and requires an empty target.
-# Run it on the host before entering the minimal native runtime environment.
-# The persistent venv intentionally has neither transfer credentials nor
-# authority to mutate either package.
+# Stage exactly one allocation-scoped data view.  With no canonical all-32
+# cohort this exposes TRAIN chips, fixed DEV8 rasters, and the source-built
+# TRAIN+DEV8 label artifact.  A later allocation first validates the cohort and
+# then exposes TEST rasters plus TRAIN+TEST labels.  It never stages TEST chips.
+data_view_args=(
+  --repo "$repo"
+  --runs-root "$H100_RUNS_ROOT"
+  --base-package-root "$H100_BASE_PACKAGE_ROOT"
+  --runtime-package-root "$H100_RUNTIME_PACKAGE_ROOT"
+  --destination "$payload"
+  --expected-git-sha "$H100_EXPECTED_GIT_SHA"
+  --expected-base-package-id "$H100_BASE_PACKAGE_ID"
+  --expected-base-manifest-sha256 "$H100_BASE_MANIFEST_SHA256"
+  --expected-runtime-package-id "$H100_RUNTIME_PACKAGE_ID"
+  --expected-runtime-manifest-sha256 "$H100_RUNTIME_MANIFEST_SHA256"
+)
+if [[ "${H100_MODE:?H100_MODE missing}" == "acceptance" ]]; then
+  data_view_args+=(--acceptance)
+fi
 (
   cd "$repo"
-  PYTHONPATH="$repo" "$H100_TRANSFER_PYTHON" -m scripts.handoff extract \
-    --package-root "$H100_BASE_PACKAGE_ROOT" \
-    --destination "$payload"
+  PYTHONPATH="$repo" "$H100_TRANSFER_PYTHON" -m scripts.h100.data_staging \
+    "${data_view_args[@]}"
 )
+data_view_receipt="$payload/H100_DATA_VIEW.json"
+data_view_receipt_sha256="$(sha256sum "$data_view_receipt" | awk '{print $1}')"
 staging_seconds="$(( $(date +%s) - staging_started_epoch ))"
 
 # Preserve committed frozen data files; link only ignored payload subtrees.
@@ -329,6 +346,9 @@ if [[ "${H100_MODE:?H100_MODE missing}" == "acceptance" ]]; then
       --expected-git-sha "$H100_EXPECTED_GIT_SHA" \
       --source-validation-json "$source_validation" \
       --source-validation-sha256 "$source_validation_sha256" \
+      --runtime-package-root "$H100_RUNTIME_PACKAGE_ROOT" \
+      --data-view-root "$payload" \
+      --data-view-receipt-sha256 "$data_view_receipt_sha256" \
       --host-test-receipt "$host_test_receipt" \
       --host-test-receipt-sha256 "$host_test_receipt_sha256" \
       "${frozen_args[@]}" \
@@ -380,6 +400,8 @@ cd "$repo"
     --acceptance-json "$H100_RUNS_ROOT/.h100/H100_READY.json" \
     --source-validation-json "$source_validation" \
     --source-validation-sha256 "$source_validation_sha256" \
+    --data-view-root "$payload" \
+    --data-view-receipt-sha256 "$data_view_receipt_sha256" \
     --cutover-ready-json "$H100_CUTOVER_READY" \
     --cutover-ready-sha256 "$H100_CUTOVER_READY_SHA256" \
     --v100-diagnostic-isolation-json "$H100_V100_DIAGNOSTIC_ISOLATION" \

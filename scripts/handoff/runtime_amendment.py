@@ -1,14 +1,18 @@
 """Content-addressed native-venv runtime amendment for the H100 handoff.
 
 The 294 GB Sprint 7d payload is immutable. This module produces a separate,
-code-only package whose identity binds both the exact Sprint 7d controls and
-the exact Sprint 7e Git bundle. The package deliberately contains no data,
-weights, wheelhouse, run output, virtual environment, or credentials.
+mostly code/metadata package whose identity binds both the exact Sprint 7d
+controls and the exact Sprint 7f Git bundle.  Its sole derived-data exception
+is a small TRAIN+fixed-DEV8 label CSV built and audited on the source host; that
+artifact is necessary to keep TEST rows out of Judy's pre-cohort data view.
+The package contains no raster/chip data, weights, wheelhouse, run output,
+virtual environment, or credentials.
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -27,6 +31,7 @@ from .package import (
     _canonical_json,
     _git_source,
     _git_value,
+    _extract_tar_zst,
     _hash_file,
     _hash_paths,
     _inside_repository_worktrees,
@@ -45,12 +50,17 @@ from .package import (
     _write_bytes,
     verify_package,
 )
+from src.eval.ground_truth_audit import (
+    audit_ground_truth_dataset,
+    validate_ground_truth_audit_receipt,
+)
 
-FORMAT_VERSION = 1
-RUNTIME_BRANCH = "sprint-7e-judy-venv"
-RUNTIME_REQUIRED_ANCESTOR = "2726199efcebbebc89156e708b89df2a3415468a"
+FORMAT_VERSION = 2
+RUNTIME_BRANCH = "sprint-7f-eval-contract"
+BASE_SOURCE_GIT_SHA = "2726199efcebbebc89156e708b89df2a3415468a"
+RUNTIME_REQUIRED_ANCESTOR = "26bece168cd3b9b262ffec5939b836df21b352cd"
 BASE_PACKAGE_ID = (
-    "xview3-h100-fp32-2726199efcebbebc89156e708b89df2a3415468a"
+    f"xview3-h100-fp32-{BASE_SOURCE_GIT_SHA}"
 )
 BASE_READY_SHA256 = (
     "b0d6ee18f9ddbd0d604cbea06610dcdbae6a9eb6d1f5ff3ea3431bd9e2d55f81"
@@ -70,14 +80,42 @@ BASE_ENVIRONMENT_LOCK_SHA256 = (
 ENVIRONMENT_LOCK_PATH = "locks/env-v100node.txt"
 RUNTIME_BUNDLE_PATH = "code/xview3-runtime.bundle"
 RUNTIME_EXTRACTED_RECEIPT = "RUNTIME_AMENDMENT_EXTRACTED.json"
+TRAINING_LABELS_ARTIFACT_PATH = "data/training-view/labels/train.csv"
+BASE_LABEL_SHA256 = "42871b3ddf12d2a732d11d07897c21efc6c688c5d1a6c59a90839a5539e15415"
+BASE_LABEL_BYTES = 11_134_981
 
 _REQUIRED_RUNTIME_FILES = (
     ENVIRONMENT_LOCK_PATH,
+    "docs/CORRECTED_REFERENCES_RUNBOOK.md",
+    "scripts/h100/acceptance.py",
     "scripts/h100/build_venv.py",
+    "scripts/h100/campaign.py",
+    "scripts/h100/cell.py",
     "scripts/h100/contracts.py",
+    "scripts/h100/cutover.py",
+    "scripts/h100/data_staging.py",
     "scripts/h100/runtime_versions.py",
     "scripts/h100/lightning_contract.py",
+    "scripts/h100/operator_cutover.py",
+    "scripts/h100/reverse_results.py",
     "scripts/h100/wheelhouse.py",
+    "scripts/handoff/control.py",
+    "scripts/handoff/results.py",
+    "scripts/handoff/runtime_bootstrap.py",
+    "scripts/export_results.py",
+    "scripts/run_corrected_references.py",
+    "scripts/score_test_cohort.py",
+    "scripts/score_test_split.py",
+    "src/analysis/curves.py",
+    "src/eval/final_eval.py",
+    "src/eval/ground_truth.py",
+    "src/eval/ground_truth_audit.py",
+    "src/eval/heldout_contract.py",
+    "src/eval/result_contract.py",
+    "src/references/locateanything_zs.py",
+    "src/references/runtime_provenance.py",
+    "src/references/yolo26_ref.py",
+    "slurm/h100/V100_DIAGNOSTIC_ISOLATION.schema.json",
     "slurm/h100/campaign.sbatch",
     "slurm/h100/smoke.sbatch",
     "slurm/h100/submit.sh",
@@ -98,7 +136,7 @@ def _expected_base_identity() -> dict[str, object]:
         "schema": 1,
         "package_id": BASE_PACKAGE_ID,
         "package_type": "h100-source-handoff",
-        "source_git_commit": RUNTIME_REQUIRED_ANCESTOR,
+        "source_git_commit": BASE_SOURCE_GIT_SHA,
         "ready_sha256": BASE_READY_SHA256,
         "manifest_sha256": BASE_MANIFEST_SHA256,
         "sha256sums_sha256": BASE_SHA256SUMS_SHA256,
@@ -120,7 +158,7 @@ def _runtime_contract(
         raise PackageError("maximum physical file size must be a positive integer")
     return {
         "production": production,
-        "payload": "code-only-runtime-amendment",
+        "payload": "code-plus-source-audited-training-label-view",
         "base_payload_reused": True,
         "runtime": "native-venv",
         "python": EXPECTED_NATIVE_PYTHON_VERSION,
@@ -133,6 +171,13 @@ def _runtime_contract(
         "effective_batch": 16,
         "processes_per_gpu": 1,
         "ddp": False,
+        "evaluation_contract": "vessel-hm-positive-low-ignore-v2",
+        "training_result_schema": 2,
+        "heldout_barrier": "all-32-training-cohort-before-test",
+        "pre_cohort_data_view": "train111-fixed-dev8-no-test-v1",
+        "test_result_artifact": "separate-immutable-test_metrics.json",
+        "v100_disposition": "continues-running-non-reportable-diagnostic",
+        "control_plane": "box-transfer-v1",
         "maximum_physical_file_bytes": maximum_physical_file_bytes,
     }
 
@@ -178,6 +223,83 @@ def verify_base_payload(package_root: Path) -> dict[str, object]:
     return identity
 
 
+def verify_base_payload_control(package_root: Path) -> dict[str, object]:
+    """Verify pinned base controls and code without reading any data archive.
+
+    The complete Sprint 7d package is verified when Box transfer publishes it.
+    Compute allocations must not repeat that full 294 GB verifier before the
+    held-out barrier, because doing so opens TEST raster and combined-label
+    archives.  This narrower verifier hashes only the three package controls
+    and the Git bundle; phase staging separately verifies every archive it is
+    authorized to extract.
+    """
+
+    root = _require_no_symlink_components(package_root, leaf="directory")
+    ready_path = _require_no_symlink_components(root / "READY.json", leaf="file")
+    manifest_path = _require_no_symlink_components(
+        root / "manifest.json", leaf="file"
+    )
+    sums_path = _require_no_symlink_components(root / "SHA256SUMS", leaf="file")
+    ready = _load_json(ready_path)
+    manifest = _load_json(manifest_path)
+    _validate_control_record(
+        root, ready.get("manifest", {}), "manifest.json"  # type: ignore[arg-type]
+    )
+    _validate_control_record(
+        root, ready.get("checksums", {}), "SHA256SUMS"  # type: ignore[arg-type]
+    )
+    source = manifest.get("source")
+    artifacts = manifest.get("artifacts")
+    if not isinstance(source, Mapping) or not isinstance(artifacts, list):
+        raise PackageError("base control manifest lacks source/artifact records")
+    bundles = [
+        artifact
+        for artifact in artifacts
+        if isinstance(artifact, Mapping) and artifact.get("kind") == "git_bundle"
+    ]
+    if len(bundles) != 1:
+        raise PackageError("base control manifest must contain one Git bundle")
+    bundle = bundles[0]
+    if (
+        bundle.get("format") != "file"
+        or bundle.get("extraction_root") != "code/xview3.bundle"
+        or bundle.get("archive_sha256") != BASE_REPO_BUNDLE_SHA256
+    ):
+        raise PackageError("base control Git-bundle record is invalid")
+    bundle_parts = _artifact_part_paths(root, bundle)
+    if _hash_paths(bundle_parts, "sha256") != bundle.get("archive_sha256"):
+        raise PackageError("base control Git-bundle SHA-256 mismatch")
+    identity = {
+        "schema": 1,
+        "package_id": manifest.get("package_id"),
+        "package_type": manifest.get("package_type"),
+        "source_git_commit": source.get("git_commit"),
+        "ready_sha256": _hash_file(ready_path),
+        "manifest_sha256": _hash_file(manifest_path),
+        "sha256sums_sha256": _hash_file(sums_path),
+        "repo_bundle_sha256": bundle.get("archive_sha256"),
+        "environment_lock_sha256": source.get("environment_lock_sha256"),
+    }
+    expected = _expected_base_identity()
+    if identity != expected:
+        mismatches = {
+            key: {"expected": expected[key], "observed": identity.get(key)}
+            for key in expected
+            if identity.get(key) != expected[key]
+        }
+        raise PackageError(
+            "base controls are not the immutable Sprint 7d identity: "
+            f"{mismatches}"
+        )
+    if (
+        ready.get("status") != "READY"
+        or ready.get("package_id") != identity["package_id"]
+        or ready.get("git_commit") != identity["source_git_commit"]
+    ):
+        raise PackageError("base READY/control identity mismatch")
+    return identity
+
+
 def _verify_runtime_checkout(
     checkout: Path,
     *,
@@ -211,11 +333,15 @@ def _verify_runtime_checkout(
                     f"{match.group(0)!r}: {relative}"
                 )
     commit_epoch = int(_git_value(checkout, "show", "-s", "--format=%ct", commit))
+    splits_path = _require_no_symlink_components(
+        checkout / "data/splits.json", leaf="file"
+    )
     return {
         "environment_lock_sha256": _hash_file(lock_path),
         "created_utc": datetime.fromtimestamp(
             commit_epoch, timezone.utc
         ).isoformat(),
+        "splits_json": splits_path.read_text(encoding="utf-8"),
     }
 
 
@@ -307,12 +433,16 @@ def _runtime_identity(
     base_identity: Mapping[str, object],
     source: Mapping[str, object],
     contract: Mapping[str, object],
+    training_view: Mapping[str, object],
+    evaluation_ground_truth: Mapping[str, object],
 ) -> dict[str, object]:
     return {
         "schema": 1,
         "base_payload": dict(base_identity),
         "source": dict(source),
         "runtime_contract": dict(contract),
+        "training_view": dict(training_view),
+        "evaluation_ground_truth": dict(evaluation_ground_truth),
     }
 
 
@@ -330,6 +460,85 @@ def _physical_paths(artifact: Mapping[str, object]) -> list[str]:
     return paths
 
 
+def _source_training_view(
+    *,
+    base_package_root: Path,
+    repo_root: Path,
+    temporary_root: Path,
+) -> tuple[Path, dict[str, object], dict[str, object]]:
+    from scripts.h100.data_staging import filter_training_labels
+
+    """Derive TRAIN+DEV8 labels and the full GT audit on the source host."""
+
+    base_manifest = _load_json(base_package_root / "manifest.json")
+    artifacts = base_manifest.get("artifacts")
+    if not isinstance(artifacts, list):
+        raise PackageError("base package lacks artifacts for training-view derivation")
+    matches = [
+        item
+        for item in artifacts
+        if isinstance(item, Mapping)
+        and item.get("kind") == "labels"
+        and item.get("name") == "train.csv"
+    ]
+    if len(matches) != 1:
+        raise PackageError("base package must contain one train.csv label artifact")
+    label_artifact = matches[0]
+    member_hashes = label_artifact.get("member_sha256")
+    if (
+        label_artifact.get("format") != "tar.zst"
+        or label_artifact.get("file_count") != 1
+        or label_artifact.get("unpacked_bytes") != BASE_LABEL_BYTES
+        or not isinstance(member_hashes, Mapping)
+        or member_hashes.get("data/raw/xview3/labels/train.csv")
+        != BASE_LABEL_SHA256
+    ):
+        raise PackageError("immutable base label artifact identity is invalid")
+    parts = _artifact_part_paths(base_package_root, label_artifact)
+    _extract_tar_zst(
+        parts,
+        temporary_root,
+        extraction_root=PurePosixPath("data/raw/xview3/labels/train.csv"),
+        expected_file_count=1,
+        expected_unpacked_bytes=BASE_LABEL_BYTES,
+    )
+    full_labels = temporary_root / "data/raw/xview3/labels/train.csv"
+    if _hash_file(full_labels) != BASE_LABEL_SHA256:
+        raise PackageError("extracted immutable base label SHA-256 mismatch")
+    splits_path = repo_root / "data/splits.json"
+    audit = audit_ground_truth_dataset(
+        train_csv=full_labels,
+        splits_json=splits_path,
+    )
+    validate_ground_truth_audit_receipt(
+        audit,
+        splits_json=splits_path,
+        expected_train_csv_sha256=BASE_LABEL_SHA256,
+        expected_train_csv_bytes=BASE_LABEL_BYTES,
+    )
+    filtered = temporary_root / TRAINING_LABELS_ARTIFACT_PATH
+    summary = filter_training_labels(
+        full_labels,
+        filtered,
+        splits_path=splits_path,
+        production=True,
+    )
+    if summary.get("row_count") != 13_911 or summary.get("scene_count") != 119:
+        raise PackageError("source training-label view counts are not 13,911/119")
+    training_view = {
+        "schema": 1,
+        "contract": "train111-fixed-dev8-no-test-v1",
+        "source_labels": {
+            "sha256": BASE_LABEL_SHA256,
+            "bytes": BASE_LABEL_BYTES,
+            "archive_sha256": label_artifact.get("archive_sha256"),
+        },
+        "splits_sha256": _hash_file(splits_path),
+        "labels": summary,
+    }
+    return filtered, training_view, audit
+
+
 def _build_runtime_amendment(
     *,
     repo_root: Path,
@@ -339,6 +548,9 @@ def _build_runtime_amendment(
     branch: str,
     required_ancestor: str,
     production: bool,
+    training_labels_path: Path,
+    training_view: Mapping[str, object],
+    evaluation_ground_truth: Mapping[str, object],
 ) -> Path:
     repo = _require_no_symlink_components(repo_root, leaf="directory")
     output_parent = _require_no_symlink_components(output_dir, leaf="directory")
@@ -374,9 +586,9 @@ def _build_runtime_amendment(
             != base_identity["environment_lock_sha256"]
         ):
             raise PackageError(
-                "Sprint 7e environment lock differs from the immutable base payload"
+                "Sprint 7f environment lock differs from the immutable base payload"
             )
-        artifact = _plain_artifact(
+        bundle_artifact = _plain_artifact(
             bundle_path,
             staging,
             kind="git_bundle",
@@ -384,6 +596,21 @@ def _build_runtime_amendment(
             extraction_root=PurePosixPath(RUNTIME_BUNDLE_PATH),
             max_part_bytes=maximum_physical_file_bytes,
         )
+        packaged_labels = staging / TRAINING_LABELS_ARTIFACT_PATH
+        packaged_labels.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(training_labels_path, packaged_labels)
+        labels_artifact = _plain_artifact(
+            packaged_labels,
+            staging,
+            kind="training_labels",
+            name="train-dev8.csv",
+            extraction_root=PurePosixPath(TRAINING_LABELS_ARTIFACT_PATH),
+            max_part_bytes=maximum_physical_file_bytes,
+        )
+        if labels_artifact["archive_sha256"] != training_view.get("labels", {}).get(
+            "sha256"
+        ):
+            raise PackageError("training-label artifact differs from its source summary")
         source = {
             "branch": branch,
             "git_bundle_ref": f"refs/heads/{branch}",
@@ -391,10 +618,14 @@ def _build_runtime_amendment(
             "required_base_commit": required_ancestor,
             "environment_lock": ENVIRONMENT_LOCK_PATH,
             "environment_lock_sha256": bundle_source["environment_lock_sha256"],
-            "git_bundle_sha256": artifact["archive_sha256"],
+            "git_bundle_sha256": bundle_artifact["archive_sha256"],
         }
         identity = _runtime_identity(
-            base_identity=base_identity, source=source, contract=contract
+            base_identity=base_identity,
+            source=source,
+            contract=contract,
+            training_view=training_view,
+            evaluation_ground_truth=evaluation_ground_truth,
         )
         identity_sha256 = hashlib.sha256(_canonical_json(identity)).hexdigest()
         package_id = f"xview3-h100-runtime-{commit}-{identity_sha256}"
@@ -408,14 +639,17 @@ def _build_runtime_amendment(
             "contract": contract,
             "base_payload": dict(base_identity),
             "source": source,
+            "training_view": dict(training_view),
+            "evaluation_ground_truth": dict(evaluation_ground_truth),
             "runtime_identity": identity,
             "runtime_identity_sha256": identity_sha256,
-            "counts": {"git_bundles": 1},
-            "artifacts": [artifact],
+            "counts": {"git_bundles": 1, "training_label_artifacts": 1},
+            "artifacts": [bundle_artifact, labels_artifact],
         }
         _write_bytes(staging / "manifest.json", _canonical_json(manifest))
         checksums = "".join(
             f"{_hash_file(staging / relative)}  {relative}\n"
+            for artifact in (bundle_artifact, labels_artifact)
             for relative in _physical_paths(artifact)
         )
         _write_bytes(staging / "SHA256SUMS", checksums.encode("utf-8"))
@@ -453,20 +687,33 @@ def build_runtime_amendment(
     """Build a production amendment after fully verifying the Sprint 7d base."""
 
     base_identity = verify_base_payload(base_package_root)
-    return _build_runtime_amendment(
-        repo_root=repo_root,
-        output_dir=output_dir,
-        maximum_physical_file_bytes=maximum_physical_file_bytes,
-        base_identity=base_identity,
-        branch=RUNTIME_BRANCH,
-        required_ancestor=RUNTIME_REQUIRED_ANCESTOR,
-        production=True,
-    )
+    with tempfile.TemporaryDirectory(prefix="xview3-training-view-source-") as temporary:
+        labels, training_view, audit = _source_training_view(
+            base_package_root=base_package_root,
+            repo_root=repo_root,
+            temporary_root=Path(temporary),
+        )
+        return _build_runtime_amendment(
+            repo_root=repo_root,
+            output_dir=output_dir,
+            maximum_physical_file_bytes=maximum_physical_file_bytes,
+            base_identity=base_identity,
+            branch=RUNTIME_BRANCH,
+            required_ancestor=RUNTIME_REQUIRED_ANCESTOR,
+            production=True,
+            training_labels_path=labels,
+            training_view=training_view,
+            evaluation_ground_truth=audit,
+        )
 
 def _validate_artifact(
     package_root: Path,
     artifact: Mapping[str, object],
-    *, maximum_physical_file_bytes: int,
+    *,
+    maximum_physical_file_bytes: int,
+    expected_kind: str,
+    expected_name: str,
+    expected_root: str,
 ) -> list[Path]:
     expected_fields = {
         "kind", "name", "format", "extraction_root", "file_count",
@@ -474,14 +721,15 @@ def _validate_artifact(
         "parts",
     }
     if set(artifact) != expected_fields:
-        raise PackageError("runtime bundle artifact schema is invalid")
+        raise PackageError("runtime file artifact schema is invalid")
     if (
-        artifact.get("kind") != "git_bundle"
+        artifact.get("kind") != expected_kind
+        or artifact.get("name") != expected_name
         or artifact.get("format") != "file"
-        or artifact.get("extraction_root") != RUNTIME_BUNDLE_PATH
+        or artifact.get("extraction_root") != expected_root
         or artifact.get("file_count") != 1
     ):
-        raise PackageError("runtime package must contain exactly one Git bundle")
+        raise PackageError(f"runtime {expected_kind} artifact identity is invalid")
     parts = artifact.get("parts")
     if not isinstance(parts, list) or not parts:
         raise PackageError("runtime bundle artifact has no parts")
@@ -501,10 +749,10 @@ def _validate_artifact(
             raise PackageError("runtime bundle part violates the physical limit")
         observed_names.append(name)
     expected_names = (
-        [RUNTIME_BUNDLE_PATH]
+        [expected_root]
         if len(parts) == 1
         else [
-            f"{RUNTIME_BUNDLE_PATH}.part-{index:05d}"
+            f"{expected_root}.part-{index:05d}"
             for index in range(len(parts))
         ]
     )
@@ -531,6 +779,8 @@ def _verify_runtime_amendment(
     package_root: Path,
     *, base_identity: Mapping[str, object], require_production: bool,
 ) -> dict[str, object]:
+    from scripts.h100.data_staging import training_labels_summary
+
     root = _require_no_symlink_components(package_root, leaf="directory")
     ready = _load_json(
         _require_no_symlink_components(root / "READY.json", leaf="file")
@@ -547,7 +797,8 @@ def _verify_runtime_amendment(
     )
     expected_manifest_fields = {
         "format_version", "package_type", "package_id", "created_utc",
-        "contract", "base_payload", "source", "runtime_identity",
+        "contract", "base_payload", "source", "training_view",
+        "evaluation_ground_truth", "runtime_identity",
         "runtime_identity_sha256", "counts", "artifacts",
     }
     if set(manifest) != expected_manifest_fields:
@@ -555,16 +806,21 @@ def _verify_runtime_amendment(
     if (
         manifest.get("format_version") != FORMAT_VERSION
         or manifest.get("package_type") != "h100-runtime-amendment"
-        or manifest.get("counts") != {"git_bundles": 1}
+        or manifest.get("counts")
+        != {"git_bundles": 1, "training_label_artifacts": 1}
     ):
         raise PackageError("runtime amendment manifest identity is invalid")
     contract = manifest.get("contract")
     source = manifest.get("source")
+    training_view = manifest.get("training_view")
+    evaluation_ground_truth = manifest.get("evaluation_ground_truth")
     artifacts = manifest.get("artifacts")
     if (
         not isinstance(contract, Mapping) or not isinstance(source, Mapping)
-        or not isinstance(artifacts, list) or len(artifacts) != 1
-        or not isinstance(artifacts[0], Mapping)
+        or not isinstance(training_view, Mapping)
+        or not isinstance(evaluation_ground_truth, Mapping)
+        or not isinstance(artifacts, list) or len(artifacts) != 2
+        or any(not isinstance(item, Mapping) for item in artifacts)
     ):
         raise PackageError("runtime amendment records are invalid")
     production = contract.get("production")
@@ -607,16 +863,31 @@ def _verify_runtime_amendment(
     ):
         raise PackageError("production runtime source recipe mismatch")
 
-    artifact = artifacts[0]
-    if artifact.get("name") != branch:
-        raise PackageError("runtime bundle artifact branch mismatch")
-    parts = _validate_artifact(
-        root, artifact, maximum_physical_file_bytes=maximum
+    bundle_artifact = artifacts[0]
+    labels_artifact = artifacts[1]
+    bundle_parts = _validate_artifact(
+        root,
+        bundle_artifact,
+        maximum_physical_file_bytes=maximum,
+        expected_kind="git_bundle",
+        expected_name=branch,
+        expected_root=RUNTIME_BUNDLE_PATH,
     )
-    if source.get("git_bundle_sha256") != artifact.get("archive_sha256"):
+    label_parts = _validate_artifact(
+        root,
+        labels_artifact,
+        maximum_physical_file_bytes=maximum,
+        expected_kind="training_labels",
+        expected_name="train-dev8.csv",
+        expected_root=TRAINING_LABELS_ARTIFACT_PATH,
+    )
+    if source.get("git_bundle_sha256") != bundle_artifact.get("archive_sha256"):
         raise PackageError("runtime source/bundle SHA-256 mismatch")
     sums = _parse_sha256sums(sums_path)
-    physical = _physical_paths(artifact)
+    physical = [
+        *(_physical_paths(bundle_artifact)),
+        *(_physical_paths(labels_artifact)),
+    ]
     if list(sums) != physical or set(sums) != set(physical):
         raise PackageError("runtime SHA256SUMS physical-file set mismatch")
     for relative, digest in sums.items():
@@ -624,7 +895,11 @@ def _verify_runtime_amendment(
             raise PackageError(f"runtime SHA256SUMS mismatch: {relative}")
 
     identity = _runtime_identity(
-        base_identity=base_identity, source=source, contract=contract
+        base_identity=base_identity,
+        source=source,
+        contract=contract,
+        training_view=training_view,
+        evaluation_ground_truth=evaluation_ground_truth,
     )
     identity_sha256 = hashlib.sha256(_canonical_json(identity)).hexdigest()
     if (
@@ -652,13 +927,49 @@ def _verify_runtime_amendment(
     ) as temporary:
         bundle = Path(temporary) / "xview3-runtime.bundle"
         with bundle.open("xb") as output:
-            for part in parts:
+            for part in bundle_parts:
                 with part.open("rb") as source_part:
                     shutil.copyfileobj(source_part, output)
         bundle_source = _verify_git_bundle_round_trip(
             bundle, branch=branch, commit=commit,
             required_ancestor=required_ancestor, production=production,
         )
+        splits_path = Path(temporary) / "splits.json"
+        splits_path.write_text(str(bundle_source["splits_json"]), encoding="utf-8")
+        labels_path = Path(temporary) / "train-dev8.csv"
+        with labels_path.open("xb") as output:
+            for part in label_parts:
+                with part.open("rb") as source_part:
+                    shutil.copyfileobj(source_part, output)
+        summary = training_labels_summary(
+            labels_path,
+            splits_path=splits_path,
+            production=production,
+        )
+        if training_view.get("labels") != summary:
+            raise PackageError("runtime training-label summary mismatch")
+        source_labels = training_view.get("source_labels")
+        if (
+            training_view.get("schema") != 1
+            or training_view.get("contract") != "train111-fixed-dev8-no-test-v1"
+            or training_view.get("splits_sha256") != _hash_file(splits_path)
+            or not isinstance(source_labels, Mapping)
+        ):
+            raise PackageError("runtime training-view contract is invalid")
+        if production:
+            if (
+                source_labels.get("sha256") != BASE_LABEL_SHA256
+                or source_labels.get("bytes") != BASE_LABEL_BYTES
+                or summary.get("row_count") != 13_911
+                or summary.get("scene_count") != 119
+            ):
+                raise PackageError("production training-view source/count binding is invalid")
+            validate_ground_truth_audit_receipt(
+                evaluation_ground_truth,
+                splits_json=splits_path,
+                expected_train_csv_sha256=BASE_LABEL_SHA256,
+                expected_train_csv_bytes=BASE_LABEL_BYTES,
+            )
     if (
         bundle_source["environment_lock_sha256"]
         != source["environment_lock_sha256"]
@@ -678,6 +989,21 @@ def prepare_runtime_verifier(base_package_root: Path) -> RuntimeVerifier:
     """Verify the large base once and return a reusable fail-closed callback."""
 
     base_identity = verify_base_payload(base_package_root)
+
+    def verifier(package_root: Path) -> dict[str, object]:
+        return _verify_runtime_amendment(
+            package_root,
+            base_identity=base_identity,
+            require_production=True,
+        )
+
+    return verifier
+
+
+def prepare_runtime_control_verifier(base_package_root: Path) -> RuntimeVerifier:
+    """Verify safe base controls once, then fully verify the small amendment."""
+
+    base_identity = verify_base_payload_control(base_package_root)
 
     def verifier(package_root: Path) -> dict[str, object]:
         return _verify_runtime_amendment(
@@ -719,28 +1045,33 @@ def _extract_runtime_amendment(
     )
     try:
         artifacts = manifest["artifacts"]
-        assert isinstance(artifacts, list) and len(artifacts) == 1
-        artifact = artifacts[0]
-        assert isinstance(artifact, Mapping)
-        parts = _artifact_part_paths(root, artifact)
-        bundle = staging / RUNTIME_BUNDLE_PATH
-        bundle.parent.mkdir(parents=True)
-        with bundle.open("xb") as output:
-            for part in parts:
-                with part.open("rb") as source:
-                    shutil.copyfileobj(source, output)
-        if _hash_file(bundle) != artifact["archive_sha256"]:
-            raise PackageError("extracted runtime bundle SHA-256 mismatch")
+        assert isinstance(artifacts, list) and len(artifacts) == 2
+        extracted: dict[str, dict[str, object]] = {}
+        for artifact in artifacts:
+            assert isinstance(artifact, Mapping)
+            parts = _artifact_part_paths(root, artifact)
+            relative = str(artifact["extraction_root"])
+            output_path = staging / relative
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            with output_path.open("xb") as output:
+                for part in parts:
+                    with part.open("rb") as source:
+                        shutil.copyfileobj(source, output)
+            if _hash_file(output_path) != artifact["archive_sha256"]:
+                raise PackageError(f"extracted runtime artifact SHA-256 mismatch: {relative}")
+            extracted[str(artifact["kind"])] = {
+                "path": relative,
+                "sha256": artifact["archive_sha256"],
+                "bytes": artifact["archive_bytes"],
+            }
         receipt = {
             "format_version": FORMAT_VERSION,
             "package_id": manifest["package_id"],
             "manifest_sha256": _hash_file(root / "manifest.json"),
             "base_payload": manifest["base_payload"],
-            "runtime_bundle": {
-                "path": RUNTIME_BUNDLE_PATH,
-                "sha256": artifact["archive_sha256"],
-                "bytes": artifact["archive_bytes"],
-            },
+            "runtime_bundle": extracted["git_bundle"],
+            "training_labels": extracted["training_labels"],
+            "training_view": manifest["training_view"],
         }
         _write_bytes(
             staging / RUNTIME_EXTRACTED_RECEIPT, _canonical_json(receipt)

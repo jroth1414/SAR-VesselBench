@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 import fcntl
+import hashlib
 import json
 import math
 import os
@@ -28,6 +29,7 @@ from scripts.h100.contracts import (
     GRADIENT_ACCUMULATION,
     MICRO_BATCH,
     Cell,
+    assert_empty_core_namespaces,
     atomic_write_json,
     cutover_acceptance_bindings,
     load_cells,
@@ -44,7 +46,11 @@ from scripts.h100.lightning_contract import validate_trainer_contract_evidence
 from scripts.h100.precision import assert_sitecustomize_active
 from scripts.h100.operator_cutover import validate_diagnostic_isolation
 from scripts.h100.source_validation import validate_source_receipt
-from src.eval.ground_truth_audit import audit_ground_truth_dataset
+from scripts.h100.data_staging import (
+    TRAINING_LABELS_EXPOSED_PATH,
+    validate_data_view,
+)
+from src.eval.ground_truth_audit import audit_ground_truth_scope
 from src.eval.heldout_contract import (
     COHORT_FILENAME,
     TEST_RESULT_FILENAME,
@@ -57,6 +63,30 @@ from src.eval.heldout_contract import (
 from src.eval.result_contract import ResultContractError, load_completion_marker
 
 HOST_REQUEUE_EXIT_CODE = 75
+
+
+def validate_campaign_start_state(
+    *,
+    repo: Path,
+    runs_root: Path,
+    manifest_path: Path,
+    cohort_path: Path,
+) -> bool:
+    """Return whether this is a valid resume, or require a pristine first start."""
+
+    if manifest_path.is_symlink():
+        raise RuntimeError("H100 campaign manifest cannot be a symlink")
+    if manifest_path.exists():
+        if not manifest_path.is_file():
+            raise RuntimeError("H100 campaign manifest is not a regular file")
+        return True
+
+    if cohort_path.exists() or cohort_path.is_symlink():
+        raise RuntimeError(
+            "training cohort exists without a campaign manifest; refusing first launch"
+        )
+    assert_empty_core_namespaces(repo, runs_root)
+    return False
 
 
 def utc_now() -> str:
@@ -1186,6 +1216,7 @@ class Controller:
         ):
             raise RuntimeError("campaign source receipt differs from H100 acceptance")
         meta_root = self.runs_root / ".h100"
+        self.cohort_path = meta_root / COHORT_FILENAME
         ground_truth_binding = self.acceptance.get("evaluation_ground_truth")
         if (
             not isinstance(ground_truth_binding, Mapping)
@@ -1216,15 +1247,70 @@ class Controller:
             raise RuntimeError("campaign evaluation-ground-truth receipt is invalid") from exc
         if self.evaluation_ground_truth != ground_truth_binding["receipt"]:
             raise RuntimeError("campaign evaluation-ground-truth receipt binding drifted")
-        raw_xview3 = self.repo / str(self.data_config["paths"]["raw_xview3"])
-        recomputed_ground_truth = audit_ground_truth_dataset(
-            train_csv=raw_xview3 / "labels/train.csv",
-            splits_json=self.repo / str(self.data_config["paths"]["splits"]),
+
+        # This is the allocation's semantic data gate.  Before a cohort exists,
+        # validation may inspect only the TRAIN+fixed-DEV8 view.  Once the
+        # canonical all-32 cohort exists, a new allocation must receive the
+        # independently staged TEST view instead.  Do this before opening any
+        # label or raster through the repository symlinks.
+        self.data_view_root = args.data_view_root.absolute()
+        if self.data_view_root.is_symlink() or not self.data_view_root.is_dir():
+            raise RuntimeError("campaign data-view root must be a regular directory")
+        self.data_view_sha256 = args.data_view_receipt_sha256
+        expected_data_view_phase = (
+            "score-test"
+            if self.cohort_path.exists() or self.cohort_path.is_symlink()
+            else "train"
         )
-        if recomputed_ground_truth != self.evaluation_ground_truth:
-            raise RuntimeError(
-                "campaign evaluation ground truth differs from accepted source bytes"
+        self.data_view = validate_data_view(
+            self.data_view_root,
+            repo=self.repo,
+            runs_root=self.runs_root,
+            expected_sha256=self.data_view_sha256,
+            expected_git_sha=self.git_sha,
+            expected_phase=expected_data_view_phase,
+            expected_purpose="campaign",
+            expected_base_package_id=str(self.base_payload["package_id"]),
+            expected_base_manifest_sha256=str(self.base_payload["manifest_sha256"]),
+            expected_runtime_package_id=str(self.runtime_amendment["package_id"]),
+            expected_runtime_manifest_sha256=str(
+                self.runtime_amendment["manifest_sha256"]
+            ),
+        )
+        self.data_view_phase = str(self.data_view["phase"])
+        if self.data_view_phase == "train":
+            observed_dev8 = audit_ground_truth_scope(
+                train_csv=self.data_view_root / TRAINING_LABELS_EXPOSED_PATH,
+                splits_json=self.repo / str(self.data_config["paths"]["splits"]),
+                scope="dev8",
             )
+            expected_dev8 = self.evaluation_ground_truth.get("scopes", {}).get(
+                "dev8", {}
+            ).get("expected_counts")
+            if observed_dev8 != expected_dev8:
+                raise RuntimeError(
+                    "campaign DEV8 ground truth differs from the source audit"
+                )
+        else:
+            labels_binding = self.data_view.get("labels")
+            source_audit_sha256 = hashlib.sha256(
+                (
+                    json.dumps(
+                        self.evaluation_ground_truth,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    )
+                    + "\n"
+                ).encode("utf-8")
+            ).hexdigest()
+            if (
+                not isinstance(labels_binding, Mapping)
+                or labels_binding.get("source_audit_sha256")
+                != source_audit_sha256
+            ):
+                raise RuntimeError(
+                    "campaign TEST label view differs from the accepted source audit"
+                )
         canonical_paths = {
             "source validation": (
                 args.source_validation_json.absolute(),
@@ -1311,6 +1397,7 @@ class Controller:
             attestation_sha256=self.v100_diagnostic_isolation_sha256,
             expected_h100_git_sha=self.git_sha,
             expected_h100_campaign_id=self.args.campaign_id,
+            expected_h100_runs_root=str(self.runs_root),
             expected_reference_git_sha=reference_git_sha,
             expected_reference_campaign_id=reference_campaign_id,
             expected_v100_core_git_sha=v100_core_git_sha,
@@ -1342,7 +1429,6 @@ class Controller:
         self.training_complete_ids: set[str] = set()
         self.test_complete_ids: set[str] = set()
         self.complete_ids = self.training_complete_ids
-        self.cohort_path = meta_root / COHORT_FILENAME
         self.cohort: dict[str, object] | None = None
         self.cohort_sha256: str | None = None
         self.failure_seen = False
@@ -1418,6 +1504,13 @@ class Controller:
                 "sha256": self.evaluation_ground_truth_sha256,
                 "receipt": self.evaluation_ground_truth,
             },
+            "data_view": {
+                "path": str(self.data_view_root),
+                "sha256": self.data_view_sha256,
+                "phase": self.data_view_phase,
+                "contract": self.data_view.get("contract"),
+                "receipt": self.data_view,
+            },
             "training_cohort": (
                 {"path": str(self.cohort_path), "sha256": self.cohort_sha256}
                 if self.cohort_sha256 is not None
@@ -1448,7 +1541,12 @@ class Controller:
 
     def initialize(self) -> None:
         self.runs_root.mkdir(parents=True, exist_ok=True)
-        resumed = self.manifest_path.exists()
+        resumed = validate_campaign_start_state(
+            repo=self.repo,
+            runs_root=self.runs_root,
+            manifest_path=self.manifest_path,
+            cohort_path=self.cohort_path,
+        )
         if self.cohort_path.exists() or self.cohort_path.is_symlink():
             self.cohort, self.cohort_sha256 = validate_training_cohort(
                 path=self.cohort_path,
@@ -1475,6 +1573,10 @@ class Controller:
                     "TEST results exist before the all-32 training cohort: "
                     + ", ".join(leaked)
                 )
+        if self.phase != self.data_view_phase:
+            raise RuntimeError(
+                "campaign phase differs from the validated allocation data view"
+            )
 
         prior: dict[str, object] | None = None
         if self.manifest_path.exists():
@@ -2249,7 +2351,8 @@ class Controller:
             if self.complete_ids == {cell.exp_id for cell in self.cells} and not self.running:
                 if self.phase == "train":
                     self.freeze_training_cohort()
-                    continue
+                    self.write_manifest(status="host-requeue-required")
+                    return HOST_REQUEUE_EXIT_CODE
                 return self.finalize_grid()
             time.sleep(self.args.poll_seconds)
 
@@ -2267,6 +2370,8 @@ def main() -> int:
     parser.add_argument("--acceptance-json", type=Path, required=True)
     parser.add_argument("--source-validation-json", type=Path, required=True)
     parser.add_argument("--source-validation-sha256", required=True)
+    parser.add_argument("--data-view-root", type=Path, required=True)
+    parser.add_argument("--data-view-receipt-sha256", required=True)
     parser.add_argument("--cutover-ready-json", type=Path, required=True)
     parser.add_argument("--cutover-ready-sha256", required=True)
     parser.add_argument("--v100-diagnostic-isolation-json", type=Path, required=True)

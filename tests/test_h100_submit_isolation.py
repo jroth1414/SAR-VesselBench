@@ -62,18 +62,35 @@ def _site_values(
         "H100_REFERENCE_CAMPAIGN_ID": "v100-references",
         "H100_EXPECTED_GIT_SHA": GIT_SHA,
         "H100_EXPECTED_REFERENCE_GIT_SHA": GIT_SHA,
+        "H100_V100_CORE_GIT_SHA": "48e10534a8c7baf0662acd548f52928da69f23c8",
+        "H100_V100_CORE_CAMPAIGN_ID": "fresh34-v100-fp32-20260726",
         "H100_CUTOVER_READY": str(h100_runs / ".h100/CUTOVER_READY.json"),
         "H100_CUTOVER_READY_SHA256": SHA256,
-        "H100_V100_CORE_ARCHIVED": str(tmp_path / "V100_CORE_ARCHIVED.json"),
-        "H100_V100_CORE_ARCHIVED_SHA256": SHA256,
-        "H100_V100_ARCHIVE_MANIFEST": str(tmp_path / "v100-archive-manifest.json"),
-        "H100_V100_ARCHIVE_MANIFEST_SHA256": SHA256,
+        "H100_REFERENCES_PACKAGE_ROOT": str(tmp_path / "references-package"),
+        "H100_REFERENCES_PACKAGE_ID": "references-package",
+        "H100_REFERENCES_PRODUCER_GIT_SHA": GIT_SHA,
+        "H100_REFERENCES_IDENTITY_SHA256": SHA256,
+        "H100_REFERENCES_MANIFEST_SHA256": SHA256,
+        "H100_REFERENCES_READY_SHA256": SHA256,
+        "H100_REFERENCES_SHA256SUMS_SHA256": SHA256,
+        "H100_DIAGNOSTIC_ISOLATION_PACKAGE_ROOT": str(
+            tmp_path / "diagnostic-isolation-package"
+        ),
+        "H100_DIAGNOSTIC_ISOLATION_PACKAGE_ID": "diagnostic-isolation-package",
+        "H100_DIAGNOSTIC_ISOLATION_PRODUCER_GIT_SHA": GIT_SHA,
+        "H100_DIAGNOSTIC_ISOLATION_IDENTITY_SHA256": SHA256,
+        "H100_DIAGNOSTIC_ISOLATION_MANIFEST_SHA256": SHA256,
+        "H100_DIAGNOSTIC_ISOLATION_READY_SHA256": SHA256,
+        "H100_DIAGNOSTIC_ISOLATION_SHA256SUMS_SHA256": SHA256,
         "H100_DETECTOR_SHA256": SHA256,
         "H100_SCORER_SHA256": SHA256,
         "H100_SPLITS_SHA256": SHA256,
         "H100_STATS_SHA256": SHA256,
         "H100_LSSSDD_SHA256": SHA256,
         "H100_REMAINING_V100_WALL_HOURS": "100",
+        "H100_CURRENT_V100_DIAGNOSTIC_STATUS": (
+            "continues-running-non-reportable-diagnostic"
+        ),
         "H100_V100_CONTROL_PLANE": "box-transfer-v1",
     }
 
@@ -94,7 +111,7 @@ def _run_submit(
         h100_runs=h100_runs,
     )
     if reference_runs is not None:
-        values["H100_REFERENCES_ROOT"] = str(reference_runs)
+        values["H100_REFERENCES_PACKAGE_ROOT"] = str(reference_runs)
     values.update(site_overrides or {})
     if job_logs is not None:
         values["H100_JOB_LOG_DIR"] = str(job_logs)
@@ -265,9 +282,16 @@ def test_submit_rejects_unbound_python_library_path_before_write(tmp_path: Path)
     assert not h100_runs.exists()
 
 
-@pytest.mark.parametrize("mode", ["cutover-check", "campaign"])
-def test_dynamic_control_modes_fail_closed_before_any_write(
-    tmp_path: Path, mode: str
+@pytest.mark.parametrize(
+    ("mode", "missing_name"),
+    (
+        ("cutover-check", "H100_REFERENCES_PACKAGE_ROOT"),
+        ("cutover-check", "H100_CAMPAIGN_ID"),
+        ("campaign", "H100_DIAGNOSTIC_ISOLATION_PACKAGE_ROOT"),
+    ),
+)
+def test_dynamic_control_modes_require_content_addressed_package_before_any_write(
+    tmp_path: Path, mode: str, missing_name: str
 ):
     h100_runs = tmp_path / "h100-runs"
     job_logs = tmp_path / "h100-job-logs"
@@ -276,9 +300,10 @@ def test_dynamic_control_modes_fail_closed_before_any_write(
         mode=mode,
         h100_runs=h100_runs,
         job_logs=job_logs,
+        site_overrides={missing_name: ""},
     )
     assert result.returncode == 2
-    assert "is not authorized until the content-addressed dynamic Box" in result.stderr
+    assert f"site.env is missing {missing_name}" in result.stderr
     assert not h100_runs.exists()
     assert not job_logs.exists()
 
@@ -343,7 +368,8 @@ def test_submit_snapshots_sanitized_site_and_batches_reject_tampering(tmp_path: 
     snapshot_text = snapshot_bytes.decode()
     assert "BOX_" not in snapshot_text
     assert "H100_V100_RUNS_ROOT" not in snapshot_text
-    assert "H100_REFERENCES_ROOT" not in snapshot_text
+    assert "H100_REFERENCES_PACKAGE_" not in snapshot_text
+    assert "H100_DIAGNOSTIC_ISOLATION_PACKAGE_" not in snapshot_text
     assert "H100_V100_CONTROL_PLANE=box-transfer-v1" in snapshot_text
     assert "secret-folder-404384490657" not in snapshot_text
 

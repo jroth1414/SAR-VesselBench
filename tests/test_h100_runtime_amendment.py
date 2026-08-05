@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from scripts.h100 import build_venv
+from scripts.h100.data_staging import training_labels_summary
 from scripts.handoff import box
 from scripts.handoff import runtime_amendment as amendment
 from scripts.handoff.__main__ import _build_parser
@@ -38,13 +39,50 @@ def _fixture_repo(root: Path) -> tuple[Path, str, str]:
     _git(repo, "config", "user.email", "owner@example.invalid")
     files = {
         "locks/env-v100node.txt": "torch==2.11.0+cu126\n",
+        "docs/CORRECTED_REFERENCES_RUNBOOK.md": "# Corrected references\n",
+        "scripts/h100/acceptance.py": "ACCEPTANCE = 'strict-fp32'\n",
         "scripts/h100/build_venv.py": "RUNTIME = 'native-venv'\n",
+        "scripts/h100/campaign.py": "CAMPAIGN = 'all-32-then-test'\n",
+        "scripts/h100/cell.py": "CELL = 'phase-isolated'\n",
         "scripts/h100/contracts.py": "PRECISION = '32-true'\n",
+        "scripts/h100/cutover.py": "CUTOVER = 'corrected-references'\n",
+        "scripts/h100/data_staging.py": "STAGING = 'phase-isolated'\n",
         "scripts/h100/runtime_versions.py": (
             "EXPECTED_NATIVE_PYTHON_VERSION = '3.11.13'\n"
         ),
         "scripts/h100/lightning_contract.py": "CONTRACT = 'strict-fp32'\n",
+        "scripts/h100/operator_cutover.py": "ISOLATION = 'v100-diagnostic'\n",
+        "scripts/h100/reverse_results.py": "RESULTS = 'reverse-handoff'\n",
         "scripts/h100/wheelhouse.py": "WHEELHOUSE = 'verified-offline'\n",
+        "scripts/handoff/control.py": "CONTROL = 'box-transfer-v1'\n",
+        "scripts/handoff/results.py": "RESULTS = 'content-addressed'\n",
+        "scripts/handoff/runtime_bootstrap.py": "BOOTSTRAP = 'hash-pinned'\n",
+        "scripts/export_results.py": "EXPORT = 'h100-only'\n",
+        "scripts/run_corrected_references.py": "REFERENCES = 'isolated'\n",
+        "scripts/score_test_cohort.py": "BARRIER = 'all-32'\n",
+        "scripts/score_test_split.py": "OUTPUT = 'test_metrics.json'\n",
+        "src/analysis/curves.py": "GRID = 'complete-32'\n",
+        "src/eval/final_eval.py": "FINAL = 'monotonicity-gated'\n",
+        "src/eval/ground_truth.py": "GROUND_TRUTH = 'hm-positive-low-ignore'\n",
+        "src/eval/ground_truth_audit.py": "AUDIT = 'exact-supports'\n",
+        "src/eval/heldout_contract.py": "HELDOUT = 'cohort-bound'\n",
+        "src/eval/result_contract.py": "RESULT_SCHEMA = 2\n",
+        "src/references/locateanything_zs.py": "R3 = 'corrected-rerun'\n",
+        "src/references/runtime_provenance.py": "PROVENANCE = 'fresh'\n",
+        "src/references/yolo26_ref.py": "R2 = 'corrected-rescore'\n",
+        "data/splits.json": json.dumps(
+            {
+                "splits": {
+                    "train": ["train-scene"],
+                    "dev": [f"dev-{index}" for index in range(8)],
+                    "test": ["test-scene"],
+                    "eval_final": [],
+                }
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        "slurm/h100/V100_DIAGNOSTIC_ISOLATION.schema.json": "{}\n",
         "slurm/h100/campaign.sbatch": "#!/bin/bash\n# native venv campaign\n",
         "slurm/h100/smoke.sbatch": "#!/bin/bash\n# native venv smoke\n",
         "slurm/h100/submit.sh": "#!/bin/bash\n# native venv submit\n",
@@ -71,7 +109,7 @@ def _tree_hashes(root: Path) -> dict[str, str]:
     }
 
 
-def test_runtime_package_is_deterministic_code_only_and_extracts(
+def test_runtime_package_is_deterministic_filtered_training_view_and_extracts(
     tmp_path: Path,
 ) -> None:
     repo, ancestor, head = _fixture_repo(tmp_path)
@@ -80,6 +118,32 @@ def test_runtime_package_is_deterministic_code_only_and_extracts(
     output_b = tmp_path / "out-b"
     output_a.mkdir()
     output_b.mkdir()
+    labels = tmp_path / "train-dev8.csv"
+    labels.write_text(
+        "scene_id,value\n"
+        + "train-scene,1\n"
+        + "".join(f"dev-{index},1\n" for index in range(8)),
+        encoding="utf-8",
+    )
+    label_summary = training_labels_summary(
+        labels,
+        splits_path=repo / "data/splits.json",
+        production=False,
+    )
+    training_view = {
+        "schema": 1,
+        "contract": "train111-fixed-dev8-no-test-v1",
+        "source_labels": {
+            "sha256": "1" * 64,
+            "bytes": 1,
+            "archive_sha256": "2" * 64,
+        },
+        "splits_sha256": hashlib.sha256(
+            (repo / "data/splits.json").read_bytes()
+        ).hexdigest(),
+        "labels": label_summary,
+    }
+    evaluation_ground_truth = {"fixture": True}
     assert {
         "scripts/h100/contracts.py",
         "scripts/h100/lightning_contract.py",
@@ -95,6 +159,9 @@ def test_runtime_package_is_deterministic_code_only_and_extracts(
         branch="fixture-runtime",
         required_ancestor=ancestor,
         production=False,
+        training_labels_path=labels,
+        training_view=training_view,
+        evaluation_ground_truth=evaluation_ground_truth,
     )
     package_b = amendment._build_runtime_amendment(
         repo_root=repo,
@@ -104,6 +171,9 @@ def test_runtime_package_is_deterministic_code_only_and_extracts(
         branch="fixture-runtime",
         required_ancestor=ancestor,
         production=False,
+        training_labels_path=labels,
+        training_view=training_view,
+        evaluation_ground_truth=evaluation_ground_truth,
     )
     assert package_a.name == package_b.name
     assert _tree_hashes(package_a) == _tree_hashes(package_b)
@@ -121,7 +191,12 @@ def test_runtime_package_is_deterministic_code_only_and_extracts(
     assert manifest["contract"]["runtime"] == "native-venv"
     assert manifest["contract"]["precision"] == "32-true"
     assert manifest["contract"]["tf32"] is False
-    assert manifest["counts"] == {"git_bundles": 1}
+    assert manifest["counts"] == {
+        "git_bundles": 1,
+        "training_label_artifacts": 1,
+    }
+    assert manifest["training_view"] == training_view
+    assert manifest["evaluation_ground_truth"] == evaluation_ground_truth
     physical = {
         path.relative_to(package_a).as_posix()
         for path in package_a.rglob("*")
@@ -133,7 +208,8 @@ def test_runtime_package_is_deterministic_code_only_and_extracts(
         "READY.json",
         *{
             part["path"]
-            for part in manifest["artifacts"][0]["parts"]
+            for artifact in manifest["artifacts"]
+            for part in artifact["parts"]
         },
     }
     assert not any(
@@ -154,6 +230,9 @@ def test_runtime_package_is_deterministic_code_only_and_extracts(
     )
     bundle = destination / amendment.RUNTIME_BUNDLE_PATH
     assert bundle.is_file()
+    assert (destination / amendment.TRAINING_LABELS_ARTIFACT_PATH).read_bytes() == (
+        labels.read_bytes()
+    )
     assert (
         _git(tmp_path, "bundle", "list-heads", str(bundle))
         == f"{head} refs/heads/fixture-runtime"
@@ -162,6 +241,7 @@ def test_runtime_package_is_deterministic_code_only_and_extracts(
         (destination / amendment.RUNTIME_EXTRACTED_RECEIPT).read_text()
     )
     assert receipt["package_id"] == manifest["package_id"]
+    assert receipt["training_view"] == training_view
 
     first_part = package_a / manifest["artifacts"][0]["parts"][0]["path"]
     payload = bytearray(first_part.read_bytes())

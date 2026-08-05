@@ -7,11 +7,6 @@ if [[ "$mode" != "smoke" && "$mode" != "acceptance" && \
   echo "usage: $0 smoke|acceptance|cutover-check|campaign" >&2
   exit 2
 fi
-if [[ "$mode" == "cutover-check" || "$mode" == "campaign" ]]; then
-  echo "$mode is not authorized until the content-addressed dynamic Box control-transfer protocol is implemented and reviewed" >&2
-  exit 2
-fi
-
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd -- "$script_dir/../.." && pwd)"
 site_env="$(realpath -m "${H100_SITE_ENV:-$script_dir/site.env}")"
@@ -49,19 +44,34 @@ required=(
 if [[ "$mode" == "acceptance" || "$mode" == "cutover-check" ]]; then
   required+=(H100_REMAINING_V100_WALL_HOURS)
 fi
+if [[ "$mode" == "cutover-check" ]]; then
+  required+=(H100_CURRENT_V100_DIAGNOSTIC_STATUS)
+fi
 if [[ "$mode" == "cutover-check" || "$mode" == "campaign" ]]; then
   required+=(
-    H100_EXPECTED_REFERENCE_GIT_SHA H100_REFERENCE_CAMPAIGN_ID H100_CUTOVER_READY
+    H100_CAMPAIGN_ID H100_EXPECTED_REFERENCE_GIT_SHA
+    H100_REFERENCE_CAMPAIGN_ID H100_V100_CORE_GIT_SHA
+    H100_V100_CORE_CAMPAIGN_ID H100_CUTOVER_READY
   )
 fi
 if [[ "$mode" == "cutover-check" ]]; then
-  required+=(H100_REFERENCES_ROOT)
+  required+=(
+    H100_REFERENCES_PACKAGE_ROOT H100_REFERENCES_PACKAGE_ID
+    H100_REFERENCES_PRODUCER_GIT_SHA H100_REFERENCES_IDENTITY_SHA256
+    H100_REFERENCES_MANIFEST_SHA256 H100_REFERENCES_READY_SHA256
+    H100_REFERENCES_SHA256SUMS_SHA256
+  )
 fi
 if [[ "$mode" == "campaign" ]]; then
   required+=(
-    H100_CAMPAIGN_ID H100_CUTOVER_READY_SHA256
-    H100_V100_CORE_ARCHIVED H100_V100_CORE_ARCHIVED_SHA256
-    H100_V100_ARCHIVE_MANIFEST H100_V100_ARCHIVE_MANIFEST_SHA256
+    H100_CUTOVER_READY_SHA256
+    H100_DIAGNOSTIC_ISOLATION_PACKAGE_ROOT
+    H100_DIAGNOSTIC_ISOLATION_PACKAGE_ID
+    H100_DIAGNOSTIC_ISOLATION_PRODUCER_GIT_SHA
+    H100_DIAGNOSTIC_ISOLATION_IDENTITY_SHA256
+    H100_DIAGNOSTIC_ISOLATION_MANIFEST_SHA256
+    H100_DIAGNOSTIC_ISOLATION_READY_SHA256
+    H100_DIAGNOSTIC_ISOLATION_SHA256SUMS_SHA256
   )
 fi
 for name in "${required[@]}"; do
@@ -78,7 +88,17 @@ if [[ "$H100_RUNTIME_GIT_SHA" != "$H100_EXPECTED_GIT_SHA" ]]; then
   echo "H100_RUNTIME_GIT_SHA must equal H100_EXPECTED_GIT_SHA" >&2
   exit 2
 fi
-for name in H100_BASE_GIT_SHA H100_RUNTIME_GIT_SHA H100_EXPECTED_GIT_SHA; do
+git_names=(H100_BASE_GIT_SHA H100_RUNTIME_GIT_SHA H100_EXPECTED_GIT_SHA)
+if [[ "$mode" == "cutover-check" || "$mode" == "campaign" ]]; then
+  git_names+=(H100_EXPECTED_REFERENCE_GIT_SHA H100_V100_CORE_GIT_SHA)
+fi
+if [[ "$mode" == "cutover-check" ]]; then
+  git_names+=(H100_REFERENCES_PRODUCER_GIT_SHA)
+fi
+if [[ "$mode" == "campaign" ]]; then
+  git_names+=(H100_DIAGNOSTIC_ISOLATION_PRODUCER_GIT_SHA)
+fi
+for name in "${git_names[@]}"; do
   if [[ ! "${!name}" =~ ^[0-9a-f]{40}$ ]]; then
     echo "$name must be a lowercase full 40-character Git SHA" >&2
     exit 2
@@ -95,6 +115,20 @@ hash_names=(
   H100_ENV_LOCK_SHA256 H100_DETECTOR_SHA256 H100_SCORER_SHA256
   H100_SPLITS_SHA256 H100_STATS_SHA256 H100_LSSSDD_SHA256
 )
+if [[ "$mode" == "cutover-check" ]]; then
+  hash_names+=(
+    H100_REFERENCES_IDENTITY_SHA256 H100_REFERENCES_MANIFEST_SHA256
+    H100_REFERENCES_READY_SHA256 H100_REFERENCES_SHA256SUMS_SHA256
+  )
+fi
+if [[ "$mode" == "campaign" ]]; then
+  hash_names+=(
+    H100_CUTOVER_READY_SHA256 H100_DIAGNOSTIC_ISOLATION_IDENTITY_SHA256
+    H100_DIAGNOSTIC_ISOLATION_MANIFEST_SHA256
+    H100_DIAGNOSTIC_ISOLATION_READY_SHA256
+    H100_DIAGNOSTIC_ISOLATION_SHA256SUMS_SHA256
+  )
+fi
 for name in "${hash_names[@]}"; do
   if [[ ! "${!name}" =~ ^[0-9a-f]{64}$ ]]; then
     echo "$name must be a lowercase 64-character SHA-256" >&2
@@ -155,24 +189,33 @@ do
     H100_JOB_LOG_DIR "$h100_job_log_root" "$protected_name" "$protected_root"
 done
 
-reference_runs_root=""
+control_package_root=""
 if [[ "$mode" == "cutover-check" ]]; then
-  reference_runs_root="$(canonical_write_root H100_REFERENCES_ROOT)"
-  if [[ ! -d "$reference_runs_root" ]]; then
-    echo "H100_REFERENCES_ROOT must resolve to verified transferred V100 reference evidence: $reference_runs_root" >&2
+  control_package_root="$(canonical_write_root H100_REFERENCES_PACKAGE_ROOT)"
+  if [[ ! -d "$control_package_root" ]]; then
+    echo "H100_REFERENCES_PACKAGE_ROOT must resolve to a verified control package: $control_package_root" >&2
     exit 2
   fi
   assert_disjoint_from_protected_root \
-    H100_RUNS_ROOT "$h100_runs_root" "V100 reference runs root" "$reference_runs_root"
+    H100_RUNS_ROOT "$h100_runs_root" "reference control package" "$control_package_root"
   assert_disjoint_from_protected_root \
-    H100_JOB_LOG_DIR "$h100_job_log_root" "V100 reference runs root" "$reference_runs_root"
-  H100_REFERENCES_ROOT="$reference_runs_root"
-else
-  unset H100_REFERENCES_ROOT
+    H100_JOB_LOG_DIR "$h100_job_log_root" "reference control package" "$control_package_root"
+  H100_REFERENCES_PACKAGE_ROOT="$control_package_root"
+elif [[ "$mode" == "campaign" ]]; then
+  control_package_root="$(canonical_write_root H100_DIAGNOSTIC_ISOLATION_PACKAGE_ROOT)"
+  if [[ ! -d "$control_package_root" ]]; then
+    echo "H100_DIAGNOSTIC_ISOLATION_PACKAGE_ROOT must resolve to a verified control package: $control_package_root" >&2
+    exit 2
+  fi
+  assert_disjoint_from_protected_root \
+    H100_RUNS_ROOT "$h100_runs_root" "diagnostic-isolation control package" "$control_package_root"
+  assert_disjoint_from_protected_root \
+    H100_JOB_LOG_DIR "$h100_job_log_root" "diagnostic-isolation control package" "$control_package_root"
+  H100_DIAGNOSTIC_ISOLATION_PACKAGE_ROOT="$control_package_root"
 fi
 H100_RUNS_ROOT="$h100_runs_root"
 H100_JOB_LOG_DIR="$h100_job_log_root"
-readonly H100_RUNS_ROOT H100_JOB_LOG_DIR H100_REFERENCES_ROOT
+readonly H100_RUNS_ROOT H100_JOB_LOG_DIR
 
 if [[ "$(realpath -m "$H100_PROJECT_ROOT")" != "$repo" ]]; then
   echo "H100_PROJECT_ROOT does not match this checkout: $repo" >&2
@@ -222,10 +265,18 @@ mkdir -p "$H100_JOB_LOG_DIR"
 if [[ "$mode" == "cutover-check" ]]; then
   PYTHONNOUSERSITE=1 PYTHONPATH="$repo" "$H100_TRANSFER_PYTHON" -m scripts.h100.cutover \
     --h100-ready "$H100_RUNS_ROOT/.h100/H100_READY.json" \
-    --r2-run-dir "$H100_REFERENCES_ROOT/yolo26-f100" \
-    --r3-run-dir "$H100_REFERENCES_ROOT/locateanything-zs" \
+    --references-package-root "$H100_REFERENCES_PACKAGE_ROOT" \
+    --expected-references-package-id "$H100_REFERENCES_PACKAGE_ID" \
+    --expected-references-producer-git-sha "$H100_REFERENCES_PRODUCER_GIT_SHA" \
+    --expected-references-identity-sha256 "$H100_REFERENCES_IDENTITY_SHA256" \
+    --expected-references-manifest-sha256 "$H100_REFERENCES_MANIFEST_SHA256" \
+    --expected-references-ready-sha256 "$H100_REFERENCES_READY_SHA256" \
+    --expected-references-sha256sums-sha256 "$H100_REFERENCES_SHA256SUMS_SHA256" \
     --expected-h100-git-sha "$H100_EXPECTED_GIT_SHA" \
     --expected-reference-git-sha "$H100_EXPECTED_REFERENCE_GIT_SHA" \
+    --expected-v100-core-git-sha "$H100_V100_CORE_GIT_SHA" \
+    --expected-v100-core-campaign-id "$H100_V100_CORE_CAMPAIGN_ID" \
+    --expected-h100-campaign-id "$H100_CAMPAIGN_ID" \
     --expected-venv-sha256 "$H100_VENV_SHA256" \
     --expected-venv-build-sha256 "$H100_VENV_BUILD_SHA256" \
     --expected-base-python-sha256 "$H100_BASE_PYTHON_SHA256" \
@@ -252,43 +303,38 @@ if [[ "$mode" == "cutover-check" ]]; then
     --smoke-ready "$H100_RUNS_ROOT/.h100/slurm-smoke/SLURM_SMOKE_READY.json" \
     --expected-reference-campaign-id "$H100_REFERENCE_CAMPAIGN_ID" \
     --current-remaining-v100-wall-hours "$H100_REMAINING_V100_WALL_HOURS" \
+    --current-v100-diagnostic-status "$H100_CURRENT_V100_DIAGNOSTIC_STATUS" \
     --output "$H100_CUTOVER_READY"
   echo "CUTOVER_READY written; no Slurm job was submitted." >&2
-  echo "Gracefully stop/archive V100 core diagnostics, then create the external operator receipt." >&2
+  echo "Transfer CUTOVER_READY to the V100 operator; leave V100 running and return the diagnostic-isolation package." >&2
   exit 0
 fi
 
 if [[ "$mode" == "campaign" ]]; then
-  canonical_archive_manifest="$H100_RUNS_ROOT/.h100/V100_CORE_ARCHIVE_MANIFEST.json"
   PYTHONNOUSERSITE=1 PYTHONPATH="$repo" "$H100_TRANSFER_PYTHON" -m scripts.h100.operator_cutover \
     --cutover-ready "$H100_CUTOVER_READY" \
     --cutover-ready-sha256 "$H100_CUTOVER_READY_SHA256" \
-    --receipt "$H100_V100_CORE_ARCHIVED" \
-    --receipt-sha256 "$H100_V100_CORE_ARCHIVED_SHA256" \
-    --archive-manifest "$H100_V100_ARCHIVE_MANIFEST" \
-    --archive-manifest-sha256 "$H100_V100_ARCHIVE_MANIFEST_SHA256" \
-    --bound-archive-manifest "$canonical_archive_manifest" \
+    --diagnostic-isolation-package-root "$H100_DIAGNOSTIC_ISOLATION_PACKAGE_ROOT" \
+    --expected-diagnostic-isolation-package-id "$H100_DIAGNOSTIC_ISOLATION_PACKAGE_ID" \
+    --expected-diagnostic-isolation-producer-git-sha "$H100_DIAGNOSTIC_ISOLATION_PRODUCER_GIT_SHA" \
+    --expected-diagnostic-isolation-identity-sha256 "$H100_DIAGNOSTIC_ISOLATION_IDENTITY_SHA256" \
+    --expected-diagnostic-isolation-manifest-sha256 "$H100_DIAGNOSTIC_ISOLATION_MANIFEST_SHA256" \
+    --expected-diagnostic-isolation-ready-sha256 "$H100_DIAGNOSTIC_ISOLATION_READY_SHA256" \
+    --expected-diagnostic-isolation-sha256sums-sha256 "$H100_DIAGNOSTIC_ISOLATION_SHA256SUMS_SHA256" \
     --persist-meta-root "$H100_RUNS_ROOT/.h100" \
     --expected-h100-git-sha "$H100_EXPECTED_GIT_SHA" \
-    --expected-venv-sha256 "$H100_VENV_SHA256" \
-    --expected-base-payload-package-id "$H100_BASE_PACKAGE_ID" \
-    --expected-base-payload-git-sha "$H100_BASE_GIT_SHA" \
-    --expected-base-payload-manifest-sha256 "$H100_BASE_MANIFEST_SHA256" \
-    --expected-base-payload-ready-sha256 "$H100_BASE_READY_SHA256" \
+    --expected-h100-campaign-id "$H100_CAMPAIGN_ID" \
+    --expected-h100-runs-root "$H100_RUNS_ROOT" \
     --expected-base-payload-sha256sums-sha256 "$H100_BASE_SHA256SUMS_SHA256" \
-    --expected-base-payload-repo-bundle-sha256 "$H100_BASE_REPO_BUNDLE_SHA256" \
-    --expected-runtime-amendment-package-id "$H100_RUNTIME_PACKAGE_ID" \
-    --expected-runtime-amendment-git-sha "$H100_RUNTIME_GIT_SHA" \
-    --expected-runtime-amendment-manifest-sha256 "$H100_RUNTIME_MANIFEST_SHA256" \
-    --expected-runtime-amendment-ready-sha256 "$H100_RUNTIME_READY_SHA256" \
     --expected-runtime-amendment-sha256sums-sha256 "$H100_RUNTIME_SHA256SUMS_SHA256" \
-    --expected-runtime-amendment-bundle-sha256 "$H100_RUNTIME_BUNDLE_SHA256" \
     --expected-reference-git-sha "$H100_EXPECTED_REFERENCE_GIT_SHA" \
-    --expected-reference-campaign-id "$H100_REFERENCE_CAMPAIGN_ID"
-  H100_V100_CORE_ARCHIVED="$H100_RUNS_ROOT/.h100/V100_CORE_ARCHIVED.json"
-  H100_V100_ARCHIVE_MANIFEST="$canonical_archive_manifest"
-  export H100_V100_CORE_ARCHIVED H100_V100_ARCHIVE_MANIFEST
-  echo "Canonical operator evidence persisted under $H100_RUNS_ROOT/.h100" >&2
+    --expected-reference-campaign-id "$H100_REFERENCE_CAMPAIGN_ID" \
+    --expected-v100-core-git-sha "$H100_V100_CORE_GIT_SHA" \
+    --expected-v100-core-campaign-id "$H100_V100_CORE_CAMPAIGN_ID"
+  H100_V100_DIAGNOSTIC_ISOLATION="$H100_RUNS_ROOT/.h100/V100_DIAGNOSTIC_ISOLATION.json"
+  H100_V100_DIAGNOSTIC_ISOLATION_SHA256="$(sha256sum "$H100_V100_DIAGNOSTIC_ISOLATION" | awk '{print $1}')"
+  export H100_V100_DIAGNOSTIC_ISOLATION H100_V100_DIAGNOSTIC_ISOLATION_SHA256
+  echo "Canonical diagnostic-isolation evidence persisted; V100 remains untouched." >&2
 fi
 
 batch_script="$script_dir/campaign.sbatch"
@@ -303,7 +349,21 @@ fi
 # queued or requeued allocations, and transfer credentials never enter this
 # snapshot. Campaign mode runs this after canonical operator evidence paths
 # have replaced their mutable source paths above.
-snapshot_names=("${required[@]}")
+snapshot_names=()
+for name in "${required[@]}"; do
+  # The compute allocation consumes only the canonical attestation and hash,
+  # never the transfer staging path or its Box-package metadata.
+  if [[ "$name" == H100_DIAGNOSTIC_ISOLATION_PACKAGE_* ]]; then
+    continue
+  fi
+  snapshot_names+=("$name")
+done
+if [[ "$mode" == "campaign" ]]; then
+  snapshot_names+=(
+    H100_V100_DIAGNOSTIC_ISOLATION
+    H100_V100_DIAGNOSTIC_ISOLATION_SHA256
+  )
+fi
 for optional_name in H100_REAL_SCONTROL; do
   if [[ -n "${!optional_name:-}" ]]; then
     snapshot_names+=("$optional_name")

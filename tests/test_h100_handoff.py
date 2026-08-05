@@ -46,8 +46,8 @@ from scripts.handoff.package import (
     validate_wheelhouse,
 )
 from scripts.handoff.results import (
-    _result_package_id,
     _validate_attempts,
+    _validate_grid,
     build_results_package,
 )
 
@@ -1626,6 +1626,8 @@ def _write_result_fixture(
     import time
     import uuid
 
+    import torch
+
     from scripts.h100 import slurm_smoke
     from scripts.h100.acceptance import EXPECTED_FRACTION_WORKLOAD
     from scripts.h100.build_venv import RECEIPT_KIND
@@ -1641,6 +1643,13 @@ def _write_result_fixture(
         SINGLE_DEVICE_STRATEGY,
     )
     from scripts.h100.source_validation import expected_receipt
+    from src.eval.heldout_contract import (
+        build_test_result,
+        cohort_record,
+        create_training_cohort,
+        write_test_result,
+    )
+    from src.eval.result_contract import create_best_checkpoint_binding
 
     arms = {
         "vit_random": {"short": "vitrand", "track": "vit", "role": "floor"},
@@ -1663,13 +1672,51 @@ def _write_result_fixture(
             sort_keys=False,
         ),
     )
-    _write(repo / "configs/detector.yaml", "schedule:\n  precision: 32-true\n")
+    _write(
+        repo / "configs/detector.yaml",
+        "decode:\n  candidate_floor: 0.05\nschedule:\n  precision: 32-true\n",
+    )
+    test_scene_ids = [f"test-{index:02d}" for index in range(16)]
+    _write(
+        repo / "data/splits.json",
+        json.dumps(
+            {
+                "splits": {
+                    "train": ["train-scene"],
+                    "dev": [f"dev-{index:02d}" for index in range(23)],
+                    "test": test_scene_ids,
+                    "eval_final": ["eval-scene"],
+                }
+            }
+        ),
+    )
+    _write(
+        repo / "configs/data.yaml",
+        yaml.safe_dump(
+            {
+                "paths": {
+                    "splits": "data/splits.json",
+                    "raw_xview3": "data/raw/xview3",
+                },
+                "seed": 0,
+            },
+            sort_keys=False,
+        ),
+    )
+    _write(
+        repo / "data/raw/xview3/labels/train.csv",
+        (
+            "scene_id,confidence,is_vessel,source,distance_from_shore_km,"
+            "detect_scene_column,detect_scene_row\n"
+            "train-scene,HIGH,true,Manual,1.0,10,20\n"
+        ),
+    )
     _write(repo / "src/eval/scorer.py", "# frozen fixture scorer\n")
     _write(repo / "data/stats.json", "{}\n")
     _write(repo / "data/lsssdd_split.json", "{}\n")
-    _run("git", "branch", "-m", "sprint-7e-judy-venv", cwd=repo)
+    _run("git", "branch", "-m", "sprint-7f-eval-contract", cwd=repo)
     _run("git", "add", ".", cwd=repo)
-    _run("git", "commit", "-q", "-m", "P7e: result fixture", cwd=repo)
+    _run("git", "commit", "-q", "-m", "P7f: result fixture", cwd=repo)
     git_sha = _run("git", "rev-parse", "HEAD", cwd=repo)
     detector = hashlib.sha256((repo / "configs/detector.yaml").read_bytes()).hexdigest()
     cells = load_cells(repo)
@@ -1738,6 +1785,27 @@ def _write_result_fixture(
     }
     acceptance_uuid = str(uuid.uuid4())
     meta = campaign_path.parent
+    evaluation_ground_truth = {
+        "audit_schema": 1,
+        "contract": "fixture-vessel-hm-positive-low-ignore",
+        "verified": True,
+    }
+    evaluation_ground_truth_path = meta / "EVAL_GROUND_TRUTH_VALIDATED.json"
+    _write(evaluation_ground_truth_path, json.dumps(evaluation_ground_truth))
+    evaluation_ground_truth_path.chmod(0o444)
+    evaluation_ground_truth_sha256 = sha256_file(evaluation_ground_truth_path)
+
+    def fake_audit_ground_truth_dataset(*, train_csv, splits_json):
+        assert Path(train_csv) == (
+            meta / "base-extracted/data/raw/xview3/labels/train.csv"
+        )
+        assert Path(splits_json) == repo / "data/splits.json"
+        return evaluation_ground_truth
+
+    monkeypatch.setattr(
+        "scripts.handoff.results.audit_ground_truth_dataset",
+        fake_audit_ground_truth_dataset,
+    )
 
     base_python_path = meta / "python311/bin/python3.11"
     _write(base_python_path, b"fixture Python 3.11.13\n")
@@ -2029,6 +2097,11 @@ def _write_result_fixture(
             "sha256": source_validation_sha256,
             "receipt": source_validation,
         },
+        "evaluation_ground_truth": {
+            "path": str(evaluation_ground_truth_path),
+            "sha256": evaluation_ground_truth_sha256,
+            "receipt": evaluation_ground_truth,
+        },
         "strict_fp32": strict_fp32,
         "hardware": accepted_hardware,
         "venv": {
@@ -2056,99 +2129,162 @@ def _write_result_fixture(
     }
     _write(meta / "H100_READY.json", json.dumps(ready))
     _write(meta / "throughput_projection.json", json.dumps(projection))
+    reference_campaign_manifest = {
+        "schema": 1,
+        "campaign_role": "corrected-v100-references",
+        "campaign_id": "fixture-v100",
+        "core_campaign_id": "fixture-v100",
+        "core_git_sha": "4" * 40,
+        "git_sha": git_sha,
+        "environment_sha256": "1" * 64,
+        "environment_lock_sha256": "2" * 64,
+        "runtime_launcher_sha256": "3" * 64,
+    }
+    reference_campaign_sha256 = hashlib.sha256(
+        (
+            json.dumps(reference_campaign_manifest, indent=2, sort_keys=True)
+            + "\n"
+        ).encode()
+    ).hexdigest()
+    reference_provenance = {
+        "git_sha": git_sha,
+        "campaign_id": "fixture-v100",
+        "environment_sha256": "1" * 64,
+        "environment_lock_sha256": "2" * 64,
+        "campaign_manifest_sha256": reference_campaign_sha256,
+        "runtime_launcher_sha256": "3" * 64,
+    }
     cutover = {
         "schema": 2,
         "status": "cutover-ready",
+        "h100_campaign_id": "fixture-h100",
         "created_utc": "2026-07-27T00:30:00+00:00",
         "h100_ready": ready,
         "acceptance": cutover_acceptance_bindings(ready),
+        "reference_campaign": {
+            "manifest": reference_campaign_manifest,
+            "manifest_sha256": reference_campaign_sha256,
+        },
         "cutover_forecast": {
             "conservative_h100_wall_hours": 2.0,
             "acceptance_remaining_v100_wall_hours": 3.0,
             "current_remaining_v100_wall_hours": 3.0,
+            "v100_diagnostic_status": "continues-running-non-reportable-diagnostic",
+            "h100_scientifically_mandatory": True,
         },
         "references": {
             "r2": {
                 "metrics": {"exp_id": "yolo26-f100"},
                 "metrics_sha256": "7" * 64,
-                "provenance": {
-                    "git_sha": "4" * 40,
-                    "campaign_id": "fixture-v100",
-                },
+                "provenance": dict(reference_provenance),
                 "provenance_sha256": "8" * 64,
             },
             "r3": {
                 "metrics": {"exp_id": "locateanything-zs"},
                 "metrics_sha256": "9" * 64,
-                "provenance": {
-                    "git_sha": "4" * 40,
-                    "campaign_id": "fixture-v100",
-                },
+                "provenance": dict(reference_provenance),
                 "provenance_sha256": "a" * 64,
             },
+        },
+        "references_control": {
+            "package_id": "fixture-references",
+            "kind": "references",
+            "direction": "v100-to-judy",
+            "producer_git_sha": "4" * 40,
+            "identity_sha256": "b" * 64,
+            "manifest_sha256": "c" * 64,
+            "ready_sha256": "d" * 64,
+            "sha256sums_sha256": "e" * 64,
         },
         "v100_action": "none; this guard never stops or signals V100 processes",
     }
     cutover_path = meta / "CUTOVER_READY.json"
     _write(cutover_path, json.dumps(cutover))
     cutover_sha256 = sha256_file(cutover_path)
-    archive_manifest_path = meta / "V100_CORE_ARCHIVE_MANIFEST.json"
-    archive_manifest = {
+    diagnostic_isolation_path = meta / "V100_DIAGNOSTIC_ISOLATION.json"
+    diagnostic_isolation = {
         "schema": 1,
-        "status": "v100-core-diagnostics-archived",
-        "scope": "v100-core-diagnostics",
-        "diagnostic_status": "non-reportable-diagnostic",
-        "git_sha": "4" * 40,
-        "campaign_id": "fixture-v100",
-        "stopped_utc": "2026-07-27T01:00:00+00:00",
-        "archived_utc": "2026-07-27T02:00:00+00:00",
-        "file_count": 0,
-        "total_bytes": 0,
-        "empty_reason": "fixture has no V100 diagnostic payload",
-    }
-    _write(archive_manifest_path, json.dumps(archive_manifest))
-    archive_manifest_sha256 = sha256_file(archive_manifest_path)
-    archived_receipt_path = meta / "V100_CORE_ARCHIVED.json"
-    archived_receipt = {
-        "schema": 2,
-        "status": "v100-core-archived",
-        "created_utc": "2026-07-27T03:00:00+00:00",
+        "status": "v100-diagnostic-isolated",
+        "created_utc": "2026-07-27T01:00:00+00:00",
         "attestation": "external-human-operator",
         "cutover_ready_sha256": cutover_sha256,
         "h100": {
             "acceptance_uuid": acceptance_uuid,
             "git_sha": git_sha,
-            "venv_sha256": venv_sha256,
-            "base_payload": base_payload,
-            "runtime_amendment": runtime_amendment,
+            "campaign_id": "fixture-h100",
         },
         "v100": {
             "git_sha": "4" * 40,
             "campaign_id": "fixture-v100",
-            "stopped_utc": "2026-07-27T01:00:00+00:00",
-            "stop_mode": "graceful",
-            "running_core_processes": 0,
+            "execution_status": "continues-running-non-reportable-diagnostic",
             "diagnostic_status": "non-reportable-diagnostic",
         },
-        "archive": {
-            "manifest_path": str(archive_manifest_path),
-            "manifest_sha256": archive_manifest_sha256,
+        "namespaces": {
+            "v100_runs_root": "/v100/diagnostic-runs",
+            "h100_runs_root": str(runs),
+            "disjoint": True,
+        },
+        "h100_suppression": {
+            "v100_completions_suppress_h100": False,
+            "v100_checkpoints_resume_h100": False,
+            "mixed_hardware_curve_allowed": False,
+        },
+        "post_diagnostic": {
+            "safe_stop_archive": "optional-after-diagnostic",
+            "required_before_h100_campaign": False,
         },
     }
-    _write(archived_receipt_path, json.dumps(archived_receipt))
-    archived_receipt_sha256 = sha256_file(archived_receipt_path)
+    _write(diagnostic_isolation_path, json.dumps(diagnostic_isolation))
+    diagnostic_isolation_path.chmod(0o444)
+    diagnostic_isolation_sha256 = sha256_file(diagnostic_isolation_path)
     for name in ("vit-fp32.log", "cnn-200step-fp32.log"):
         _write(meta / "acceptance-logs" / name, f"{name}: passed\n")
     _write(meta / "slurm/campaign-9001.out", "campaign complete\n")
 
     accepted_class = hardware_class(accepted_hardware)
     allocation_class = hardware_class(allocation_one)
-    markers: dict[str, dict] = {}
-    cell_runtime: dict[str, dict] = {}
-    for index, cell in enumerate(cells):
-        score = 0.4 + cell.fraction * 0.1
-        best_dev = score + 0.03
+    def point_metric(tp: int, fp: int, fn: int, ignored: int = 0) -> dict:
+        precision = tp / (tp + fp) if tp + fp else 0.0
+        recall = tp / (tp + fn) if tp + fn else 0.0
+        f1 = (
+            2.0 * precision * recall / (precision + recall)
+            if precision + recall
+            else 0.0
+        )
+        return {
+            "f1": f1,
+            "precision": precision,
+            "recall": recall,
+            "tp": tp,
+            "fp": fp,
+            "fn": fn,
+            "ignored_predictions": ignored,
+        }
+
+    best_dev = {
+        "epoch": 1,
+        **point_metric(4, 1, 1, 1),
+        "threshold": 0.25,
+        "n_candidates": 7,
+    }
+    last_dev = {
+        "epoch": 1,
+        **point_metric(3, 2, 2, 1),
+        "threshold": 0.35,
+        "n_candidates": 7,
+    }
+    training_markers: dict[str, dict] = {}
+    for cell in cells:
+        root = runs / cell.exp_id
+        _write(root / "config.yaml", "precision: 32-true\n")
+        _write(root / "metrics/metrics.csv", "step,loss\n1,0.5\n")
+        best_checkpoint = root / "checkpoints/best.ckpt"
+        last_checkpoint = root / "checkpoints/last.ckpt"
+        best_checkpoint.parent.mkdir(parents=True, exist_ok=True)
+        torch.save({"epoch": 1, "callbacks": {}}, best_checkpoint)
+        torch.save({"epoch": 1, "callbacks": {}}, last_checkpoint)
         marker = {
+            "result_schema": 2,
             "exp_id": cell.exp_id,
             "git_sha": git_sha,
             "detector_sha256": detector,
@@ -2157,52 +2293,159 @@ def _write_result_fixture(
             "gradient_accumulation": 1,
             "effective_batch": 16,
             "h100_runtime_contract": runtime_contract,
-            "best_dev_f1": best_dev,
-            "last_dev": {"threshold": 0.25},
-            "test_inference_precision": "32-true",
-            "test_f1": score,
-            "test_precision": score + 0.01,
-            "test_recall": score - 0.01,
-            "test_near_shore_f1": score - 0.02,
-            "test_scored_at": "2026-07-27T00:00:00+00:00",
             "epochs_run": 2,
+            "best_dev_f1": best_dev["f1"],
+            "best_dev": dict(best_dev),
+            "best_checkpoint": create_best_checkpoint_binding(
+                run_dir=root,
+                checkpoint_path=best_checkpoint,
+                best_dev=best_dev,
+                candidate_floor=0.05,
+            ),
+            "last_dev": dict(last_dev),
+            "train_loss": 0.5,
         }
-        attempt_specs = (
-            [(allocation_zero, 0, False), (allocation_one, 1, True)]
-            if index == 0
-            else [(allocation_one, index % 8, False)]
+        marker_path = root / "final_metrics.json"
+        _write(marker_path, json.dumps(marker))
+        marker_path.chmod(0o444)
+        _write(runs / f"logs/h100/{cell.exp_id}.log", "complete\n")
+        training_markers[cell.exp_id] = marker
+
+    cohort_path = meta / "TRAINING_COHORT.json"
+    cohort = create_training_cohort(
+        cells=cells,
+        runs_root=runs,
+        output=cohort_path,
+        git_sha=git_sha,
+        detector_sha256=detector,
+        candidate_floor=0.05,
+    )
+    cohort_sha256 = sha256_file(cohort_path)
+    aggregate = point_metric(1165, 0, 0, 325)
+    zero = point_metric(0, 0, 0)
+    near = point_metric(2, 0, 0)
+    test_metrics = {
+        **aggregate,
+        "dark_recall": 0.0,
+        "dark_support": 0,
+        "near_shore_f1": near["f1"],
+        "near_shore_support": 2,
+    }
+    per_scene = {
+        scene_id: {
+            "aggregate": aggregate if index == 0 else zero,
+            "slices": {
+                "dark": zero,
+                "near_shore": near if index == 0 else zero,
+            },
+        }
+        for index, scene_id in enumerate(test_scene_ids)
+    }
+
+    markers: dict[str, dict] = {}
+    cell_runtime: dict[str, dict] = {}
+    cell_phase_runtime: dict[str, dict] = {}
+    for index, cell in enumerate(cells):
+        root = runs / cell.exp_id
+        marker = training_markers[cell.exp_id]
+        test_payload = build_test_result(
+            exp_id=cell.exp_id,
+            cohort_sha256=cohort_sha256,
+            cohort_cell=cohort_record(cohort, cell.exp_id),
+            inference_precision="32-true",
+            metrics=test_metrics,
+            per_scene=per_scene,
+            test_scene_ids=test_scene_ids,
         )
+        test_path = root / "test_metrics.json"
+        write_test_result(test_path, test_payload)
+        scored = {
+            **marker,
+            "test_inference_precision": "32-true",
+            "test_f1": test_metrics["f1"],
+            "test_precision": test_metrics["precision"],
+            "test_recall": test_metrics["recall"],
+            "test_near_shore_f1": test_metrics["near_shore_f1"],
+            "test_scored_at": test_payload["scored_utc"],
+            "test_result_sha256": sha256_file(test_path),
+            "training_cohort_sha256": cohort_sha256,
+        }
+        train_specs = (
+            [
+                (allocation_zero, 0, False, 900.0, 75),
+                (allocation_one, 1, True, 900.0, 0),
+            ]
+            if index == 0
+            else [(allocation_one, index % 8, False, 1800.0, 0)]
+        )
+        score_gpu = train_specs[-1][1]
+        attempt_specs = [
+            *[(allocation, gpu, resumed, seconds, code, "train")
+              for allocation, gpu, resumed, seconds, code in train_specs],
+            (allocation_one, score_gpu, False, 1800.0, 0, "score-test"),
+        ]
         attempts = []
-        for attempt_index, (allocation, gpu, resumed) in enumerate(
-            attempt_specs, start=1
-        ):
+        for attempt_index, (
+            allocation,
+            gpu,
+            resumed,
+            active_seconds,
+            exit_code,
+            phase,
+        ) in enumerate(attempt_specs, start=1):
             device = allocation["devices"][gpu]
-            attempt = {
-                "attempt": attempt_index,
-                "started_utc": f"2026-07-27T0{attempt_index}:00:00+00:00",
-                "finished_utc": f"2026-07-27T0{attempt_index}:30:00+00:00",
-                "slurm_job_id": "9001",
-                "gpu_local_index": gpu,
-                "gpu_uuid": device["uuid"],
-                "gpu_name": device["name"],
-                "gpu_total_memory_bytes": device["total_memory_bytes"],
-                "compute_capability": device["compute_capability"],
-                "driver_version": allocation_class["driver_version"],
-                "torch": allocation_class["torch"],
-                "cuda_build": allocation_class["cuda_build"],
-                "resumed_from_last_ckpt": resumed,
-                "active_seconds": 1800.0 if len(attempt_specs) == 2 else 3600.0,
-            }
-            if attempt_index == len(attempt_specs):
-                attempt["exit_code"] = 0
-            else:
-                attempt["exit"] = "preempted"
-            attempts.append(attempt)
-        final_device = attempt_specs[-1][0]["devices"][attempt_specs[-1][1]]
+            attempts.append(
+                {
+                    "attempt": attempt_index,
+                    "phase": phase,
+                    "started_utc": f"2026-07-27T0{attempt_index}:00:00+00:00",
+                    "finished_utc": f"2026-07-27T0{attempt_index}:30:00+00:00",
+                    "slurm_job_id": "9001",
+                    "gpu_local_index": gpu,
+                    "gpu_uuid": device["uuid"],
+                    "gpu_name": device["name"],
+                    "gpu_total_memory_bytes": device["total_memory_bytes"],
+                    "compute_capability": device["compute_capability"],
+                    "driver_version": allocation_class["driver_version"],
+                    "torch": allocation_class["torch"],
+                    "cuda_build": allocation_class["cuda_build"],
+                    "resumed_from_last_ckpt": resumed,
+                    "active_seconds": active_seconds,
+                    "exit_code": exit_code,
+                }
+            )
+        final_device = allocation_one["devices"][score_gpu]
+        phase_runtime = {
+            "train": {
+                "active_seconds": 1800.0,
+                "elapsed_hours": 0.5,
+                "attempts": len(train_specs),
+                "completed_utc": "2026-07-27T02:30:00+00:00",
+                "final_metrics_sha256": sha256_file(root / "final_metrics.json"),
+                "best_checkpoint_sha256": marker["best_checkpoint"]["sha256"],
+                "epochs_run": marker["epochs_run"],
+                "best_dev_f1": marker["best_dev_f1"],
+            },
+            "score-test": {
+                "active_seconds": 1800.0,
+                "elapsed_hours": 0.5,
+                "attempts": 1,
+                "completed_utc": "2026-07-27T03:30:00+00:00",
+                "test_metrics_sha256": scored["test_result_sha256"],
+                "training_cohort_sha256": cohort_sha256,
+                "test_f1": scored["test_f1"],
+            },
+        }
         provenance = {
             "schema": 2,
             "campaign_id": "fixture-h100",
             "exp_id": cell.exp_id,
+            "run_dir": str(root),
+            "phase": "score-test",
+            "training_cohort": {
+                "path": str(cohort_path),
+                "sha256": cohort_sha256,
+            },
             "git_sha": git_sha,
             "detector_sha256": detector,
             "precision": "32-true",
@@ -2217,12 +2460,13 @@ def _write_result_fixture(
             "runtime_amendment": runtime_amendment,
             "acceptance_uuid": acceptance_uuid,
             "source_validation_sha256": source_validation_sha256,
+            "evaluation_ground_truth_sha256": evaluation_ground_truth_sha256,
             "cutover_ready_sha256": cutover_sha256,
-            "v100_core_archived_sha256": archived_receipt_sha256,
+            "v100_diagnostic_isolation_sha256": diagnostic_isolation_sha256,
             "strict_fp32": strict_fp32,
             "accepted_hardware_class": accepted_class,
             "slurm_job_id": "9001",
-            "gpu_local_index": attempt_specs[-1][1],
+            "gpu_local_index": score_gpu,
             "gpu_name": final_device["name"],
             "gpu_uuid": final_device["uuid"],
             "gpu_total_memory_bytes": final_device["total_memory_bytes"],
@@ -2231,31 +2475,26 @@ def _write_result_fixture(
             "torch": allocation_class["torch"],
             "cuda_build": allocation_class["cuda_build"],
             "started_utc": attempts[0]["started_utc"],
-            "completed_utc": "2026-07-27T03:00:00+00:00",
+            "completed_utc": "2026-07-27T03:30:00+00:00",
             "attempts": attempts,
+            "phase_runtime": phase_runtime,
             "accumulated_active_seconds": 3600.0,
             "elapsed_hours": 1.0,
             "epochs_run": marker["epochs_run"],
             "best_dev_f1": marker["best_dev_f1"],
-            "test_f1": marker["test_f1"],
-            "test_scored_at": marker["test_scored_at"],
+            "test_f1": scored["test_f1"],
+            "test_scored_at": scored["test_scored_at"],
+            "h100_runtime_contract": runtime_contract,
         }
-        root = runs / cell.exp_id
-        _write(root / "final_metrics.json", json.dumps(marker))
         _write(root / "runtime_provenance.json", json.dumps(provenance))
-        _write(root / "config.yaml", "precision: 32-true\n")
-        _write(root / "metrics/metrics.csv", "step,loss\n1,0.5\n")
-        _write(root / "checkpoints/best.ckpt", b"best")
-        _write(root / "checkpoints/last.ckpt", b"last")
-        _write(runs / f"logs/h100/{cell.exp_id}.log", "complete\n")
-        markers[cell.exp_id] = marker
+        markers[cell.exp_id] = scored
         cell_runtime[cell.exp_id] = {
             "elapsed_hours": 1.0,
             "attempts": len(attempts),
             "epochs_run": marker["epochs_run"],
-            "test_f1": marker["test_f1"],
+            "test_f1": scored["test_f1"],
         }
-
+        cell_phase_runtime[cell.exp_id] = phase_runtime
     grid = runs / "summary/grid.csv"
     grid.parent.mkdir(parents=True, exist_ok=True)
     grid_fields = (
@@ -2272,6 +2511,10 @@ def _write_result_fixture(
         "dev_threshold",
         "test_f1",
         "epochs_run",
+        "train_scene_count",
+        "train_vessel_count",
+        "train_dark_vessel_count",
+        "train_near_shore_vessel_count",
         "monotonicity_ok",
     )
     with grid.open("w", newline="", encoding="utf-8") as handle:
@@ -2293,9 +2536,13 @@ def _write_result_fixture(
                         "detector_sha256": detector,
                         "git_sha": git_sha,
                         "dev_f1": marker["best_dev_f1"],
-                        "dev_threshold": marker["last_dev"]["threshold"],
+                        "dev_threshold": marker["best_dev"]["threshold"],
                         "test_f1": marker["test_f1"],
                         "epochs_run": marker["epochs_run"],
+                        "train_scene_count": 1,
+                        "train_vessel_count": 1,
+                        "train_dark_vessel_count": 1,
+                        "train_near_shore_vessel_count": 1,
                         "monotonicity_ok": True,
                     }
                 )
@@ -2304,6 +2551,7 @@ def _write_result_fixture(
         "schema": 2,
         "campaign_id": "fixture-h100",
         "status": "complete",
+        "phase": "score-test",
         "git_sha": git_sha,
         "detector_sha256": detector,
         "precision": "32-true",
@@ -2318,9 +2566,9 @@ def _write_result_fixture(
         "runtime_amendment": runtime_amendment,
         "acceptance_uuid": acceptance_uuid,
         "source_validation_sha256": source_validation_sha256,
+        "evaluation_ground_truth_sha256": evaluation_ground_truth_sha256,
         "cutover_ready_sha256": cutover_sha256,
-        "v100_core_archived_sha256": archived_receipt_sha256,
-        "archive_manifest_sha256": archive_manifest_sha256,
+        "v100_diagnostic_isolation_sha256": diagnostic_isolation_sha256,
         "hardware": allocation_one,
         "accepted_hardware_class": accepted_class,
         "allocation_hardware_class": allocation_class,
@@ -2333,25 +2581,32 @@ def _write_result_fixture(
             "slurm_smoke": ready["slurm_smoke"],
             "scratch_free_bytes": ready["scratch_free_bytes"],
         },
-        "operator_cutover": {
-            "cutover_ready_sha256": cutover_sha256,
-            "v100_core_archived_sha256": archived_receipt_sha256,
-            "archive_manifest_sha256": archive_manifest_sha256,
-            "v100_core_archived_path": str(archived_receipt_path),
-            "archive_manifest_path": str(archive_manifest_path),
-            "v100_core_archived": archived_receipt,
-            "archive_manifest": archive_manifest,
+        "v100_diagnostic_isolation": {
+            "path": str(diagnostic_isolation_path),
+            "sha256": diagnostic_isolation_sha256,
+            "receipt": diagnostic_isolation,
         },
         "source_validation": {
             "path": str(source_validation_path),
             "sha256": source_validation_sha256,
             "receipt": source_validation,
         },
+        "evaluation_ground_truth": {
+            "path": str(evaluation_ground_truth_path),
+            "sha256": evaluation_ground_truth_sha256,
+            "receipt": evaluation_ground_truth,
+        },
+        "training_cohort": {
+            "path": str(cohort_path),
+            "sha256": cohort_sha256,
+        },
         "throughput_projection": projection,
         "slurm_job_id": "9001",
         "cell_order": ids,
         "complete": sorted(ids),
         "running": {},
+        "training_complete": sorted(ids),
+        "test_complete": sorted(ids),
         "events": [
             {
                 "event": "grid_validated",
@@ -2361,6 +2616,12 @@ def _write_result_fixture(
         ],
         "cell_runtime": cell_runtime,
         "updated_utc": "2026-07-27T00:00:00+00:00",
+        "cell_phase_runtime": cell_phase_runtime,
+        "fail_stop": {
+            "engaged": False,
+            "failed": [],
+            "allowed_to_finish": [],
+        },
     }
     _write(campaign_path, json.dumps(campaign))
     return git_sha, ids
@@ -2456,14 +2717,52 @@ def test_reverse_campaign_job_and_hardware_require_same_allocation(
     )
     campaign["hardware"] = unrelated_job_hardware
     campaign_path.write_text(json.dumps(campaign))
-    output = tmp_path / _result_package_id(campaign)
-
     with pytest.raises(PackageError, match="job/hardware pair"):
         build_results_package(
             repo=repo,
             runs_root=runs,
             campaign_manifest=campaign_path,
-            output=output,
+            output_dir=tmp_path / "out",
+            max_part_bytes=1024,
+        )
+
+
+def test_reverse_results_rejects_attestation_core_identity_not_bound_by_cutover(
+    tmp_path, monkeypatch
+):
+    options, _ = _fixture_source(tmp_path)
+    repo = options.repo_root
+    runs = tmp_path / "runs"
+    campaign_path = runs / ".h100/campaign_manifest.json"
+    _git_sha, _ids = _write_result_fixture(
+        repo, runs, campaign_path, monkeypatch
+    )
+    attestation_path = runs / ".h100/V100_DIAGNOSTIC_ISOLATION.json"
+    attestation = json.loads(attestation_path.read_text())
+    attestation["v100"]["git_sha"] = "5" * 40
+    attestation_path.chmod(0o644)
+    attestation_path.write_text(json.dumps(attestation), encoding="utf-8")
+    attestation_path.chmod(0o444)
+    attestation_sha256 = hashlib.sha256(attestation_path.read_bytes()).hexdigest()
+
+    campaign = json.loads(campaign_path.read_text())
+    campaign["v100_diagnostic_isolation_sha256"] = attestation_sha256
+    campaign["v100_diagnostic_isolation"] = {
+        "path": str(attestation_path),
+        "sha256": attestation_sha256,
+        "receipt": attestation,
+    }
+    campaign_path.write_text(json.dumps(campaign), encoding="utf-8")
+
+    with pytest.raises(
+        PackageError,
+        match="diagnostic-isolation validation failed: .*V100 identity",
+    ):
+        build_results_package(
+            repo=repo,
+            runs_root=runs,
+            campaign_manifest=campaign_path,
+            output_dir=tmp_path / "out",
             max_part_bytes=1024,
         )
 
@@ -2479,12 +2778,11 @@ def test_reverse_results_requires_and_packages_exact_32_cells(
         repo, runs, campaign, monkeypatch
     )
     campaign_payload = json.loads(campaign.read_text())
-    output = tmp_path / _result_package_id(campaign_payload)
     built = build_results_package(
         repo=repo,
         runs_root=runs,
         campaign_manifest=campaign,
-        output=output,
+        output_dir=tmp_path / "out",
         max_part_bytes=1024,
     )
     manifest = verify_package(built)
@@ -2495,6 +2793,10 @@ def test_reverse_results_requires_and_packages_exact_32_cells(
         "provenance_archives": 1,
     }
     identity = manifest["source"]["result_identity"]
+    assert built.name == manifest["package_id"]
+    assert identity["schema"] == 2
+    assert identity["maximum_physical_file_bytes"] == 1024
+    assert identity["artifact_digest_index"] == manifest["artifacts"]
     assert identity["venv_sha256"] == campaign_payload["venv_sha256"]
     assert identity["venv_build_sha256"] == campaign_payload[
         "venv_build_sha256"
@@ -2512,6 +2814,13 @@ def test_reverse_results_requires_and_packages_exact_32_cells(
     assert identity["allocation_hardware_class"] == campaign_payload[
         "allocation_hardware_class"
     ]
+    assert identity["evaluation_ground_truth"] == campaign_payload[
+        "evaluation_ground_truth"
+    ]
+    assert identity["training_cohort"] == campaign_payload["training_cohort"]
+    assert identity["v100_diagnostic_isolation"] == campaign_payload[
+        "v100_diagnostic_isolation"
+    ]
     provenance_artifact = next(
         item
         for item in manifest["artifacts"]
@@ -2526,10 +2835,11 @@ def test_reverse_results_requires_and_packages_exact_32_cells(
         "results/provenance/venv_build.json",
         "results/provenance/CUTOVER_READY.json",
         "results/provenance/SOURCE_VALIDATED.json",
+        "results/provenance/EVAL_GROUND_TRUTH_VALIDATED.json",
+        "results/provenance/TRAINING_COHORT.json",
         "results/provenance/HOST_HANDOFF_TESTS.json",
         "results/provenance/PYTEST_ACCEPTANCE.json",
-        "results/provenance/V100_CORE_ARCHIVED.json",
-        "results/provenance/V100_CORE_ARCHIVE_MANIFEST.json",
+        "results/provenance/V100_DIAGNOSTIC_ISOLATION.json",
         "results/provenance/slurm-smoke/SLURM_SMOKE_READY.json",
         "results/provenance/slurm-smoke/SLURM_SMOKE_STATE.json",
         "results/provenance/summary/grid.csv",
@@ -2568,6 +2878,12 @@ def test_reverse_results_requires_and_packages_exact_32_cells(
         verify_package(built)
 
     tampered = json.loads(json.dumps(original_manifest))
+    tampered["source"]["test_metrics_sha256"][ids[0]] = "0" * 64
+    _rewrite_package_controls(built, tampered)
+    with pytest.raises(PackageError, match="held-out-result digest"):
+        verify_package(built)
+
+    tampered = json.loads(json.dumps(original_manifest))
     core_artifact = next(
         item
         for item in tampered["artifacts"]
@@ -2578,15 +2894,115 @@ def test_reverse_results_requires_and_packages_exact_32_cells(
     with pytest.raises(PackageError, match="exact result allowlist"):
         verify_package(built)
 
+    tampered = json.loads(json.dumps(original_manifest))
+    tampered["artifacts"][0]["compression"]["level"] = 999
+    _rewrite_package_controls(built, tampered)
+    with pytest.raises(PackageError, match="identity artifact digest index"):
+        verify_package(built)
+
     _rewrite_package_controls(built, original_manifest)
     built.rename(tmp_path / "prior-valid-results")
     (runs / ids[0] / "final_metrics.json").unlink()
-    with pytest.raises((PackageError, RuntimeError), match="completion marker"):
+    with pytest.raises(
+        (PackageError, RuntimeError),
+        match="completion marker|checkpoint is not a regular",
+    ):
         build_results_package(
             repo=repo,
             runs_root=runs,
             campaign_manifest=campaign,
-            output=output,
+            output_dir=tmp_path / "second-out",
+            max_part_bytes=1024,
+        )
+
+
+def test_reverse_grid_independently_recomputes_counts_and_monotonicity(
+    tmp_path, monkeypatch
+):
+    import csv
+
+    options, _ = _fixture_source(tmp_path)
+    repo = options.repo_root
+    runs = tmp_path / "runs"
+    campaign_path = runs / ".h100/campaign_manifest.json"
+    _git_sha, _ids = _write_result_fixture(
+        repo, runs, campaign_path, monkeypatch
+    )
+    campaign = json.loads(campaign_path.read_text())
+    grid = runs / "summary/grid.csv"
+
+    def load_rows():
+        with grid.open(newline="", encoding="utf-8") as handle:
+            reader = csv.DictReader(handle)
+            return list(reader.fieldnames or ()), list(reader)
+
+    def write_rows(fields, rows):
+        with grid.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fields)
+            writer.writeheader()
+            writer.writerows(rows)
+        campaign["events"] = [
+            {
+                "event": "grid_validated",
+                "sha256": hashlib.sha256(grid.read_bytes()).hexdigest(),
+                "rows": 32,
+            }
+        ]
+
+    fields, rows = load_rows()
+    markers = {
+        row["exp_id"]: {
+            "test_f1": float(row["test_f1"]),
+            "best_dev_f1": float(row["dev_f1"]),
+            "best_dev": {"threshold": float(row["dev_threshold"])},
+            "epochs_run": int(row["epochs_run"]),
+        }
+        for row in rows
+    }
+    original_rows = json.loads(json.dumps(rows))
+    rows[4]["train_scene_count"] = str(int(rows[4]["train_scene_count"]) + 1)
+    write_rows(fields, rows)
+    with pytest.raises(PackageError, match="frozen TRAIN counts mismatch"):
+        _validate_grid(
+            repo=repo,
+            runs_root=runs,
+            cells=load_cells(repo),
+            campaign=campaign,
+            markers=markers,
+        )
+
+    rows = original_rows
+    rows[1]["test_f1"] = str(float(rows[0]["test_f1"]) - 0.021)
+    markers[rows[1]["exp_id"]]["test_f1"] = float(rows[1]["test_f1"])
+    write_rows(fields, rows)
+    with pytest.raises(PackageError, match="independently recomputed monotonicity"):
+        _validate_grid(
+            repo=repo,
+            runs_root=runs,
+            cells=load_cells(repo),
+            campaign=campaign,
+            markers=markers,
+        )
+
+
+def test_reverse_results_rejects_json_form_box_runtime_setting(
+    tmp_path, monkeypatch
+):
+    options, _ = _fixture_source(tmp_path)
+    repo = options.repo_root
+    runs = tmp_path / "runs"
+    campaign = runs / ".h100/campaign_manifest.json"
+    _git_sha, ids = _write_result_fixture(repo, runs, campaign, monkeypatch)
+    (runs / "logs/h100" / f"{ids[0]}.log").write_text(
+        '{"BOX_JWT_CONFIG": "/outside/repo/box-jwt.json"}\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(PackageError, match="Box runtime setting"):
+        build_results_package(
+            repo=repo,
+            runs_root=runs,
+            campaign_manifest=campaign,
+            output_dir=tmp_path / "out",
             max_part_bytes=1024,
         )
 
@@ -2603,16 +3019,12 @@ def test_reverse_results_rejects_unbound_grid_gpu_and_inside_repo(
     _git_sha, ids = _write_result_fixture(
         repo, runs, campaign, monkeypatch
     )
-    campaign_payload = json.loads(campaign.read_text())
-    package_id = _result_package_id(campaign_payload)
-    output = tmp_path / package_id
-
     with pytest.raises(PackageError, match="outside the repository"):
         build_results_package(
             repo=repo,
             runs_root=runs,
             campaign_manifest=campaign,
-            output=repo / package_id,
+            output_dir=repo / "result-packages",
             max_part_bytes=1024,
         )
 
@@ -2631,7 +3043,7 @@ def test_reverse_results_rejects_unbound_grid_gpu_and_inside_repo(
             repo=repo,
             runs_root=runs,
             campaign_manifest=campaign,
-            output=output,
+            output_dir=tmp_path / "out",
             max_part_bytes=1024,
         )
 
@@ -2646,7 +3058,7 @@ def test_reverse_results_rejects_unbound_grid_gpu_and_inside_repo(
             repo=repo,
             runs_root=runs,
             campaign_manifest=campaign,
-            output=output,
+            output_dir=tmp_path / "out",
             max_part_bytes=1024,
         )
 
@@ -2660,7 +3072,7 @@ def test_reverse_results_rejects_unbound_grid_gpu_and_inside_repo(
             repo=repo,
             runs_root=runs,
             campaign_manifest=campaign,
-            output=output,
+            output_dir=tmp_path / "out",
             max_part_bytes=1024,
         )
     log_root.unlink()
@@ -2672,6 +3084,6 @@ def test_reverse_results_rejects_unbound_grid_gpu_and_inside_repo(
             repo=repo,
             runs_root=runs,
             campaign_manifest=campaign,
-            output=output,
+            output_dir=tmp_path / "out",
             max_part_bytes=1024,
         )
