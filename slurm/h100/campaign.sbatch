@@ -2,7 +2,7 @@
 #SBATCH --job-name=xview3-h100-fp32
 #SBATCH --account=geofam
 #SBATCH --partition=minor-use-case
-#SBATCH --reservation=geofam
+# An optional reservation is supplied by submit.sh; there is no script default.
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --gpus-per-node=8
@@ -90,8 +90,13 @@ assert_disjoint_from_protected_root() {
 
 h100_runs_root="$(canonical_write_root H100_RUNS_ROOT)"
 h100_job_log_root="$(canonical_write_root H100_JOB_LOG_DIR)"
+h100_scratch_root="$(canonical_write_root H100_SCRATCH_ROOT)"
 assert_disjoint_from_protected_root \
   H100_JOB_LOG_DIR "$h100_job_log_root" "H100 runs root" "$h100_runs_root"
+assert_disjoint_from_protected_root \
+  H100_SCRATCH_ROOT "$h100_scratch_root" "H100 runs root" "$h100_runs_root"
+assert_disjoint_from_protected_root \
+  H100_SCRATCH_ROOT "$h100_scratch_root" H100_JOB_LOG_DIR "$h100_job_log_root"
 for protected_name in \
   H100_PROJECT_ROOT H100_BASE_PACKAGE_ROOT H100_RUNTIME_PACKAGE_ROOT \
   H100_WHEELHOUSE H100_VENV_ROOT
@@ -106,10 +111,104 @@ do
     H100_RUNS_ROOT "$h100_runs_root" "$protected_name" "$protected_root"
   assert_disjoint_from_protected_root \
     H100_JOB_LOG_DIR "$h100_job_log_root" "$protected_name" "$protected_root"
+  assert_disjoint_from_protected_root \
+    H100_SCRATCH_ROOT "$h100_scratch_root" "$protected_name" "$protected_root"
 done
 H100_RUNS_ROOT="$h100_runs_root"
 H100_JOB_LOG_DIR="$h100_job_log_root"
-readonly H100_RUNS_ROOT H100_JOB_LOG_DIR
+H100_SCRATCH_ROOT="$h100_scratch_root"
+readonly H100_RUNS_ROOT H100_JOB_LOG_DIR H100_SCRATCH_ROOT
+
+allocation_scratch=""
+remove_allocation_scratch() {
+  local actual=""
+  local expected=""
+  if [[ -z "$allocation_scratch" ]]; then
+    return 0
+  fi
+  expected="$H100_SCRATCH_ROOT/xview3-${SLURM_JOB_ID:-invalid}-r${SLURM_RESTART_COUNT:-0}"
+  if [[ ! -e "$allocation_scratch" && ! -L "$allocation_scratch" ]]; then
+    allocation_scratch=""
+    return 0
+  fi
+  actual="$(realpath -e -- "$allocation_scratch" 2>/dev/null || true)"
+  if [[ "$allocation_scratch" != "$expected" ||
+        "$actual" != "$allocation_scratch" ||
+        -L "$allocation_scratch" ||
+        ! -d "$allocation_scratch" ||
+        "$(stat -c '%u' "$allocation_scratch" 2>/dev/null || true)" != "$(id -u)" ]]; then
+    echo "refusing unsafe allocation-scratch cleanup: $allocation_scratch" >&2
+    return 1
+  fi
+  find "$allocation_scratch" -xdev -depth -mindepth 1 -delete || return 1
+  rmdir -- "$allocation_scratch" || return 1
+  allocation_scratch=""
+}
+
+cleanup_allocation_scratch() {
+  local original_rc="$?"
+  trap - EXIT
+  if ! remove_allocation_scratch && (( original_rc == 0 )); then
+    original_rc=1
+  fi
+  exit "$original_rc"
+}
+
+cleanup_allocation_scratch_before_requeue() {
+  if ! remove_allocation_scratch; then
+    echo "allocation scratch cleanup failed before requeue" >&2
+    return 1
+  fi
+  trap - EXIT
+}
+
+create_allocation_scratch() {
+  local job_id="${SLURM_JOB_ID:-}"
+  local restart_count="${SLURM_RESTART_COUNT:-0}"
+  local expected
+  local probe
+  if [[ ! "$job_id" =~ ^[1-9][0-9]*$ ||
+        ! "$restart_count" =~ ^[0-9]+$ ]]; then
+    echo "Slurm job/restart identity is invalid for allocation scratch" >&2
+    return 2
+  fi
+  if [[ -L "$H100_SCRATCH_ROOT" ||
+        ! -d "$H100_SCRATCH_ROOT" ||
+        "$(realpath -e -- "$H100_SCRATCH_ROOT" 2>/dev/null || true)" != "$H100_SCRATCH_ROOT" ||
+        ! -w "$H100_SCRATCH_ROOT" || ! -x "$H100_SCRATCH_ROOT" ]]; then
+    echo "H100_SCRATCH_ROOT must be a canonical writable non-symlink directory on the compute node" >&2
+    return 2
+  fi
+  expected="$H100_SCRATCH_ROOT/xview3-${job_id}-r${restart_count}"
+  if [[ -e "$expected" || -L "$expected" ]]; then
+    echo "allocation scratch destination must start absent: $expected" >&2
+    return 1
+  fi
+  allocation_scratch="$expected"
+  trap cleanup_allocation_scratch EXIT
+  mkdir -m 700 -- "$allocation_scratch"
+  chmod 0700 -- "$allocation_scratch"
+  if [[ -L "$allocation_scratch" ||
+        ! -d "$allocation_scratch" ||
+        "$(realpath -e -- "$allocation_scratch")" != "$allocation_scratch" ||
+        "$(stat -c '%a' "$allocation_scratch")" != "700" ||
+        "$(stat -c '%u' "$allocation_scratch")" != "$(id -u)" ]]; then
+    echo "allocation scratch directory failed ownership/mode validation" >&2
+    return 1
+  fi
+  probe="$allocation_scratch/.write-probe"
+  (umask 077; : > "$probe")
+  if [[ -L "$probe" || ! -f "$probe" || "$(stat -c '%a' "$probe")" != "600" ]]; then
+    echo "allocation scratch write probe failed" >&2
+    return 1
+  fi
+  rm -f -- "$probe"
+  printf 'allocation_scratch=%s\n' "$allocation_scratch"
+}
+
+create_allocation_scratch
+scratch="$allocation_scratch"
+readonly scratch
 
 meta_root="$H100_RUNS_ROOT/.h100"
 source_validation="$meta_root/SOURCE_VALIDATED.json"
@@ -154,10 +253,9 @@ if [[ "${H100_MODE:?H100_MODE missing}" == "campaign" ]]; then
     "$H100_V100_DIAGNOSTIC_ISOLATION"
 fi
 
-scratch="${SLURM_TMPDIR:?SLURM_TMPDIR is required}"
 scratch_free="$(df -PB1 "$scratch" | awk 'NR==2 {print $4}')"
 if (( scratch_free < 500000000000 )); then
-  echo "SLURM_TMPDIR has less than 500 GB free before extraction" >&2
+  echo "allocation scratch has less than 500 GB free before extraction" >&2
   exit 1
 fi
 repo="$scratch/repo"
@@ -423,6 +521,7 @@ done
 if [[ "$controller_rc" -eq 75 ]]; then
   # The native child never receives scontrol.  This host call occurs only after every
   # running cell has a promoted last.ckpt and the manifest requests requeue.
+  cleanup_allocation_scratch_before_requeue
   "${H100_REAL_SCONTROL:-/usr/bin/scontrol}" requeue "$SLURM_JOB_ID"
   exit 0
 fi

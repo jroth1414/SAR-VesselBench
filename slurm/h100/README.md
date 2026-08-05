@@ -44,17 +44,18 @@ allocation. General `download-runtime`, `verify-runtime`, and
 and are forbidden inside H100 smoke, acceptance, campaign, or any other
 pre-cohort allocation. The historical bundle inside the base payload is
 independently rehashed but never cloned for H100. Only the Sprint 7f runtime
-amendment bundle is cloned to `$SLURM_TMPDIR/repo`.
+amendment bundle is cloned into the allocation-private `repo` directory.
 
 Each batch allocation verifies the pinned base control files/Git bundle and
-the small runtime amendment, then builds an empty phase-specific
-`$SLURM_TMPDIR/payload`. Acceptance and training views contain 111 TRAIN chips,
-fixed DEV8 rasters, six weights, and the amendment's filtered TRAIN+DEV8 labels;
+the small runtime amendment, then builds an empty phase-specific data view in
+the allocation-private `payload` directory. Acceptance and training views
+contain 111 TRAIN chips, fixed DEV8 rasters, six weights, and the amendment's
+filtered TRAIN+DEV8 labels;
 acceptance alone includes the offline wheelhouse. They contain no TEST asset.
 After all 32 training markers freeze, the controller exits 75. The requeued
-allocation validates that cohort before hashing/extracting 16 TEST rasters and
-the combined label archive, filters labels to TRAIN+TEST, exposes no chip, and
-then scores. Committed frozen JSON is never replaced. Both transfer identities
+allocation creates a fresh scratch child and validates the persistent cohort
+before hashing/extracting 16 TEST rasters and the combined label archive,
+filters labels to TRAIN+TEST, exposes no chip, and then scores. Committed frozen JSON is never replaced. Both transfer identities
 and the phase-view receipt remain bound in readiness/campaign provenance.
 
 This protects the canonical allocation view, not the whole Judy account. The
@@ -106,6 +107,28 @@ untracked transfer environment only while running a Box command. Folder IDs
 are runtime inputs and are never embedded in a package, receipt, bootstrap,
 Slurm snapshot, or committed file.
 
+Set `H100_SCRATCH_ROOT` explicitly. Slurm does not guarantee a
+`SLURM_TMPDIR` variable, and Judy did not export one for smoke job 540200.
+The root must already exist, resolve canonically without being a symlink, be
+writable and searchable on every eligible compute node, and be disjoint from
+the persistent runs/log roots, source checkout, packages, wheelhouse, and
+sealed venv. Each allocation creates exactly one owned, mode-`0700` child:
+
+```text
+$H100_SCRATCH_ROOT/xview3-${SLURM_JOB_ID}-r${SLURM_RESTART_COUNT}
+```
+
+The campaign checks for at least 500,000,000,000 free bytes on that allocation
+child before extraction. An exit trap removes only the exact canonical child;
+it refuses a symlink, owner mismatch, or unexpected path instead of widening
+cleanup. Allocation scratch is therefore reconstructible across requeue.
+Checkpoints, the frozen cohort, test metrics, and controller state remain
+persistent beneath `H100_RUNS_ROOT`.
+
+Leave `H100_RESERVATION` empty to submit without `--reservation`; set it only
+to an exact reservation the account can use. Reservation choice changes queue
+placement, not the recorded training recipe.
+
 Judy and the live V100 host have completely separate filesystems, so
 `H100_V100_CONTROL_PLANE` must be exactly `box-transfer-v1`; a dummy Judy path
 for the V100 runs tree is forbidden. Submission canonicalizes
@@ -133,6 +156,13 @@ Run the lightweight one-GPU Slurm acceptance first:
 ```bash
 slurm/h100/submit.sh smoke
 ```
+
+Historical attempt 540200 is a failed portability diagnostic, not a passed
+smoke. It exited in one second because Judy did not define `SLURM_TMPDIR`,
+before GPU discovery, native-runtime launch, signaling, or training. It wrote
+no `SLURM_SMOKE_READY.json` and no canonical campaign state; the live V100
+diagnostic was untouched. Use a runtime amendment containing the explicit
+`H100_SCRATCH_ROOT` contract before retrying.
 
 The first allocation's exact venv Python publishes its PID. The outer batch
 verifies that direct-child identity, sends a real `SIGUSR1` across the
@@ -210,6 +240,12 @@ while already running cells finish. Fifteen minutes before the Slurm limit,
 USR1 is forwarded to every trainer; Lightning writes HPC checkpoints,
 deferred requeue waits for all eight, and each checkpoint is promoted
 atomically to `last.ckpt`.
+
+Allocation scratch never carries resume authority. On normal exit, failure,
+or requeue, the launcher deletes only its exact allocation child; the next
+allocation reconstructs its source and phase view from verified immutable
+packages. Resume comes exclusively from persistent, validated checkpoints and
+controller/cohort state beneath `H100_RUNS_ROOT`.
 
 No held-out test scoring is allowed during this training phase. Each of the 32
 cells must first publish a valid schema-2 training marker binding its complete

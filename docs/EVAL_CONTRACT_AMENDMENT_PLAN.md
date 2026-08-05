@@ -358,6 +358,12 @@ against the live V100 campaign.
 
 ## 7. Corrected Judy H100 campaign
 
+Status note (2026-08-05): Slurm smoke job 540200 failed after package-control
+verification but before GPU discovery, native-runtime launch, signaling, or
+training because Judy did not export `SLURM_TMPDIR`. It produced no readiness
+marker or canonical campaign state and did not affect the live V100 diagnostic.
+This is an open portability gate, not an H100 acceptance result.
+
 After code and source acceptance pass:
 
 1. Use the existing verified Judy Python 3.11.13 native venv only if its lock,
@@ -365,16 +371,22 @@ After code and source acceptance pass:
    unchanged. This amendment should not require new Python packages.
 2. Clone the corrected Git bundle into a new SHA-addressed Judy bootstrap
    directory. Do not overwrite the older Apptainer or native-venv bootstraps.
-3. Verify eight H100s, compute capability 9.0, strict IEEE FP32/TF32-disabled
-   backend state, code SHA, venv receipt, data receipt, frozen hashes, and free
-   scratch space.
+3. Verify an explicit canonical, existing, non-symlink, compute-node-writable
+   `H100_SCRATCH_ROOT`; never assume `SLURM_TMPDIR`. Create only the owned
+   mode-`0700` job/restart child and require at least 500,000,000,000 free bytes
+   there before campaign extraction. Then verify eight H100s, compute capability
+   9.0, strict IEEE FP32/TF32-disabled backend state, code SHA, venv receipt,
+   data receipt, and frozen hashes.
 4. Require empty corrected-campaign canonical namespaces.
 5. Run the full suite, six checkpoint loads, both-family finite train/backward
    probes, and full-scene inference.
 6. Run one short corrected-dev diagnostic and confirm exactly 517 positive GTs
    are scored on the eight training-time dev scenes.
 7. Run Slurm interruption/requeue/resume smoke and prove best-dev callback state
-   survives resume.
+   survives resume. The requeued allocation must receive fresh reconstructible
+   scratch while resume state remains exclusively under persistent
+   `H100_RUNS_ROOT`; guarded cleanup must remove only the exact prior allocation
+   child.
 8. Launch all 32 core cells uniformly from scratch with the unchanged owner-
    approved H100 recipe: `32-true`, TF32 disabled, micro/effective batch 16,
    accumulation 1, seed 0, one process per GPU, no DDP.
@@ -392,10 +404,12 @@ After code and source acceptance pass:
 13. Fail-stop the queue on the first invalid completion marker, non-finite
     value, hash mismatch, or callback-state mismatch.
 
-The compute allocation uses a physical allowlisted data view beneath
-`$SLURM_TMPDIR`, not a full base extraction. Acceptance receives 111 TRAIN chip
-directories, the fixed sorted eight DEV raster directories, six weight
-directories, the offline wheelhouse, and a source-built TRAIN+DEV8 CSV (13,911
+The compute allocation uses a physical allowlisted data view beneath its
+explicit allocation-private
+`$H100_SCRATCH_ROOT/xview3-${SLURM_JOB_ID}-r${SLURM_RESTART_COUNT}` child,
+not an assumed `SLURM_TMPDIR` and not a full base extraction. Acceptance
+receives 111 TRAIN chip directories, the fixed sorted eight DEV raster
+directories, six weight directories, the offline wheelhouse, and a source-built TRAIN+DEV8 CSV (13,911
 rows). Training allocations receive the same scientific inputs without
 re-extracting the already installed wheelhouse. Neither view contains a TEST
 chip, TEST raster, or TEST label row. After the cohort barrier, the new
@@ -511,6 +525,9 @@ The amendment is ready for reportable H100 training only when all are true:
   hash and epoch.
 - Test/final paths refuse last-dev thresholds and legacy unbound artifacts.
 - Full CPU and H100 GPU acceptance suites pass.
+- The external-signal Slurm smoke passes under the explicit
+  `H100_SCRATCH_ROOT` contract, proves fresh scratch on requeue and persistent
+  checkpoint resume, and leaves no allocation child after guarded cleanup.
 - Existing and future V100 core artifacts are explicitly classified as
   diagnostic, the live campaign remains untouched, and Judy has verified the
   external diagnostic-isolation attestation.

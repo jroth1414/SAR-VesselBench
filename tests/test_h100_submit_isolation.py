@@ -12,6 +12,8 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[1]
 SUBMIT = REPO / "slurm/h100/submit.sh"
+CAMPAIGN_SBATCH = REPO / "slurm/h100/campaign.sbatch"
+SMOKE_SBATCH = REPO / "slurm/h100/smoke.sbatch"
 GIT_SHA = "1" * 40
 SHA256 = "2" * 64
 
@@ -28,6 +30,7 @@ def _site_values(
         "H100_PROJECT": "xview3",
         "H100_PROJECT_ROOT": str(REPO),
         "H100_JOB_LOG_DIR": str(tmp_path / "h100-job-logs"),
+        "H100_SCRATCH_ROOT": str(tmp_path / "allocation-scratch"),
         "H100_TRANSFER_PYTHON": "/nonexistent/transfer-python",
         "H100_BASE_PACKAGE_ROOT": str(tmp_path / "base-package"),
         "H100_BASE_PACKAGE_ID": "base-package",
@@ -116,6 +119,7 @@ def _run_submit(
     if job_logs is not None:
         values["H100_JOB_LOG_DIR"] = str(job_logs)
     if prepare_runtime_paths:
+        Path(values["H100_SCRATCH_ROOT"]).mkdir(parents=True, exist_ok=True)
         Path(values["H100_WHEELHOUSE"]).mkdir(parents=True, exist_ok=True)
         Path(values["H100_BASE_EXTRACTION_RECEIPT"]).write_text("{}\n")
         python_lib = Path(values["H100_BASE_PYTHON_LIB_DIR"])
@@ -144,6 +148,36 @@ def _run_submit(
             **(extra_env or {}),
         },
     )
+
+
+def _capture_sbatch_args(
+    tmp_path: Path,
+    *,
+    site_overrides: dict[str, str] | None = None,
+) -> tuple[Path, list[str]]:
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    args_path = tmp_path / "sbatch.args"
+    fake_sbatch = fake_bin / "sbatch"
+    fake_sbatch.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' \"$@\" > \"$FAKE_SBATCH_ARGS\"\n"
+    )
+    fake_sbatch.chmod(0o755)
+    h100_runs = tmp_path / "h100-runs"
+    result = _run_submit(
+        tmp_path,
+        mode="smoke",
+        h100_runs=h100_runs,
+        prepare_runtime_paths=True,
+        site_overrides=site_overrides,
+        extra_env={
+            "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            "FAKE_SBATCH_ARGS": str(args_path),
+        },
+    )
+    assert result.returncode == 0, result.stderr
+    return h100_runs, args_path.read_text().splitlines()
 
 
 @pytest.mark.parametrize("mode", ["smoke", "acceptance"])
@@ -223,6 +257,11 @@ def test_submit_rejects_write_overlap_with_immutable_input_before_write(
             "H100_JOB_LOG_DIR must be an absolute path",
         ),
         ({"H100_JOB_LOG_DIR": "/"}, "H100_JOB_LOG_DIR must not resolve to /"),
+        (
+            {"H100_SCRATCH_ROOT": "relative/scratch"},
+            "H100_SCRATCH_ROOT must be an absolute path",
+        ),
+        ({"H100_SCRATCH_ROOT": "/"}, "H100_SCRATCH_ROOT must not resolve to /"),
     ),
 )
 def test_submit_rejects_unsafe_write_root_before_write(
@@ -238,6 +277,100 @@ def test_submit_rejects_unsafe_write_root_before_write(
     assert result.returncode == 2
     assert expected in result.stderr
     assert not h100_runs.exists()
+
+
+@pytest.mark.parametrize("mode", ["smoke", "acceptance", "campaign"])
+def test_submit_requires_explicit_scratch_root_before_any_write(
+    tmp_path: Path, mode: str
+):
+    h100_runs = tmp_path / "h100-runs"
+    job_logs = tmp_path / "h100-job-logs"
+    result = _run_submit(
+        tmp_path,
+        mode=mode,
+        h100_runs=h100_runs,
+        job_logs=job_logs,
+        site_overrides={"H100_SCRATCH_ROOT": ""},
+    )
+    assert result.returncode == 2
+    assert "site.env is missing H100_SCRATCH_ROOT" in result.stderr
+    assert not h100_runs.exists()
+    assert not job_logs.exists()
+
+
+@pytest.mark.parametrize(
+    "relationship",
+    ("equal-runs", "runs-child", "runs-parent", "equal-logs", "logs-child"),
+)
+def test_submit_rejects_scratch_overlap_with_persistent_writes_before_any_write(
+    tmp_path: Path, relationship: str
+):
+    tree = tmp_path / "h100-output"
+    if relationship == "equal-runs":
+        h100_runs = scratch = tree
+        job_logs = tmp_path / "h100-job-logs"
+        expected = "H100_SCRATCH_ROOT overlaps H100 runs root"
+    elif relationship == "runs-child":
+        h100_runs = tree
+        scratch = tree / "scratch"
+        job_logs = tmp_path / "h100-job-logs"
+        expected = "H100_SCRATCH_ROOT overlaps H100 runs root"
+    elif relationship == "runs-parent":
+        scratch = tree
+        h100_runs = tree / "runs"
+        job_logs = tmp_path / "h100-job-logs"
+        expected = "H100_SCRATCH_ROOT overlaps H100 runs root"
+    elif relationship == "equal-logs":
+        h100_runs = tmp_path / "h100-runs"
+        job_logs = scratch = tree
+        expected = "H100_SCRATCH_ROOT overlaps H100_JOB_LOG_DIR"
+    else:
+        h100_runs = tmp_path / "h100-runs"
+        job_logs = tree
+        scratch = tree / "scratch"
+        expected = "H100_SCRATCH_ROOT overlaps H100_JOB_LOG_DIR"
+    result = _run_submit(
+        tmp_path,
+        mode="smoke",
+        h100_runs=h100_runs,
+        job_logs=job_logs,
+        site_overrides={"H100_SCRATCH_ROOT": str(scratch)},
+    )
+    assert result.returncode == 2
+    assert expected in result.stderr
+    assert not (h100_runs / ".h100").exists()
+    assert not job_logs.exists()
+    assert not scratch.exists()
+
+
+@pytest.mark.parametrize("relationship", ("equal", "child", "parent"))
+def test_submit_rejects_scratch_overlap_with_immutable_input_before_any_write(
+    tmp_path: Path, relationship: str
+):
+    protected = tmp_path / "immutable-tree/base-package"
+    protected.mkdir(parents=True)
+    if relationship == "equal":
+        scratch = protected
+    elif relationship == "child":
+        scratch = protected / "scratch"
+    else:
+        scratch = protected.parent
+    h100_runs = tmp_path / "h100-runs"
+    job_logs = tmp_path / "h100-job-logs"
+    result = _run_submit(
+        tmp_path,
+        mode="smoke",
+        h100_runs=h100_runs,
+        job_logs=job_logs,
+        site_overrides={
+            "H100_SCRATCH_ROOT": str(scratch),
+            "H100_BASE_PACKAGE_ROOT": str(protected),
+        },
+    )
+    assert result.returncode == 2
+    assert "H100_SCRATCH_ROOT overlaps H100_BASE_PACKAGE_ROOT" in result.stderr
+    assert not (h100_runs / ".h100").exists()
+    assert not job_logs.exists()
 
 
 def test_submit_requires_box_control_plane_before_write(tmp_path: Path):
@@ -329,6 +462,81 @@ def test_pre_cutover_modes_do_not_require_v100_paths(
     assert "H100_V100_RUNS_ROOT" not in (tmp_path / f"site-{mode}.env").read_text()
 
 
+@pytest.mark.parametrize(
+    ("reservation", "expected_argument"),
+    (("geofam-res", "--reservation=geofam-res"), ("", None)),
+)
+def test_submit_reservation_is_optional_and_has_no_batch_default(
+    tmp_path: Path, reservation: str, expected_argument: str | None
+):
+    _runs, submitted_args = _capture_sbatch_args(
+        tmp_path,
+        site_overrides={"H100_RESERVATION": reservation},
+    )
+    reservation_args = [
+        argument for argument in submitted_args if argument.startswith("--reservation=")
+    ]
+    assert reservation_args == ([] if expected_argument is None else [expected_argument])
+    for batch in (CAMPAIGN_SBATCH, SMOKE_SBATCH):
+        assert "#SBATCH --reservation=" not in batch.read_text()
+
+
+def test_batch_uses_allocation_identity_and_cleans_private_scratch_on_failure(
+    tmp_path: Path,
+):
+    _runs, submitted_args = _capture_sbatch_args(tmp_path)
+    assert submitted_args[-3] == "smoke"
+    snapshot = Path(submitted_args[-2])
+    digest = submitted_args[-1]
+    scratch_root = tmp_path / "allocation-scratch"
+    allocation = scratch_root / "xview3-1234-r7"
+    completed = subprocess.run(
+        [str(SMOKE_SBATCH), "smoke", str(snapshot), digest],
+        cwd=REPO,
+        check=False,
+        text=True,
+        capture_output=True,
+        env={
+            "PATH": os.environ["PATH"],
+            "SLURM_JOB_ID": "1234",
+            "SLURM_RESTART_COUNT": "7",
+            "SLURM_TMPDIR": "/must-not-be-consumed",
+        },
+    )
+    assert completed.returncode != 0
+    assert f"allocation_scratch={allocation}" in completed.stdout
+    assert scratch_root.is_dir() and not scratch_root.is_symlink()
+    assert not allocation.exists() and not allocation.is_symlink()
+    assert list(scratch_root.iterdir()) == []
+
+
+def test_batch_refuses_preexisting_allocation_scratch_without_deleting_it(
+    tmp_path: Path,
+):
+    _runs, submitted_args = _capture_sbatch_args(tmp_path)
+    snapshot = Path(submitted_args[-2])
+    digest = submitted_args[-1]
+    allocation = tmp_path / "allocation-scratch/xview3-1234-r0"
+    allocation.mkdir(mode=0o700)
+    sentinel = allocation / "owner-data"
+    sentinel.write_text("preserve\n")
+    completed = subprocess.run(
+        [str(SMOKE_SBATCH), "smoke", str(snapshot), digest],
+        cwd=REPO,
+        check=False,
+        text=True,
+        capture_output=True,
+        env={
+            "PATH": os.environ["PATH"],
+            "SLURM_JOB_ID": "1234",
+            "SLURM_RESTART_COUNT": "0",
+        },
+    )
+    assert completed.returncode != 0
+    assert "allocation scratch destination must start absent" in completed.stderr
+    assert sentinel.read_text() == "preserve\n"
+
+
 def test_submit_snapshots_sanitized_site_and_batches_reject_tampering(tmp_path: Path):
     fake_bin = tmp_path / "fake-bin"
     fake_bin.mkdir()
@@ -341,12 +549,17 @@ def test_submit_snapshots_sanitized_site_and_batches_reject_tampering(tmp_path: 
     fake_sbatch.chmod(0o755)
 
     h100_runs = tmp_path / "h100-runs"
+    canonical_scratch = tmp_path / "allocation-scratch"
+    canonical_scratch.mkdir()
+    scratch_alias = tmp_path / "scratch-alias"
+    scratch_alias.symlink_to(canonical_scratch, target_is_directory=True)
     result = _run_submit(
         tmp_path,
         mode="smoke",
         h100_runs=h100_runs,
         prepare_runtime_paths=True,
         site_overrides={
+            "H100_SCRATCH_ROOT": str(scratch_alias),
             "BOX_JWT_CONFIG": "/secret/jwt.json",
             "BOX_FOLDER_ID": "secret-folder-fixture",
         },
@@ -354,6 +567,7 @@ def test_submit_snapshots_sanitized_site_and_batches_reject_tampering(tmp_path: 
             "PATH": f"{fake_bin}:{os.environ['PATH']}",
             "FAKE_SBATCH_ARGS": str(args_path),
             "LD_LIBRARY_PATH": "/inherited/loader/path",
+            "SLURM_TMPDIR": "/inherited/slurm/tmp",
         },
     )
     assert result.returncode == 0, result.stderr
@@ -374,7 +588,11 @@ def test_submit_snapshots_sanitized_site_and_batches_reject_tampering(tmp_path: 
     assert "secret-folder-fixture" not in snapshot_text
 
     assert "H100_BASE_PYTHON_LIB_DIR=" in snapshot_text
+    assert f"H100_SCRATCH_ROOT={canonical_scratch}\n" in snapshot_text
+    assert str(scratch_alias) not in snapshot_text
     assert "/inherited/loader/path" not in snapshot_text
+    assert "/inherited/slurm/tmp" not in snapshot_text
+    assert "SLURM_TMPDIR=" not in snapshot_text
     original_site = tmp_path / "site-smoke.env"
     original_site.write_text("H100_RUNS_ROOT=/now/different\n")
     assert snapshot.read_bytes() == snapshot_bytes
@@ -384,8 +602,8 @@ def test_submit_snapshots_sanitized_site_and_batches_reject_tampering(tmp_path: 
     tampered.chmod(0o444)
     before = {path.relative_to(h100_runs) for path in h100_runs.rglob("*")}
     for batch, batch_mode in (
-        (REPO / "slurm/h100/campaign.sbatch", "acceptance"),
-        (REPO / "slurm/h100/smoke.sbatch", "smoke"),
+        (CAMPAIGN_SBATCH, "acceptance"),
+        (SMOKE_SBATCH, "smoke"),
     ):
         completed = subprocess.run(
             [

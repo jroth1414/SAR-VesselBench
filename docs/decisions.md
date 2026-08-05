@@ -563,3 +563,40 @@ identically to every arm. This committed log lives here; `runs/` is gitignored a
   Judy transfer, H100 acceptance, Slurm smoke, reference completion, cohort
   freeze, held-out access, or H100 launch. The live V100 diagnostic continues
   independently while those gates remain pending.
+
+## Judy Slurm scratch portability correction (operational correction, 2026-08-05)
+
+- **Observed failure:** Judy Slurm smoke job 540200 reached `dgx09` and
+  verified the pinned runtime bundle and training-view label member, then
+  exited `FAILED (1:0)` after one second because Judy did not export
+  `SLURM_TMPDIR`. The failure occurred before GPU discovery, the sealed native
+  runtime child, signal/requeue exercise, or training. No
+  `SLURM_SMOKE_READY.json` or canonical campaign state was published, and the
+  live V100 diagnostic was neither read nor modified.
+- **Site contract:** Slurm does not guarantee `SLURM_TMPDIR`; the Judy launcher
+  therefore requires an explicit `H100_SCRATCH_ROOT` in ignored `site.env`.
+  Submission and compute-side validation require one canonical, existing,
+  non-symlink, writable/searchable root visible on every eligible node and
+  disjoint from persistent runs/logs, source, packages, wheelhouse, and the
+  sealed venv.
+- **Allocation ownership and capacity:** each allocation creates exactly
+  `H100_SCRATCH_ROOT/xview3-${SLURM_JOB_ID}-r${SLURM_RESTART_COUNT}` as a
+  current-user-owned mode-`0700` directory and proves it writable. Campaign
+  staging still requires at least 500,000,000,000 free bytes on the allocation
+  scratch filesystem before extraction.
+- **Cleanup and resume:** guarded exit cleanup may remove only that exact
+  canonical, non-symlink allocation child. Requeue receives a fresh child and
+  reconstructs source plus its phase-specific data view from verified
+  immutable packages. Checkpoints, controller state, the frozen cohort, and
+  metrics remain under persistent `H100_RUNS_ROOT`; scratch never confers
+  resume authority.
+- **Reservation interface:** an empty `H100_RESERVATION` means submit without
+  `--reservation`; a nonempty value is passed exactly. This is a scheduling
+  choice only and does not change hardware qualification or the training
+  recipe.
+- **Scientific scope:** this correction changes only Judy site portability and
+  scratch lifecycle. It does not modify the frozen detector, scorer, splits,
+  stats, evaluation contract, precision, batch, seed, model, or 32-cell
+  campaign. A new content-addressed runtime amendment and a passing full smoke
+  are required before H100 acceptance or training; V100 continues untouched as
+  a non-reportable diagnostic.

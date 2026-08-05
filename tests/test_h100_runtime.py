@@ -1972,7 +1972,7 @@ def test_slurm_native_defaults_identity_order_and_clean_runtime_are_static():
     job = SBATCH.read_text()
     assert "#SBATCH --account=geofam" in job
     assert "#SBATCH --partition=minor-use-case" in job
-    assert "#SBATCH --reservation=geofam" in job
+    assert "#SBATCH --reservation=" not in job
     assert "#SBATCH --gpus-per-node=8" in job
     assert "#SBATCH --cpus-per-task=48" in job
     assert "#SBATCH --mem=256G" in job
@@ -1983,7 +1983,9 @@ def test_slurm_native_defaults_identity_order_and_clean_runtime_are_static():
     assert job.index('source "$compute_site"') < job.index(loader_export)
     assert job.index(loader_export) < job.index('"$H100_TRANSFER_PYTHON"')
     assert '"LD_LIBRARY_PATH=$H100_BASE_PYTHON_LIB_DIR"' in job
-    assert job.index("scratch_free=") < job.index("scripts.h100.data_staging")
+    scratch_ready = job.index("\ncreate_allocation_scratch\n")
+    scratch_gate = job.index("scratch_free=")
+    assert scratch_ready < scratch_gate < job.index("scripts.h100.data_staging")
     assert "scripts.handoff extract" not in job
     assert 'git clone "$H100_RUNTIME_BUNDLE" "$repo"' in job
     assert 'git clone "$base_repo_bundle"' not in job
@@ -1999,10 +2001,43 @@ def test_slurm_native_defaults_identity_order_and_clean_runtime_are_static():
     assert "--base-payload-root" in job and "--runtime-amendment-root" in job
 
 
+def test_allocation_scratch_contract_is_private_guarded_and_portable():
+    for batch in (SBATCH, SMOKE_SBATCH):
+        source = batch.read_text()
+        assert 'h100_scratch_root="$(canonical_write_root H100_SCRATCH_ROOT)"' in source
+        assert 'expected="$H100_SCRATCH_ROOT/xview3-${job_id}-r${restart_count}"' in source
+        assert 'mkdir -m 700 -- "$allocation_scratch"' in source
+        assert "\"$(stat -c '%a' \"$allocation_scratch\")\" != \"700\"" in source
+        assert "\"$(stat -c '%u' \"$allocation_scratch\")\" != \"$(id -u)\"" in source
+        assert 'trap cleanup_allocation_scratch EXIT' in source
+        assert 'find "$allocation_scratch" -xdev -depth -mindepth 1 -delete' in source
+        assert 'rmdir -- "$allocation_scratch"' in source
+        assert 'allocation scratch destination must start absent' in source
+        assert source.index("\ncreate_allocation_scratch\n") < source.index(
+            'scratch="$allocation_scratch"'
+        )
+        assert '${SLURM_TMPDIR:?' not in source
+        assert 'scratch="${SLURM_TMPDIR' not in source
+        requeue_call = source.index(
+            '"${H100_REAL_SCONTROL:-/usr/bin/scontrol}" requeue'
+        )
+        cleanup_call = source.rfind(
+            "  cleanup_allocation_scratch_before_requeue\n", 0, requeue_call
+        )
+        assert cleanup_call != -1
+    campaign = SBATCH.read_text()
+    assert campaign.index("\ncreate_allocation_scratch\n") < campaign.index(
+        "scratch_free="
+    ) < campaign.index("scripts.h100.data_staging")
+    assert "500000000000" in campaign
+
+
 def test_operational_slurm_has_no_container_runtime_or_sif_surface():
     operational = "\n".join(path.read_text() for path in (SBATCH, SMOKE_SBATCH, SUBMIT))
     assert re.search(r"\b(apptainer|enroot|sif)\b", operational, re.IGNORECASE) is None
     assert "activate" not in operational
+    assert '${SLURM_TMPDIR:?' not in operational
+    assert 'scratch="${SLURM_TMPDIR' not in operational
     assert "--export=NONE" in SUBMIT.read_text()
 
 
@@ -2011,7 +2046,9 @@ def test_submit_and_site_interfaces_are_safe_and_untracked():
     example = SITE_EXAMPLE.read_text()
     assert '--account="${H100_ACCOUNT:-geofam}"' in submit
     assert '--partition="${H100_PARTITION:-minor-use-case}"' in submit
-    assert '--reservation="${H100_RESERVATION:-geofam}"' in submit
+    assert 'if [[ -n "${H100_RESERVATION:-}" ]]' in submit
+    assert 'sbatch_args+=(--reservation="$H100_RESERVATION")' in submit
+    assert '--reservation="${H100_RESERVATION:-geofam}"' not in submit
     assert '--output="$H100_JOB_LOG_DIR/%x-%j.out"' in submit
     assert 'env -u BOX_JWT_CONFIG -u BOX_FOLDER_ID sbatch' in submit
     assert '--export=NONE' in submit
@@ -2026,6 +2063,7 @@ def test_submit_and_site_interfaces_are_safe_and_untracked():
         "H100_PROJECT_ROOT",
         "H100_TRANSFER_PYTHON",
         "H100_JOB_LOG_DIR",
+        "H100_SCRATCH_ROOT",
         "H100_V100_CONTROL_PLANE",
         "H100_REFERENCES_PACKAGE_ROOT",
         "H100_REFERENCES_PACKAGE_ID",
@@ -2077,6 +2115,8 @@ def test_smoke_batch_signals_direct_native_child_and_requeues_externally():
     assert "unset BOX_JWT_CONFIG BOX_FOLDER_ID" in smoke
     assert 'export LD_LIBRARY_PATH="$H100_BASE_PYTHON_LIB_DIR"' in smoke
     assert '"LD_LIBRARY_PATH=$H100_BASE_PYTHON_LIB_DIR"' in smoke
+    assert 'h100_scratch_root="$(canonical_write_root H100_SCRATCH_ROOT)"' in smoke
+    assert "\ncreate_allocation_scratch\n" in smoke
 
 
 def test_cutover_validates_schema2_native_ready_and_rejects_v1_sif(tmp_path):

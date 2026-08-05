@@ -44,6 +44,12 @@ required=(
 if [[ "$mode" == "acceptance" || "$mode" == "cutover-check" ]]; then
   required+=(H100_REMAINING_V100_WALL_HOURS)
 fi
+if [[ "$mode" != "cutover-check" ]]; then
+  # Slurm does not define SLURM_TMPDIR portably. The site must name the
+  # filesystem under which each compute allocation creates its private,
+  # reconstructible staging directory.
+  required+=(H100_SCRATCH_ROOT)
+fi
 if [[ "$mode" == "cutover-check" ]]; then
   required+=(H100_CURRENT_V100_DIAGNOSTIC_STATUS)
 fi
@@ -173,6 +179,16 @@ h100_runs_root="$(canonical_write_root H100_RUNS_ROOT)"
 h100_job_log_root="$(canonical_write_root H100_JOB_LOG_DIR)"
 assert_disjoint_from_protected_root \
   H100_JOB_LOG_DIR "$h100_job_log_root" "H100 runs root" "$h100_runs_root"
+h100_scratch_root=""
+if [[ "$mode" != "cutover-check" ]]; then
+  h100_scratch_root="$(canonical_write_root H100_SCRATCH_ROOT)"
+  assert_disjoint_from_protected_root \
+    H100_SCRATCH_ROOT "$h100_scratch_root" \
+    "H100 runs root" "$h100_runs_root"
+  assert_disjoint_from_protected_root \
+    H100_SCRATCH_ROOT "$h100_scratch_root" \
+    H100_JOB_LOG_DIR "$h100_job_log_root"
+fi
 for protected_name in \
   H100_PROJECT_ROOT H100_BASE_PACKAGE_ROOT H100_RUNTIME_PACKAGE_ROOT \
   H100_WHEELHOUSE H100_VENV_ROOT
@@ -187,6 +203,10 @@ do
     H100_RUNS_ROOT "$h100_runs_root" "$protected_name" "$protected_root"
   assert_disjoint_from_protected_root \
     H100_JOB_LOG_DIR "$h100_job_log_root" "$protected_name" "$protected_root"
+  if [[ "$mode" != "cutover-check" ]]; then
+    assert_disjoint_from_protected_root \
+      H100_SCRATCH_ROOT "$h100_scratch_root" "$protected_name" "$protected_root"
+  fi
 done
 
 control_package_root=""
@@ -211,11 +231,18 @@ elif [[ "$mode" == "campaign" ]]; then
     H100_RUNS_ROOT "$h100_runs_root" "diagnostic-isolation control package" "$control_package_root"
   assert_disjoint_from_protected_root \
     H100_JOB_LOG_DIR "$h100_job_log_root" "diagnostic-isolation control package" "$control_package_root"
+  assert_disjoint_from_protected_root \
+    H100_SCRATCH_ROOT "$h100_scratch_root" \
+    "diagnostic-isolation control package" "$control_package_root"
   H100_DIAGNOSTIC_ISOLATION_PACKAGE_ROOT="$control_package_root"
 fi
 H100_RUNS_ROOT="$h100_runs_root"
 H100_JOB_LOG_DIR="$h100_job_log_root"
 readonly H100_RUNS_ROOT H100_JOB_LOG_DIR
+if [[ "$mode" != "cutover-check" ]]; then
+  H100_SCRATCH_ROOT="$h100_scratch_root"
+  readonly H100_SCRATCH_ROOT
+fi
 
 if [[ "$(realpath -m "$H100_PROJECT_ROOT")" != "$repo" ]]; then
   echo "H100_PROJECT_ROOT does not match this checkout: $repo" >&2
@@ -403,13 +430,22 @@ trap - EXIT
 # Box credentials are transfer-host inputs and must not enter Slurm's exported
 # environment or a native training process. Mode, sanitized snapshot, and its
 # digest are positional batch arguments; no user environment is exported.
+sbatch_args=(
+  --account="${H100_ACCOUNT:-geofam}"
+  --partition="${H100_PARTITION:-minor-use-case}"
+  --job-name="${H100_PROJECT}-h100-${job_suffix}"
+  --output="$H100_JOB_LOG_DIR/%x-%j.out"
+  --export=NONE
+)
+if [[ -n "${H100_RESERVATION:-}" ]]; then
+  sbatch_args+=(--reservation="$H100_RESERVATION")
+fi
+if [[ -n "${H100_MAIL_USER:-}" ]]; then
+  sbatch_args+=(--mail-user="$H100_MAIL_USER")
+fi
+if [[ -n "${H100_MAIL_TYPE:-}" ]]; then
+  sbatch_args+=(--mail-type="$H100_MAIL_TYPE")
+fi
 env -u BOX_JWT_CONFIG -u BOX_FOLDER_ID sbatch \
-  --account="${H100_ACCOUNT:-geofam}" \
-  --partition="${H100_PARTITION:-minor-use-case}" \
-  --reservation="${H100_RESERVATION:-geofam}" \
-  --job-name="${H100_PROJECT}-h100-${job_suffix}" \
-  --output="$H100_JOB_LOG_DIR/%x-%j.out" \
-  ${H100_MAIL_USER:+--mail-user="$H100_MAIL_USER"} \
-  ${H100_MAIL_TYPE:+--mail-type="$H100_MAIL_TYPE"} \
-  --export=NONE \
+  "${sbatch_args[@]}" \
   "$batch_script" "$mode" "$compute_site" "$compute_site_sha256"
