@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import json
+from argparse import Namespace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -9,7 +12,7 @@ import yaml
 
 from scripts import diagnose_eval_contract as diagnostic
 from src.eval.scorer import PredictionPoint
-from src.references import locateanything_zs, yolo26_ref
+from src.references import locateanything_zs, runtime_provenance, yolo26_ref
 
 
 def _write_diagnostic_fixture(tmp_path: Path) -> tuple[Path, Path, list[str]]:
@@ -320,5 +323,290 @@ def test_reference_result_sources_are_schema2_and_atomic() -> None:
         r3_source
     )
     assert '"legacy_result_reused": False' in r3_source
-    assert "atomic_write_json(out, payload)" in r2_source
-    assert "atomic_write_json(out, payload)" in r3_source
+    assert "publish_reference_result(" in r2_source
+    assert "publish_reference_result(" in r3_source
+
+
+def _reference_runtime_fixture(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[Namespace, str, str]:
+    git_sha = "a" * 40
+    reference_campaign = "sprint7f-v100-references-20260804"
+    core_campaign = "fresh34-v100-fp32-20260726"
+    core_git_sha = "b" * 40
+    runtime_lines = {"torch==2.11.0+cu126"}
+    environment_sha256 = hashlib.sha256(
+        ("\n".join(sorted(runtime_lines)) + "\n").encode("utf-8")
+    ).hexdigest()
+    lock = tmp_path / "env-v100node.txt"
+    launcher = tmp_path / "run-corrected-references.sh"
+    manifest = tmp_path / "REFERENCE_CAMPAIGN.json"
+    lock.write_text("torch==2.11.0+cu126\n")
+    launcher.write_text("#!/bin/bash\nexit 1\n")
+    monkeypatch.setattr(
+        runtime_provenance,
+        "_runtime_environment_lines",
+        lambda: runtime_lines,
+    )
+    manifest.write_text(
+        json.dumps(
+            {
+                "schema": runtime_provenance.CAMPAIGN_MANIFEST_SCHEMA,
+                "campaign_role": runtime_provenance.CAMPAIGN_ROLE,
+                "campaign_id": reference_campaign,
+                "core_campaign_id": core_campaign,
+                "core_git_sha": core_git_sha,
+                "git_sha": git_sha,
+                "environment_sha256": environment_sha256,
+                "environment_lock_sha256": runtime_provenance.sha256_file(lock),
+                "runtime_launcher_sha256": runtime_provenance.sha256_file(launcher),
+            }
+        )
+    )
+    monkeypatch.setattr(runtime_provenance, "_clean_git_sha", lambda _repo: git_sha)
+    args = Namespace(
+        expected_git_sha=git_sha,
+        reference_campaign_id=reference_campaign,
+        core_campaign_id=core_campaign,
+        core_git_sha=core_git_sha,
+        environment_sha256=environment_sha256,
+        environment_lock=lock,
+        campaign_manifest=manifest,
+        runtime_launcher=launcher,
+        results_root=tmp_path / "corrected-results",
+    )
+    return args, git_sha, reference_campaign
+
+
+class _FakeCuda:
+    def __init__(self) -> None:
+        self.synchronized = 0
+
+    @staticmethod
+    def is_available() -> bool:
+        return True
+
+    @staticmethod
+    def device_count() -> int:
+        return 1
+
+    @staticmethod
+    def get_device_capability(_index: int) -> tuple[int, int]:
+        return (7, 0)
+
+    @staticmethod
+    def get_arch_list() -> list[str]:
+        return ["sm_70", "sm_80", "sm_90"]
+
+    @staticmethod
+    def get_device_name(_index: int) -> str:
+        return runtime_provenance.EXPECTED_HARDWARE
+
+    def synchronize(self) -> None:
+        self.synchronized += 1
+
+
+def _fake_torch() -> SimpleNamespace:
+    return SimpleNamespace(
+        __version__=runtime_provenance.EXPECTED_TORCH,
+        version=SimpleNamespace(cuda=runtime_provenance.EXPECTED_CUDA),
+        cuda=_FakeCuda(),
+    )
+
+
+def test_corrected_reference_runtime_provenance_matches_cutover_schema(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts.h100.cutover import validate_reference_provenance
+
+    args, git_sha, campaign_id = _reference_runtime_fixture(tmp_path, monkeypatch)
+    inputs = runtime_provenance.load_runtime_inputs(
+        args,
+        repo=tmp_path,
+        required=True,
+    )
+    assert inputs is not None
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "3")
+    monkeypatch.setattr(
+        runtime_provenance,
+        "_query_gpu",
+        lambda index: (
+            runtime_provenance.EXPECTED_HARDWARE,
+            f"GPU-fixture-{index}",
+        ),
+    )
+    ticks = iter((1_000_000_000, 4_600_000_000_000))
+    monkeypatch.setattr(runtime_provenance.time, "monotonic_ns", lambda: next(ticks))
+    torch = _fake_torch()
+    execution = runtime_provenance.begin_reference_execution(
+        inputs,
+        reference_precision="float32",
+        device="cuda",
+        torch_module=torch,
+    )
+    payload = runtime_provenance.finish_reference_execution(
+        execution,
+        device="cuda",
+        torch_module=torch,
+    )
+
+    validate_reference_provenance(
+        payload,
+        expected_git_sha=git_sha,
+        expected_campaign_id=campaign_id,
+    )
+    assert payload["campaign_id"] != args.core_campaign_id
+    assert inputs.core_git_sha == args.core_git_sha
+    assert payload["container_local_gpu"] == 3
+    assert payload["gpu_uuid"] == "GPU-fixture-3"
+    assert payload["reference_precision"] == "float32"
+    assert payload["elapsed_hours"] == payload["gpu_hours"] > 0
+    assert torch.cuda.synchronized == 1
+
+
+def test_reference_provenance_fails_closed_and_smoke_needs_no_receipt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    args, _git_sha, _campaign_id = _reference_runtime_fixture(tmp_path, monkeypatch)
+    assert runtime_provenance.load_runtime_inputs(
+        Namespace(), repo=tmp_path, required=False
+    ) is None
+
+    args.reference_campaign_id = args.core_campaign_id
+    with pytest.raises(RuntimeError, match="new campaign ID"):
+        runtime_provenance.load_runtime_inputs(args, repo=tmp_path, required=True)
+    args.reference_campaign_id = "sprint7f-v100-references-20260804"
+    args.core_git_sha = "not-a-git-sha"
+    with pytest.raises(RuntimeError, match="core-git-sha"):
+        runtime_provenance.load_runtime_inputs(args, repo=tmp_path, required=True)
+
+    args.core_git_sha = "b" * 40
+    args.environment_sha256 = None
+    with pytest.raises(RuntimeError, match="environment-sha256"):
+        runtime_provenance.load_runtime_inputs(args, repo=tmp_path, required=True)
+
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0,1")
+    with pytest.raises(RuntimeError, match="exactly one numeric"):
+        runtime_provenance.probe_gpu_runtime(_fake_torch(), device="cuda")
+
+
+def test_r3_floor_index_sample_is_exact_deterministic_and_spans_candidates() -> None:
+    candidates = [
+        ("early" if index < 1400 else "tail", index)
+        for index in range(1525)
+    ]
+    selected = locateanything_zs.select_evenly_strided(candidates, 200)
+    expected_indices = [(index * 1525) // 200 for index in range(200)]
+
+    assert len(selected) == len(set(selected)) == 200
+    assert [index for _scene, index in selected] == expected_indices
+    assert selected[0] == ("early", 0)
+    assert selected[-1] == ("tail", 1517)
+    assert {scene for scene, _index in selected} == {"early", "tail"}
+    assert max(expected_indices) > 1393  # the retired step-7 slice stopped here
+    assert locateanything_zs.SAMPLE_ALGORITHM_VERSION == "floor-index-v1"
+    assert locateanything_zs.EXPECTED_ELIGIBLE_CANDIDATES == 1525
+
+    candidate_entries = [
+        {"chip": f"scene/chip-{index}.npy", "sidecar_sha256": f"{index:064x}"}
+        for index in range(1525)
+    ]
+    sample_entries = [candidate_entries[index] for index in expected_indices]
+    assert locateanything_zs._manifest_sha256(candidate_entries) != (
+        locateanything_zs._manifest_sha256(sample_entries)
+    )
+    assert locateanything_zs._manifest_sha256(sample_entries) == (
+        locateanything_zs._manifest_sha256(list(sample_entries))
+    )
+
+
+def test_r3_model_payload_identity_rejects_drift_and_symlinks(tmp_path: Path) -> None:
+    root = tmp_path / "model"
+    root.mkdir()
+    (root / "config.json").write_bytes(b"config")
+    nested = root / "code"
+    nested.mkdir()
+    (nested / "model.py").write_bytes(b"model")
+    entries = [
+        {
+            "path": path.relative_to(root).as_posix(),
+            "size": path.stat().st_size,
+            "sha256": locateanything_zs._sha256_file(path),
+        }
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    ]
+    digest = locateanything_zs._manifest_sha256(entries)
+    assert locateanything_zs.validate_model_payload(
+        root,
+        expected_file_count=2,
+        expected_bytes=sum(entry["size"] for entry in entries),
+        expected_sha256=digest,
+    ) == digest
+
+    (nested / "model.py").write_bytes(b"drift")
+    with pytest.raises(RuntimeError, match="identity mismatch"):
+        locateanything_zs.validate_model_payload(
+            root,
+            expected_file_count=2,
+            expected_bytes=sum(entry["size"] for entry in entries),
+            expected_sha256=digest,
+        )
+    (nested / "alias.py").symlink_to(nested / "model.py")
+    with pytest.raises(RuntimeError, match="symlink"):
+        locateanything_zs.validate_model_payload(
+            root,
+            expected_file_count=3,
+            expected_bytes=0,
+            expected_sha256="0" * 64,
+        )
+
+
+def test_reference_result_pair_is_fresh_atomic_and_metrics_last(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts.h100 import contracts
+
+    calls = []
+    real_atomic_write = contracts.atomic_write_json
+
+    def tracked_atomic_write(path, payload):
+        calls.append(Path(path).name)
+        real_atomic_write(path, payload)
+
+    monkeypatch.setattr(contracts, "atomic_write_json", tracked_atomic_write)
+    provenance = {key: "fixture" for key in runtime_provenance.PROVENANCE_KEYS}
+    result_dir = tmp_path / "fresh-reference" / "yolo26-f100"
+    metrics_path, provenance_path = runtime_provenance.publish_reference_result(
+        result_dir,
+        metrics={"result_schema": 2},
+        provenance=provenance,
+    )
+    assert calls == ["runtime_provenance.json", "final_metrics.json"]
+    assert json.loads(metrics_path.read_text()) == {"result_schema": 2}
+    assert json.loads(provenance_path.read_text()) == provenance
+    assert metrics_path.stat().st_mode & 0o777 == 0o444
+    assert provenance_path.stat().st_mode & 0o777 == 0o444
+    assert not list(result_dir.glob(".*.tmp"))
+    with pytest.raises(RuntimeError, match="fresh campaign result"):
+        runtime_provenance.publish_reference_result(
+            result_dir,
+            metrics={"result_schema": 2},
+            provenance=provenance,
+        )
+
+
+def test_reference_entrypoints_bind_precision_and_exclude_smoke_provenance() -> None:
+    r2_source = Path(yolo26_ref.__file__).read_text()
+    r3_source = Path(locateanything_zs.__file__).read_text()
+    assert 'reference_precision="float32"' in r2_source
+    assert '"--weights"' in r2_source and "weights = args.weights" in r2_source
+    assert 'reference_precision="bfloat16"' in r3_source
+    assert "required=not bool(args.smoke)" in r3_source
+    assert "if not args.smoke:" in r3_source
+    assert "publish_reference_result(" in r2_source
+    assert "publish_reference_result(" in r3_source

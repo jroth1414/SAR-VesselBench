@@ -259,6 +259,165 @@ def audit_ground_truth_dataset(
     }
 
 
+def audit_ground_truth_scope(
+    *,
+    train_csv: str | Path,
+    splits_json: str | Path,
+    scope: str,
+    expected_counts: Mapping[str, Mapping[str, int]] = EXPECTED_SCOPE_COUNTS,
+) -> dict[str, int]:
+    """Audit one declared scope without requiring rows from any other scope."""
+
+    if scope not in SCOPE_ORDER:
+        raise ValueError(f"unsupported ground-truth audit scope: {scope!r}")
+    splits = _load_splits(Path(splits_json).read_bytes())
+    scene_ids = sorted(splits["dev"])[:8] if scope == "dev8" else list(splits[scope])
+    wanted = set(scene_ids)
+    counts = _empty_counts()
+    seen: set[str] = set()
+    with Path(train_csv).open("r", encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        missing_columns = REQUIRED_COLUMNS - set(reader.fieldnames or ())
+        if missing_columns:
+            raise ValueError(f"train CSV is missing columns: {sorted(missing_columns)}")
+        for line_number, row in enumerate(reader, start=2):
+            scene_id = row["scene_id"]
+            if scene_id not in wanted:
+                continue
+            try:
+                category = classify_label(row)
+                near_shore = _is_near_shore(row.get("distance_from_shore_km"))
+            except ValueError as error:
+                raise ValueError(
+                    f"invalid train CSV label at line {line_number}: {error}"
+                ) from error
+            counts["rows"] = int(counts["rows"]) + 1
+            counts[category] = int(counts[category]) + 1
+            seen.add(scene_id)
+            if near_shore:
+                near = counts["near_shore"]
+                assert isinstance(near, dict)
+                near["rows"] = int(near["rows"]) + 1
+                near[category] = int(near[category]) + 1
+    missing = sorted(wanted - seen)
+    if missing:
+        raise ValueError(f"scope {scope!r} has scenes with no label rows: {missing}")
+    actual = _flat_counts(scene_count=len(scene_ids), counts=counts)
+    expected = {key: int(value) for key, value in expected_counts[scope].items()}
+    if actual != expected:
+        raise ValueError(f"ground-truth count mismatch for {scope}: {actual} != {expected}")
+    return actual
+
+
+def validate_ground_truth_audit_receipt(
+    receipt: Mapping[str, object],
+    *,
+    splits_json: str | Path,
+    expected_train_csv_sha256: str,
+    expected_train_csv_bytes: int,
+    expected_counts: Mapping[str, Mapping[str, int]] = EXPECTED_SCOPE_COUNTS,
+) -> dict[str, object]:
+    """Validate a source-built audit without opening the held-out label file.
+
+    The runtime amendment carries this metadata receipt after its builder audits
+    the immutable Sprint 7d label member on the source host. Judy binds the
+    receipt back to that member's SHA-256/size and the frozen split bytes; it
+    does not need to parse TEST rows before the all-training cohort exists.
+    """
+
+    splits_path = Path(splits_json)
+    splits_raw = splits_path.read_bytes()
+    splits = _load_splits(splits_raw)
+    if not isinstance(receipt, Mapping):
+        raise ValueError("ground-truth audit receipt must be an object")
+    if set(receipt) != {
+        "audit_schema",
+        "contract",
+        "inputs",
+        "scopes",
+        "expected_counts",
+        "verified",
+    }:
+        raise ValueError("ground-truth audit receipt keys are invalid")
+    if receipt.get("audit_schema") != AUDIT_SCHEMA or receipt.get("verified") is not True:
+        raise ValueError("ground-truth audit receipt is not verified schema 1")
+    expected_contract = {
+        "positive": "is_vessel=true and confidence in {HIGH,MEDIUM}",
+        "background": "is_vessel=false and confidence in {HIGH,MEDIUM}",
+        "ignore": "confidence=LOW",
+        "near_shore_km_lte": NEAR_SHORE_KM,
+        "scene_ids_hash_encoding": "canonical-json-array-utf8-v1",
+    }
+    if receipt.get("contract") != expected_contract:
+        raise ValueError("ground-truth audit contract is invalid")
+    expected_inputs = {
+        "train_csv": {
+            "name": "train.csv",
+            "bytes": expected_train_csv_bytes,
+            "sha256": expected_train_csv_sha256,
+        },
+        "splits_json": {
+            "name": splits_path.name,
+            "bytes": len(splits_raw),
+            "sha256": _sha256(splits_raw),
+        },
+    }
+    if receipt.get("inputs") != expected_inputs:
+        raise ValueError("ground-truth audit input binding is invalid")
+
+    normalized_expected = {
+        name: {key: int(value) for key, value in expected_counts[name].items()}
+        for name in SCOPE_ORDER
+    }
+    if receipt.get("expected_counts") != normalized_expected:
+        raise ValueError("ground-truth audit expected-count binding is invalid")
+    scope_ids = {
+        "dev8": sorted(splits["dev"])[:8],
+        "dev23": list(splits["dev"]),
+        "test": list(splits["test"]),
+    }
+    scopes = receipt.get("scopes")
+    if not isinstance(scopes, Mapping) or set(scopes) != set(SCOPE_ORDER):
+        raise ValueError("ground-truth audit scopes are invalid")
+    for name in SCOPE_ORDER:
+        record = scopes.get(name)
+        if not isinstance(record, Mapping) or set(record) != {
+            "scene_ids",
+            "scene_ids_sha256",
+            "counts",
+            "expected_counts",
+            "matches_expected",
+        }:
+            raise ValueError(f"ground-truth audit scope {name!r} is invalid")
+        counts = record.get("counts")
+        if not isinstance(counts, Mapping) or set(counts) != {
+            "rows",
+            "positive",
+            "background",
+            "ignore",
+            "near_shore",
+        }:
+            raise ValueError(f"ground-truth audit counts for {name!r} are invalid")
+        near = counts.get("near_shore")
+        if not isinstance(near, Mapping) or set(near) != {
+            "rows",
+            "positive",
+            "background",
+            "ignore",
+        }:
+            raise ValueError(f"ground-truth audit near-shore counts for {name!r} are invalid")
+        actual = _flat_counts(scene_count=len(scope_ids[name]), counts=counts)
+        if (
+            record.get("scene_ids") != scope_ids[name]
+            or record.get("scene_ids_sha256") != scene_ids_sha256(scope_ids[name])
+            or record.get("expected_counts") != normalized_expected[name]
+            or record.get("matches_expected") is not True
+            or actual != normalized_expected[name]
+        ):
+            raise ValueError(f"ground-truth audit scope {name!r} binding is invalid")
+    return dict(receipt)
+
+
 def _write_receipt(path: Path, receipt: Mapping[str, object]) -> None:
     if path.exists() or path.is_symlink():
         raise FileExistsError(f"refusing to overwrite audit receipt: {path}")

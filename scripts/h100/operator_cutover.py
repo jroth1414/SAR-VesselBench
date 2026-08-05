@@ -1,8 +1,8 @@
-"""Read-only validation of the operator-authored V100 archive attestation.
+"""Validate the operator-authored V100 diagnostic-isolation attestation.
 
-This module never creates the attestation and contains no process-control
-operations.  It is run once on the submission host and again in the Slurm
-allocation before the H100 controller may launch.
+The owner may keep the V100 campaign running as a non-reportable diagnostic.
+This module never creates the attestation, never controls a process, and only
+permits H100 launch after byte-bound namespace and suppression isolation.
 """
 
 from __future__ import annotations
@@ -18,29 +18,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import Mapping
 
-from scripts.h100.contracts import validate_bound_cutover_forecast
+from scripts.h100.contracts import (
+    V100_DIAGNOSTIC_COMPLETE,
+    validate_bound_cutover_forecast,
+)
 
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 CUTOVER_READY_NAME = "CUTOVER_READY.json"
-V100_RECEIPT_NAME = "V100_CORE_ARCHIVED.json"
-V100_ARCHIVE_MANIFEST_NAME = "V100_CORE_ARCHIVE_MANIFEST.json"
-BASE_PAYLOAD_KEYS = {
-    "package_id",
-    "git_sha",
-    "manifest_sha256",
-    "ready_sha256",
-    "sha256sums_sha256",
-    "repo_bundle_sha256",
-}
-RUNTIME_AMENDMENT_KEYS = {
-    "package_id",
-    "git_sha",
-    "manifest_sha256",
-    "ready_sha256",
-    "sha256sums_sha256",
-    "runtime_bundle_sha256",
-}
-RECEIPT_KEYS = {
+V100_DIAGNOSTIC_ISOLATION_NAME = "V100_DIAGNOSTIC_ISOLATION.json"
+DIAGNOSTIC_ATTESTATION_KEYS = {
     "schema",
     "status",
     "created_utc",
@@ -48,36 +34,24 @@ RECEIPT_KEYS = {
     "cutover_ready_sha256",
     "h100",
     "v100",
-    "archive",
+    "namespaces",
+    "h100_suppression",
+    "post_diagnostic",
 }
-H100_KEYS = {
-    "acceptance_uuid",
-    "git_sha",
-    "venv_sha256",
-    "base_payload",
-    "runtime_amendment",
-}
-V100_KEYS = {
+DIAGNOSTIC_H100_KEYS = {"acceptance_uuid", "git_sha", "campaign_id"}
+DIAGNOSTIC_V100_KEYS = {
     "git_sha",
     "campaign_id",
-    "stopped_utc",
-    "stop_mode",
-    "running_core_processes",
+    "execution_status",
     "diagnostic_status",
 }
-ARCHIVE_KEYS = {"manifest_path", "manifest_sha256"}
-ARCHIVE_MANIFEST_KEYS = {
-    "schema",
-    "status",
-    "scope",
-    "diagnostic_status",
-    "git_sha",
-    "campaign_id",
-    "stopped_utc",
-    "archived_utc",
-    "file_count",
-    "total_bytes",
+DIAGNOSTIC_NAMESPACE_KEYS = {"v100_runs_root", "h100_runs_root", "disjoint"}
+DIAGNOSTIC_SUPPRESSION_KEYS = {
+    "v100_completions_suppress_h100",
+    "v100_checkpoints_resume_h100",
+    "mixed_hardware_curve_allowed",
 }
+DIAGNOSTIC_POST_KEYS = {"safe_stop_archive", "required_before_h100_campaign"}
 
 
 def sha256_file(path: Path, chunk_bytes: int = 8 * 2**20) -> str:
@@ -198,302 +172,364 @@ def _timestamp(value: object, label: str) -> datetime:
     return parsed
 
 
-def expected_transfer_identity(
+
+def _normalized_external_root(value: object, label: str) -> str:
+    if not isinstance(value, str) or not value.startswith("/"):
+        raise RuntimeError(f"{label} must be an absolute POSIX path")
+    normalized = os.path.normpath(value)
+    if normalized != value or normalized == "/" or ".." in Path(value).parts:
+        raise RuntimeError(f"{label} must be normalized and cannot be a broad root")
+    return normalized
+
+
+def _validate_reference_bindings(
+    cutover: Mapping[str, object],
     *,
-    package_id: str,
-    git_sha: str,
-    manifest_sha256: str,
-    ready_sha256: str,
-    sha256sums_sha256: str,
-    bundle_key: str,
-    bundle_sha256: str,
-) -> dict[str, str]:
-    identity = {
-        "package_id": package_id,
-        "git_sha": git_sha,
-        "manifest_sha256": manifest_sha256,
-        "ready_sha256": ready_sha256,
-        "sha256sums_sha256": sha256sums_sha256,
-        bundle_key: bundle_sha256,
+    expected_reference_git_sha: str,
+    expected_reference_campaign_id: str,
+    expected_v100_core_git_sha: str,
+    expected_v100_core_campaign_id: str,
+) -> None:
+    campaign_record = cutover.get("reference_campaign")
+    campaign = (
+        campaign_record.get("manifest")
+        if isinstance(campaign_record, Mapping)
+        else None
+    )
+    manifest_keys = {
+        "schema",
+        "campaign_role",
+        "campaign_id",
+        "core_campaign_id",
+        "core_git_sha",
+        "git_sha",
+        "environment_sha256",
+        "environment_lock_sha256",
+        "runtime_launcher_sha256",
     }
-    if not re.fullmatch(r"[0-9a-f]{40}", git_sha):
-        raise RuntimeError("operator cutover transfer git SHA must be full 40-hex")
-    if any(
-        not HEX64.fullmatch(value)
-        for key, value in identity.items()
-        if key not in {"package_id", "git_sha"}
+    expected_identity = {
+        "schema": 1,
+        "campaign_role": "corrected-v100-references",
+        "campaign_id": expected_reference_campaign_id,
+        "core_campaign_id": expected_v100_core_campaign_id,
+        "core_git_sha": expected_v100_core_git_sha,
+        "git_sha": expected_reference_git_sha,
+    }
+    if (
+        not isinstance(campaign_record, Mapping)
+        or set(campaign_record) != {"manifest", "manifest_sha256"}
+        or not HEX64.fullmatch(str(campaign_record.get("manifest_sha256", "")))
+        or not isinstance(campaign, Mapping)
+        or set(campaign) != manifest_keys
+        or hashlib.sha256(
+            (json.dumps(dict(campaign), indent=2, sort_keys=True) + "\n").encode(
+                "utf-8"
+            )
+        ).hexdigest()
+        != campaign_record.get("manifest_sha256")
+        or any(campaign.get(key) != value for key, value in expected_identity.items())
+        or any(
+            not HEX64.fullmatch(str(campaign.get(key, "")))
+            for key in (
+                "environment_sha256",
+                "environment_lock_sha256",
+                "runtime_launcher_sha256",
+            )
+        )
     ):
-        raise RuntimeError("operator cutover transfer bindings require SHA-256")
-    return identity
+        raise RuntimeError("CUTOVER_READY reference campaign binding is invalid")
+    expected_hashes = {
+        "environment_sha256": campaign["environment_sha256"],
+        "environment_lock_sha256": campaign["environment_lock_sha256"],
+        "campaign_manifest_sha256": campaign_record["manifest_sha256"],
+        "runtime_launcher_sha256": campaign["runtime_launcher_sha256"],
+    }
+    references = cutover.get("references")
+    if not isinstance(references, Mapping) or set(references) != {"r2", "r3"}:
+        raise RuntimeError("CUTOVER_READY reference bindings are absent")
+    for name, record in references.items():
+        if not isinstance(record, Mapping):
+            raise RuntimeError(f"CUTOVER_READY {name} binding is invalid")
+        provenance = record.get("provenance")
+        if (
+            not isinstance(provenance, Mapping)
+            or provenance.get("git_sha") != expected_reference_git_sha
+            or provenance.get("campaign_id") != expected_reference_campaign_id
+            or any(
+                provenance.get(key) != value
+                for key, value in expected_hashes.items()
+            )
+        ):
+            raise RuntimeError(f"CUTOVER_READY {name} V100 identity mismatch")
+    control = cutover.get("references_control")
+    control_keys = {
+        "package_id", "kind", "direction", "identity_sha256",
+        "producer_git_sha",
+        "manifest_sha256", "ready_sha256", "sha256sums_sha256",
+    }
+    if (
+        not isinstance(control, Mapping)
+        or set(control) != control_keys
+        or control.get("kind") != "references"
+        or control.get("direction") != "v100-to-judy"
+        or not re.fullmatch(r"[0-9a-f]{40}", str(control.get("producer_git_sha", "")))
+        or any(
+            not HEX64.fullmatch(str(control.get(key, "")))
+            for key in (
+                "identity_sha256", "manifest_sha256", "ready_sha256",
+                "sha256sums_sha256",
+            )
+        )
+    ):
+        raise RuntimeError("CUTOVER_READY references control-package binding is invalid")
 
 
-def validate_operator_archive(
+def _validate_package_sha256sums_bindings(
+    cutover: Mapping[str, object],
+    *,
+    expected_base_payload_sha256sums_sha256: str,
+    expected_runtime_amendment_sha256sums_sha256: str,
+) -> None:
+    """Bind operator evidence to the exact accepted base/runtime packages."""
+
+    acceptance = cutover.get("acceptance")
+    base_payload = (
+        acceptance.get("base_payload")
+        if isinstance(acceptance, Mapping)
+        else None
+    )
+    runtime_amendment = (
+        acceptance.get("runtime_amendment")
+        if isinstance(acceptance, Mapping)
+        else None
+    )
+    for value, label in (
+        (
+            expected_base_payload_sha256sums_sha256,
+            "base-payload SHA256SUMS",
+        ),
+        (
+            expected_runtime_amendment_sha256sums_sha256,
+            "runtime-amendment SHA256SUMS",
+        ),
+    ):
+        if HEX64.fullmatch(value) is None:
+            raise RuntimeError(f"expected {label} digest is not 64-hex")
+    if (
+        not isinstance(base_payload, Mapping)
+        or base_payload.get("sha256sums_sha256")
+        != expected_base_payload_sha256sums_sha256
+    ):
+        raise RuntimeError("CUTOVER_READY base-payload SHA256SUMS binding mismatch")
+    if (
+        not isinstance(runtime_amendment, Mapping)
+        or runtime_amendment.get("sha256sums_sha256")
+        != expected_runtime_amendment_sha256sums_sha256
+    ):
+        raise RuntimeError(
+            "CUTOVER_READY runtime-amendment SHA256SUMS binding mismatch"
+        )
+
+
+def validate_diagnostic_isolation(
     *,
     cutover_ready: Path,
     cutover_ready_sha256: str,
-    receipt: Path,
-    receipt_sha256: str,
-    archive_manifest: Path,
-    archive_manifest_sha256: str,
-    bound_archive_manifest: Path | None = None,
+    attestation: Path,
+    attestation_sha256: str,
     expected_h100_git_sha: str,
-    expected_venv_sha256: str,
-    expected_base_payload: Mapping[str, str],
-    expected_runtime_amendment: Mapping[str, str],
+    expected_h100_campaign_id: str,
+    expected_h100_runs_root: str,
     expected_reference_git_sha: str,
     expected_reference_campaign_id: str,
-) -> dict:
-    """Validate chronology, hashes, and all H100/V100 identity bindings."""
+    expected_v100_core_git_sha: str,
+    expected_v100_core_campaign_id: str,
+) -> dict[str, object]:
+    """Validate the human decision to keep V100 running only diagnostically."""
 
     for path, label in (
         (cutover_ready, "CUTOVER_READY"),
-        (receipt, "V100_CORE_ARCHIVED"),
-        (archive_manifest, "V100 archive manifest"),
+        (attestation, "V100_DIAGNOSTIC_ISOLATION"),
     ):
         _require_regular_nonsymlink(path, label)
-    bound_archive_manifest = bound_archive_manifest or archive_manifest
-    if not bound_archive_manifest.is_absolute():
-        raise RuntimeError("bound V100 archive manifest path must be absolute")
     for digest, label in (
         (cutover_ready_sha256, "CUTOVER_READY"),
-        (receipt_sha256, "V100_CORE_ARCHIVED"),
-        (archive_manifest_sha256, "V100 archive manifest"),
+        (attestation_sha256, "V100_DIAGNOSTIC_ISOLATION"),
     ):
-        if not HEX64.fullmatch(digest):
+        if HEX64.fullmatch(digest) is None:
             raise RuntimeError(f"{label} expected SHA-256 is not 64-hex")
     if sha256_file(cutover_ready) != cutover_ready_sha256:
         raise RuntimeError("CUTOVER_READY SHA-256 mismatch")
-    if sha256_file(receipt) != receipt_sha256:
-        raise RuntimeError("V100_CORE_ARCHIVED SHA-256 mismatch")
-    if sha256_file(archive_manifest) != archive_manifest_sha256:
-        raise RuntimeError("V100 archive manifest SHA-256 mismatch")
+    if sha256_file(attestation) != attestation_sha256:
+        raise RuntimeError("V100_DIAGNOSTIC_ISOLATION SHA-256 mismatch")
 
     cutover = _json_object(cutover_ready, "CUTOVER_READY receipt")
-    attestation = _json_object(receipt, "V100_CORE_ARCHIVED receipt")
-    archive_payload = _json_object(archive_manifest, "V100 archive manifest")
+    isolated = _json_object(attestation, "V100_DIAGNOSTIC_ISOLATION attestation")
     if cutover.get("schema") != 2 or cutover.get("status") != "cutover-ready":
         raise RuntimeError("CUTOVER_READY schema/status is invalid")
+    if cutover.get("h100_campaign_id") != expected_h100_campaign_id:
+        raise RuntimeError("CUTOVER_READY H100 campaign identity mismatch")
     if cutover.get("v100_action") != (
         "none; this guard never stops or signals V100 processes"
     ):
-        raise RuntimeError("CUTOVER_READY does not preserve the no-V100-action boundary")
-    validate_bound_cutover_forecast(cutover)
+        raise RuntimeError("CUTOVER_READY crosses the no-process-action boundary")
+    cutover_forecast = validate_bound_cutover_forecast(cutover)
     acceptance = cutover.get("acceptance")
     if not isinstance(acceptance, Mapping):
-        raise RuntimeError("CUTOVER_READY lacks bound H100 acceptance")
+        raise RuntimeError("CUTOVER_READY acceptance binding is absent")
     source = acceptance.get("source")
-    venv = acceptance.get("venv")
-    base_payload = acceptance.get("base_payload")
-    runtime_amendment = acceptance.get("runtime_amendment")
-    if not isinstance(source, Mapping) or not isinstance(venv, Mapping):
-        raise RuntimeError("CUTOVER_READY source/venv bindings are malformed")
     if (
-        not isinstance(base_payload, Mapping)
-        or set(base_payload) != BASE_PAYLOAD_KEYS
-        or dict(base_payload) != dict(expected_base_payload)
+        not isinstance(source, Mapping)
+        or source.get("git_sha") != expected_h100_git_sha
+        or not str(acceptance.get("uuid", "")).strip()
     ):
-        raise RuntimeError("CUTOVER_READY base-payload bindings mismatch")
-    if (
-        not isinstance(runtime_amendment, Mapping)
-        or set(runtime_amendment) != RUNTIME_AMENDMENT_KEYS
-        or dict(runtime_amendment) != dict(expected_runtime_amendment)
-    ):
-        raise RuntimeError("CUTOVER_READY runtime-amendment bindings mismatch")
-    h100_expected = {
-        "acceptance_uuid": acceptance.get("uuid"),
-        "git_sha": source.get("git_sha"),
-        "venv_sha256": venv.get("sha256"),
-        "base_payload": dict(expected_base_payload),
-        "runtime_amendment": dict(expected_runtime_amendment),
-    }
-    if h100_expected["git_sha"] != expected_h100_git_sha:
-        raise RuntimeError("CUTOVER_READY H100 git binding mismatch")
-    if h100_expected["venv_sha256"] != expected_venv_sha256:
-        raise RuntimeError("CUTOVER_READY native-venv binding mismatch")
-    if not str(h100_expected["acceptance_uuid"] or ""):
-        raise RuntimeError("CUTOVER_READY acceptance UUID is absent")
-
-    references = cutover.get("references")
-    if not isinstance(references, Mapping):
-        raise RuntimeError("CUTOVER_READY reference provenance is absent")
-    for name in ("r2", "r3"):
-        record = references.get(name)
-        if not isinstance(record, Mapping) or set(record) != {
-            "metrics",
-            "metrics_sha256",
-            "provenance",
-            "provenance_sha256",
-        }:
-            raise RuntimeError(f"CUTOVER_READY {name} result binding is absent")
-        if not HEX64.fullmatch(str(record.get("metrics_sha256", ""))) or not HEX64.fullmatch(
-            str(record.get("provenance_sha256", ""))
-        ):
-            raise RuntimeError(f"CUTOVER_READY {name} result hashes are invalid")
-        provenance = record.get("provenance")
-        if not isinstance(provenance, Mapping):
-            raise RuntimeError(f"CUTOVER_READY {name} provenance is absent")
-        if provenance.get("git_sha") != expected_reference_git_sha:
-            raise RuntimeError(f"CUTOVER_READY {name} reference git mismatch")
-        if provenance.get("campaign_id") != expected_reference_campaign_id:
-            raise RuntimeError(f"CUTOVER_READY {name} campaign mismatch")
-
-    if set(attestation) != RECEIPT_KEYS:
-        raise RuntimeError("V100_CORE_ARCHIVED top-level keys do not match the schema")
-    if attestation.get("schema") != 2:
-        raise RuntimeError("V100_CORE_ARCHIVED schema is unsupported")
-    if attestation.get("status") != "v100-core-archived":
-        raise RuntimeError("V100_CORE_ARCHIVED status is invalid")
-    if attestation.get("attestation") != "external-human-operator":
-        raise RuntimeError("V100 archive receipt is not an operator attestation")
-    if attestation.get("cutover_ready_sha256") != cutover_ready_sha256:
-        raise RuntimeError("V100 archive receipt does not bind CUTOVER_READY")
-    h100 = attestation.get("h100")
-    if not isinstance(h100, Mapping) or set(h100) != H100_KEYS:
-        raise RuntimeError("V100 archive receipt H100 keys do not match the schema")
-    if dict(h100) != h100_expected:
-        raise RuntimeError("V100 archive receipt H100 bindings mismatch")
-
-    v100 = attestation.get("v100")
-    if not isinstance(v100, Mapping):
-        raise RuntimeError("V100 archive receipt lacks V100 state")
-    if set(v100) != V100_KEYS:
-        raise RuntimeError("V100 archive receipt V100 keys do not match the schema")
-    expected_v100 = {
-        "git_sha": expected_reference_git_sha,
-        "campaign_id": expected_reference_campaign_id,
-        "stop_mode": "graceful",
-        "running_core_processes": 0,
-        "diagnostic_status": "non-reportable-diagnostic",
-    }
-    mismatches = {
-        key: (value, v100.get(key))
-        for key, value in expected_v100.items()
-        if v100.get(key) != value
-    }
-    if type(v100.get("running_core_processes")) is not int:  # bool is not valid
-        mismatches["running_core_processes.type"] = (
-            "integer",
-            type(v100.get("running_core_processes")).__name__,
-        )
-    if mismatches:
-        raise RuntimeError(f"V100 archive state mismatch: {mismatches}")
-
-    cutover_time = _timestamp(cutover.get("created_utc"), "CUTOVER_READY.created_utc")
-    stopped_time = _timestamp(v100.get("stopped_utc"), "v100.stopped_utc")
-    attested_time = _timestamp(
-        attestation.get("created_utc"), "V100_CORE_ARCHIVED.created_utc"
-    )
-    if stopped_time <= cutover_time:
-        raise RuntimeError("V100 core stop must occur after CUTOVER_READY")
-    if attested_time < stopped_time:
-        raise RuntimeError("operator attestation predates the V100 core stop")
-
-    archive = attestation.get("archive")
-    if not isinstance(archive, Mapping):
-        raise RuntimeError("V100 archive receipt lacks archive evidence")
-    if set(archive) != ARCHIVE_KEYS:
-        raise RuntimeError("V100 archive receipt archive keys do not match the schema")
-    if archive.get("manifest_path") != str(bound_archive_manifest):
-        raise RuntimeError("V100 archive manifest path binding mismatch")
-    if archive.get("manifest_sha256") != archive_manifest_sha256:
-        raise RuntimeError("V100 archive manifest receipt SHA-256 mismatch")
-    allowed_manifest_keys = (ARCHIVE_MANIFEST_KEYS, ARCHIVE_MANIFEST_KEYS | {"empty_reason"})
-    if set(archive_payload) not in allowed_manifest_keys:
-        raise RuntimeError("V100 archive manifest keys do not match the schema")
-    manifest_expected = {
-        "schema": 1,
-        "status": "v100-core-diagnostics-archived",
-        "scope": "v100-core-diagnostics",
-        "diagnostic_status": "non-reportable-diagnostic",
-        "git_sha": expected_reference_git_sha,
-        "campaign_id": expected_reference_campaign_id,
-    }
-    manifest_mismatches = {
-        key: (value, archive_payload.get(key))
-        for key, value in manifest_expected.items()
-        if archive_payload.get(key) != value
-    }
-    if manifest_mismatches:
+        raise RuntimeError("CUTOVER_READY H100 source/acceptance identity mismatch")
+    if "evaluation_ground_truth" not in acceptance:
         raise RuntimeError(
-            f"V100 archive manifest identity/status mismatch: {manifest_mismatches}"
+            "CUTOVER_READY does not preserve the evaluation-ground-truth gate"
         )
-    manifest_stopped = _timestamp(
-        archive_payload.get("stopped_utc"), "archive_manifest.stopped_utc"
+    _validate_reference_bindings(
+        cutover,
+        expected_reference_git_sha=expected_reference_git_sha,
+        expected_reference_campaign_id=expected_reference_campaign_id,
+        expected_v100_core_git_sha=expected_v100_core_git_sha,
+        expected_v100_core_campaign_id=expected_v100_core_campaign_id,
     )
-    archived_time = _timestamp(
-        archive_payload.get("archived_utc"), "archive_manifest.archived_utc"
+
+    if set(isolated) != DIAGNOSTIC_ATTESTATION_KEYS:
+        raise RuntimeError("diagnostic-isolation top-level keys do not match schema")
+    if (
+        isolated.get("schema") != 1
+        or isolated.get("status") != "v100-diagnostic-isolated"
+        or isolated.get("attestation") != "external-human-operator"
+        or isolated.get("cutover_ready_sha256") != cutover_ready_sha256
+    ):
+        raise RuntimeError("diagnostic-isolation identity/status is invalid")
+
+    h100 = isolated.get("h100")
+    expected_h100 = {
+        "acceptance_uuid": acceptance["uuid"],
+        "git_sha": expected_h100_git_sha,
+        "campaign_id": expected_h100_campaign_id,
+    }
+    if not isinstance(h100, Mapping) or set(h100) != DIAGNOSTIC_H100_KEYS:
+        raise RuntimeError("diagnostic-isolation H100 keys do not match schema")
+    if dict(h100) != expected_h100:
+        raise RuntimeError("diagnostic-isolation H100 identity mismatch")
+
+    v100 = isolated.get("v100")
+    expected_execution_status = str(cutover_forecast["v100_diagnostic_status"])
+    expected_v100 = {
+        "git_sha": expected_v100_core_git_sha,
+        "campaign_id": expected_v100_core_campaign_id,
+        "execution_status": expected_execution_status,
+        "diagnostic_status": "non-reportable-diagnostic",
+    }
+    if not isinstance(v100, Mapping) or set(v100) != DIAGNOSTIC_V100_KEYS:
+        raise RuntimeError("diagnostic-isolation V100 keys do not match schema")
+    if dict(v100) != expected_v100:
+        raise RuntimeError("diagnostic-isolation V100 identity/disposition mismatch")
+    if (
+        expected_execution_status == V100_DIAGNOSTIC_COMPLETE
+        and cutover_forecast["current_remaining_v100_wall_hours"] != 0.0
+    ):
+        raise RuntimeError("completed V100 diagnostic has nonzero remaining hours")
+
+    namespaces = isolated.get("namespaces")
+    if (
+        not isinstance(namespaces, Mapping)
+        or set(namespaces) != DIAGNOSTIC_NAMESPACE_KEYS
+        or namespaces.get("disjoint") is not True
+    ):
+        raise RuntimeError("diagnostic-isolation namespace evidence is invalid")
+    v100_root = _normalized_external_root(
+        namespaces.get("v100_runs_root"), "V100 runs root"
     )
-    if manifest_stopped != stopped_time:
-        raise RuntimeError("archive manifest stopped_utc differs from the attestation")
-    if archived_time < stopped_time or attested_time < archived_time:
-        raise RuntimeError("V100 archive/attestation timestamps are out of order")
-    file_count = archive_payload.get("file_count")
-    total_bytes = archive_payload.get("total_bytes")
-    if type(file_count) is not int or type(total_bytes) is not int:
-        raise RuntimeError("V100 archive counts must be integers")
-    if file_count > 0 and total_bytes > 0:
-        if "empty_reason" in archive_payload:
-            raise RuntimeError("non-empty V100 archive cannot declare empty_reason")
-    elif file_count == 0 and total_bytes == 0:
-        if not str(archive_payload.get("empty_reason", "")).strip():
-            raise RuntimeError("empty V100 archive requires an explicit reason")
-    else:
-        raise RuntimeError("V100 archive file_count/total_bytes must both be positive or zero")
+    h100_root = _normalized_external_root(
+        namespaces.get("h100_runs_root"), "H100 runs root"
+    )
+    actual_h100_root = _normalized_external_root(
+        expected_h100_runs_root, "expected H100 runs root"
+    )
+    if h100_root != actual_h100_root:
+        raise RuntimeError(
+            "diagnostic-isolation H100 runs root differs from the canonical "
+            "Judy H100_RUNS_ROOT"
+        )
+    common = os.path.commonpath((v100_root, h100_root))
+    if v100_root == h100_root or common in {v100_root, h100_root}:
+        raise RuntimeError("V100 and H100 run namespaces overlap")
+
+    suppression = isolated.get("h100_suppression")
+    expected_suppression = {
+        "v100_completions_suppress_h100": False,
+        "v100_checkpoints_resume_h100": False,
+        "mixed_hardware_curve_allowed": False,
+    }
+    if (
+        not isinstance(suppression, Mapping)
+        or set(suppression) != DIAGNOSTIC_SUPPRESSION_KEYS
+        or dict(suppression) != expected_suppression
+    ):
+        raise RuntimeError("V100 state could suppress, resume, or mix with H100")
+
+    post = isolated.get("post_diagnostic")
+    expected_post = {
+        "safe_stop_archive": "optional-after-diagnostic",
+        "required_before_h100_campaign": False,
+    }
+    if (
+        not isinstance(post, Mapping)
+        or set(post) != DIAGNOSTIC_POST_KEYS
+        or dict(post) != expected_post
+    ):
+        raise RuntimeError("post-diagnostic stop/archive disposition is invalid")
+    cutover_time = _timestamp(cutover.get("created_utc"), "CUTOVER_READY.created_utc")
+    attested_time = _timestamp(
+        isolated.get("created_utc"), "V100_DIAGNOSTIC_ISOLATION.created_utc"
+    )
+    if attested_time < cutover_time:
+        raise RuntimeError("diagnostic-isolation attestation predates CUTOVER_READY")
     return {
-        "status": "operator-cutover-validated",
+        "status": "operator-diagnostic-isolation-validated",
         "cutover_ready_sha256": cutover_ready_sha256,
-        "v100_core_archived_sha256": receipt_sha256,
-        "archive_manifest_sha256": archive_manifest_sha256,
-        "attestation": attestation,
-        "archive_manifest": archive_payload,
+        "v100_diagnostic_isolation_sha256": attestation_sha256,
+        "attestation": isolated,
     }
 
 
-def persist_operator_evidence(
+def persist_diagnostic_isolation_evidence(
     *,
     meta_root: Path,
     cutover_ready: Path,
     cutover_ready_sha256: str,
-    receipt: Path,
-    receipt_sha256: str,
-    archive_manifest: Path,
-    archive_manifest_sha256: str,
+    attestation: Path,
+    attestation_sha256: str,
 ) -> dict[str, dict[str, str]]:
-    """Persist validated operator evidence at stable campaign paths."""
+    """Install byte-identical, read-only evidence at canonical H100 paths."""
 
-    meta_root = meta_root.absolute()
-    if meta_root.is_symlink():
+    root = meta_root.absolute()
+    if root.is_symlink():
         raise RuntimeError("H100 metadata root cannot be a symlink")
-    expected_cutover = meta_root / CUTOVER_READY_NAME
-    if cutover_ready != expected_cutover:
-        raise RuntimeError(f"CUTOVER_READY must be the canonical {expected_cutover}")
-    _require_regular_nonsymlink(cutover_ready, "CUTOVER_READY")
-    if sha256_file(cutover_ready) != cutover_ready_sha256:
-        raise RuntimeError("CUTOVER_READY changed before evidence persistence")
-    cutover_ready.chmod(0o444)
-
-    canonical_manifest = persist_immutable_copy(
-        archive_manifest,
-        meta_root / V100_ARCHIVE_MANIFEST_NAME,
-        expected_sha256=archive_manifest_sha256,
+    root.mkdir(parents=True, exist_ok=True)
+    canonical_cutover = persist_immutable_copy(
+        cutover_ready,
+        root / CUTOVER_READY_NAME,
+        expected_sha256=cutover_ready_sha256,
     )
-    canonical_receipt = persist_immutable_copy(
-        receipt,
-        meta_root / V100_RECEIPT_NAME,
-        expected_sha256=receipt_sha256,
+    canonical_attestation = persist_immutable_copy(
+        attestation,
+        root / V100_DIAGNOSTIC_ISOLATION_NAME,
+        expected_sha256=attestation_sha256,
     )
     return {
         "cutover_ready": {
-            "path": str(expected_cutover),
+            "path": str(canonical_cutover),
             "sha256": cutover_ready_sha256,
         },
-        "v100_core_archived": {
-            "path": str(canonical_receipt),
-            "sha256": receipt_sha256,
-        },
-        "archive_manifest": {
-            "path": str(canonical_manifest),
-            "sha256": archive_manifest_sha256,
+        "v100_diagnostic_isolation": {
+            "path": str(canonical_attestation),
+            "sha256": attestation_sha256,
         },
     }
 
@@ -502,98 +538,127 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cutover-ready", type=Path, required=True)
     parser.add_argument("--cutover-ready-sha256", required=True)
-    parser.add_argument("--receipt", type=Path, required=True)
-    parser.add_argument("--receipt-sha256", required=True)
-    parser.add_argument("--archive-manifest", type=Path, required=True)
-    parser.add_argument("--archive-manifest-sha256", required=True)
-    parser.add_argument("--bound-archive-manifest", type=Path)
+    parser.add_argument(
+        "--diagnostic-isolation-package-root", type=Path, required=True
+    )
+    parser.add_argument(
+        "--expected-diagnostic-isolation-package-id", required=True
+    )
+    parser.add_argument(
+        "--expected-diagnostic-isolation-producer-git-sha", required=True
+    )
+    parser.add_argument(
+        "--expected-diagnostic-isolation-identity-sha256", required=True
+    )
+    parser.add_argument(
+        "--expected-diagnostic-isolation-manifest-sha256", required=True
+    )
+    parser.add_argument(
+        "--expected-diagnostic-isolation-ready-sha256", required=True
+    )
+    parser.add_argument(
+        "--expected-diagnostic-isolation-sha256sums-sha256", required=True
+    )
     parser.add_argument("--persist-meta-root", type=Path)
     parser.add_argument("--expected-h100-git-sha", required=True)
-    parser.add_argument("--expected-venv-sha256", required=True)
-    parser.add_argument("--expected-base-payload-package-id", required=True)
-    parser.add_argument("--expected-base-payload-git-sha", required=True)
-    parser.add_argument("--expected-base-payload-manifest-sha256", required=True)
-    parser.add_argument("--expected-base-payload-ready-sha256", required=True)
-    parser.add_argument("--expected-base-payload-sha256sums-sha256", required=True)
-    parser.add_argument("--expected-base-payload-repo-bundle-sha256", required=True)
-    parser.add_argument("--expected-runtime-amendment-package-id", required=True)
-    parser.add_argument("--expected-runtime-amendment-git-sha", required=True)
-    parser.add_argument("--expected-runtime-amendment-manifest-sha256", required=True)
-    parser.add_argument("--expected-runtime-amendment-ready-sha256", required=True)
-    parser.add_argument("--expected-runtime-amendment-sha256sums-sha256", required=True)
-    parser.add_argument("--expected-runtime-amendment-bundle-sha256", required=True)
+    parser.add_argument("--expected-h100-campaign-id", required=True)
+    parser.add_argument("--expected-h100-runs-root", required=True)
+    parser.add_argument(
+        "--expected-base-payload-sha256sums-sha256", required=True
+    )
+    parser.add_argument(
+        "--expected-runtime-amendment-sha256sums-sha256", required=True
+    )
     parser.add_argument("--expected-reference-git-sha", required=True)
     parser.add_argument("--expected-reference-campaign-id", required=True)
+    parser.add_argument("--expected-v100-core-git-sha", required=True)
+    parser.add_argument("--expected-v100-core-campaign-id", required=True)
     args = parser.parse_args()
-    base_payload = expected_transfer_identity(
-        package_id=args.expected_base_payload_package_id,
-        git_sha=args.expected_base_payload_git_sha,
-        manifest_sha256=args.expected_base_payload_manifest_sha256,
-        ready_sha256=args.expected_base_payload_ready_sha256,
-        sha256sums_sha256=args.expected_base_payload_sha256sums_sha256,
-        bundle_key="repo_bundle_sha256",
-        bundle_sha256=args.expected_base_payload_repo_bundle_sha256,
+
+    from scripts.handoff.control import control_package_identity
+
+    package_root = args.diagnostic_isolation_package_root.absolute()
+    control_bindings = {
+        "cutover_ready_sha256": args.cutover_ready_sha256,
+        "h100_campaign_id": args.expected_h100_campaign_id,
+        "v100_core_campaign_id": args.expected_v100_core_campaign_id,
+        "v100_core_git_sha": args.expected_v100_core_git_sha,
+    }
+    expected_control_identity = {
+        "package_id": args.expected_diagnostic_isolation_package_id,
+        "kind": "diagnostic-isolation",
+        "direction": "v100-to-judy",
+        "producer_git_sha": (
+            args.expected_diagnostic_isolation_producer_git_sha
+        ),
+        "identity_sha256": args.expected_diagnostic_isolation_identity_sha256,
+        "manifest_sha256": args.expected_diagnostic_isolation_manifest_sha256,
+        "ready_sha256": args.expected_diagnostic_isolation_ready_sha256,
+        "sha256sums_sha256": (
+            args.expected_diagnostic_isolation_sha256sums_sha256
+        ),
+    }
+    control_identity = control_package_identity(
+        package_root,
+        expected_kind="diagnostic-isolation",
+        expected_bindings=control_bindings,
+        expected_identity=expected_control_identity,
     )
-    runtime_amendment = expected_transfer_identity(
-        package_id=args.expected_runtime_amendment_package_id,
-        git_sha=args.expected_runtime_amendment_git_sha,
-        manifest_sha256=args.expected_runtime_amendment_manifest_sha256,
-        ready_sha256=args.expected_runtime_amendment_ready_sha256,
-        sha256sums_sha256=args.expected_runtime_amendment_sha256sums_sha256,
-        bundle_key="runtime_bundle_sha256",
-        bundle_sha256=args.expected_runtime_amendment_bundle_sha256,
-    )
+    if (
+        args.expected_diagnostic_isolation_producer_git_sha
+        != args.expected_h100_git_sha
+    ):
+        raise RuntimeError(
+            "diagnostic-isolation producer Git SHA differs from the H100 source SHA"
+        )
+    attestation = package_root / V100_DIAGNOSTIC_ISOLATION_NAME
+    attestation_sha256 = sha256_file(attestation)
     cutover_ready = args.cutover_ready.absolute()
-    receipt = args.receipt.absolute()
-    archive_manifest = args.archive_manifest.absolute()
-    bound_archive_manifest = (
-        args.bound_archive_manifest.absolute()
-        if args.bound_archive_manifest is not None
-        else archive_manifest
-    )
-    payload = validate_operator_archive(
+    payload = validate_diagnostic_isolation(
         cutover_ready=cutover_ready,
         cutover_ready_sha256=args.cutover_ready_sha256,
-        receipt=receipt,
-        receipt_sha256=args.receipt_sha256,
-        archive_manifest=archive_manifest,
-        archive_manifest_sha256=args.archive_manifest_sha256,
-        bound_archive_manifest=bound_archive_manifest,
+        attestation=attestation,
+        attestation_sha256=attestation_sha256,
         expected_h100_git_sha=args.expected_h100_git_sha,
-        expected_venv_sha256=args.expected_venv_sha256,
-        expected_base_payload=base_payload,
-        expected_runtime_amendment=runtime_amendment,
+        expected_h100_campaign_id=args.expected_h100_campaign_id,
+        expected_h100_runs_root=args.expected_h100_runs_root,
         expected_reference_git_sha=args.expected_reference_git_sha,
         expected_reference_campaign_id=args.expected_reference_campaign_id,
+        expected_v100_core_git_sha=args.expected_v100_core_git_sha,
+        expected_v100_core_campaign_id=args.expected_v100_core_campaign_id,
     )
+    _validate_package_sha256sums_bindings(
+        _json_object(cutover_ready, "CUTOVER_READY receipt"),
+        expected_base_payload_sha256sums_sha256=(
+            args.expected_base_payload_sha256sums_sha256
+        ),
+        expected_runtime_amendment_sha256sums_sha256=(
+            args.expected_runtime_amendment_sha256sums_sha256
+        ),
+    )
+    payload["control_package"] = control_identity
     if args.persist_meta_root is not None:
-        evidence = persist_operator_evidence(
+        evidence = persist_diagnostic_isolation_evidence(
             meta_root=args.persist_meta_root,
             cutover_ready=cutover_ready,
             cutover_ready_sha256=args.cutover_ready_sha256,
-            receipt=receipt,
-            receipt_sha256=args.receipt_sha256,
-            archive_manifest=archive_manifest,
-            archive_manifest_sha256=args.archive_manifest_sha256,
+            attestation=attestation,
+            attestation_sha256=attestation_sha256,
         )
-        if Path(evidence["archive_manifest"]["path"]) != bound_archive_manifest:
-            raise RuntimeError(
-                "operator receipt must bind the canonical persisted archive manifest"
-            )
-        payload = validate_operator_archive(
+        payload = validate_diagnostic_isolation(
             cutover_ready=Path(evidence["cutover_ready"]["path"]),
             cutover_ready_sha256=args.cutover_ready_sha256,
-            receipt=Path(evidence["v100_core_archived"]["path"]),
-            receipt_sha256=args.receipt_sha256,
-            archive_manifest=Path(evidence["archive_manifest"]["path"]),
-            archive_manifest_sha256=args.archive_manifest_sha256,
+            attestation=Path(evidence["v100_diagnostic_isolation"]["path"]),
+            attestation_sha256=attestation_sha256,
             expected_h100_git_sha=args.expected_h100_git_sha,
-            expected_venv_sha256=args.expected_venv_sha256,
-            expected_base_payload=base_payload,
-            expected_runtime_amendment=runtime_amendment,
+            expected_h100_campaign_id=args.expected_h100_campaign_id,
+            expected_h100_runs_root=args.expected_h100_runs_root,
             expected_reference_git_sha=args.expected_reference_git_sha,
             expected_reference_campaign_id=args.expected_reference_campaign_id,
+            expected_v100_core_git_sha=args.expected_v100_core_git_sha,
+            expected_v100_core_campaign_id=args.expected_v100_core_campaign_id,
         )
+        payload["control_package"] = control_identity
         payload["evidence"] = evidence
     print(json.dumps(payload, indent=2, sort_keys=True))
     return 0

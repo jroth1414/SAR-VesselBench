@@ -31,8 +31,8 @@ grid:
 
 # Phase 4 — the non-optional external references (R2 yolo26-f100, R3 locateanything-zs).
 references:
-	$(PYTHON) -m src.references.yolo26_ref score
-	$(PYTHON) -m src.references.locateanything_zs
+	@test -n "$(REFERENCE_ACTION)" || { echo "Set REFERENCE_ACTION=manifest|r2|r3 and REFERENCE_ARGS='...'" >&2; exit 2; }
+	$(PYTHON) -m scripts.run_corrected_references $(REFERENCE_ACTION) $(REFERENCE_ARGS)
 
 # Phase 6 — the ONCE-ONLY verified-scene eval (ground rule 4). The
 # --i-am-sure flag is deliberately NOT baked in: require CONFIRM=1.

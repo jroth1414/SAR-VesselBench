@@ -24,15 +24,22 @@ augmentation/optimizer defaults; val split = dev-split chips.
 from __future__ import annotations
 
 import argparse
-import datetime as dt
 import hashlib
 import json
-import re
-import subprocess
 from pathlib import Path
 from typing import Mapping, Sequence
 
 import numpy as np
+
+from src.references.runtime_provenance import (
+    ReferenceRuntimeInputs,
+    add_runtime_provenance_arguments,
+    begin_reference_execution,
+    finish_reference_execution,
+    load_runtime_inputs,
+    publish_reference_result,
+    result_directory,
+)
 
 GSD_M = 10.0
 MIN_BOX_PX = 6.0
@@ -53,20 +60,6 @@ def _sha256_file(path: Path, chunk_bytes: int = 8 * 2**20) -> str:
         while block := handle.read(chunk_bytes):
             digest.update(block)
     return digest.hexdigest()
-
-
-def _git_sha() -> str:
-    repo = Path(__file__).resolve().parents[2]
-    value = subprocess.run(
-        ["git", "-c", f"safe.directory={repo}", "rev-parse", "HEAD"],
-        cwd=repo,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-    if re.fullmatch(r"[0-9a-f]{40}", value) is None:
-        raise RuntimeError("reference source did not resolve to a full Git SHA")
-    return value
 
 
 def _metrics_payload(metrics) -> dict[str, int | float]:
@@ -266,6 +259,8 @@ def score(
     weights: Path,
     data_cfg: dict,
     det_cfg: dict,
+    runtime_inputs: ReferenceRuntimeInputs,
+    result_dir: Path,
     device: str = "cuda",
 ) -> dict:
     """Dev-threshold-selected scoring through the SACRED scorer (P4.5).
@@ -274,8 +269,8 @@ def score(
     tile to the same uint8 representation YOLO trained on, takes YOLO box
     CENTERS as candidate points with their confidences, dedups across tile
     overlaps with our distance NMS, selects the F1-max threshold on the DEV
-    scenes (P2.2b), applies it frozen to the TEST scenes, and writes
-    ``runs/yolo26-f100/final_metrics.json``.
+    scenes (P2.2b), applies it frozen to the TEST scenes, and atomically writes
+    fresh corrected-campaign metrics plus provenance.
     """
 
     import pandas as pd
@@ -283,13 +278,17 @@ def score(
     import torch
     from ultralytics import YOLO
 
-    from scripts.h100.contracts import atomic_write_json
-
     from src.eval.decode import DecodedPoint, distance_nms
     from src.eval.infer_scene import GSD_M, ShoreDistance, ground_truth_from_labels
     from src.eval.scorer import PredictionPoint, score_dataset
     from src.eval.threshold import apply_threshold, select_f1_threshold
 
+    execution = begin_reference_execution(
+        runtime_inputs,
+        reference_precision="float32",
+        device=device,
+        torch_module=torch,
+    )
     weights, checkpoint_sha256 = _known_r2_checkpoint(weights)
     model = YOLO(str(weights))
     splits = json.loads(Path(data_cfg["paths"]["splits"]).read_text())["splits"]
@@ -404,12 +403,17 @@ def score(
             f"{observed_counts} != {EXPECTED_GT_COUNTS}"
         )
 
+    provenance = finish_reference_execution(
+        execution,
+        device=device,
+        torch_module=torch,
+    )
     payload = {
         "result_schema": RESULT_SCHEMA,
         "exp_id": "yolo26-f100",
         "reference": "R2",
-        "source_git_sha": _git_sha(),
-        "scored_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+        "source_git_sha": provenance["git_sha"],
+        "scored_at": provenance["finished_utc"],
         "inference_precision": "float32",
         "training_disposition": "preserved-best-pt-rescore-only",
         "checkpoint": {
@@ -438,10 +442,13 @@ def score(
         "test_recall": test_result.aggregate.recall,
         "test_near_shore_f1": test_result.slices["near_shore"].f1,
     }
-    out = Path("runs/yolo26-f100/final_metrics.json")
-    out.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_json(out, payload)
+    out, provenance_path = publish_reference_result(
+        result_dir,
+        metrics=payload,
+        provenance=provenance,
+    )
     print(json.dumps(payload, indent=1))
+    print(f"runtime provenance -> {provenance_path}")
     torch.cuda.empty_cache()
     return payload
 
@@ -454,10 +461,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--config", default="configs/data.yaml")
     parser.add_argument("--out-root", default="data/yolo")
     parser.add_argument("--model", default="yolo26m.pt")
+    parser.add_argument(
+        "--weights",
+        type=Path,
+        default=Path("runs/yolo26-f100/weights/best.pt"),
+        help="preserved R2 best.pt used by the corrected score command",
+    )
     parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--batch", type=int, default=16)
     parser.add_argument("--imgsz", type=int, default=800)
     parser.add_argument("--workers", type=int, default=8)
+    parser.add_argument("--device", default="cuda")
+    add_runtime_provenance_arguments(parser)
     args = parser.parse_args(argv)
 
     config = yaml.safe_load(Path(args.config).read_text())
@@ -482,11 +497,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     else:
         import yaml as _yaml
 
+        repo = Path(__file__).resolve().parents[2]
+        try:
+            runtime_inputs = load_runtime_inputs(args, repo=repo, required=True)
+            corrected_result_dir = result_directory(args, "yolo26-f100")
+        except RuntimeError as exc:
+            parser.error(str(exc))
+        assert runtime_inputs is not None
         det_cfg = _yaml.safe_load(Path("configs/detector.yaml").read_text())
-        weights = Path("runs/yolo26-f100/weights/best.pt")
+        weights = args.weights
         if not weights.exists():
             raise SystemExit(f"{weights} missing — train first")
-        score(weights=weights, data_cfg=config, det_cfg=det_cfg)
+        score(
+            weights=weights,
+            data_cfg=config,
+            det_cfg=det_cfg,
+            runtime_inputs=runtime_inputs,
+            result_dir=corrected_result_dir,
+            device=args.device,
+        )
     return 0
 
 
