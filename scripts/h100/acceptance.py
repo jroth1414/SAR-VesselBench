@@ -38,6 +38,7 @@ from scripts.h100.slurm_smoke import (
 )
 from scripts.h100.source_validation import validate_source_receipt
 from scripts.h100.wheelhouse import validate_base_extraction_receipt
+from src.eval.ground_truth_audit import audit_ground_truth_dataset
 
 WEIGHT_SUBDIRS = (
     "satdino",
@@ -73,6 +74,11 @@ def validate_fresh_acceptance_state(
 ) -> None:
     if ready.exists():
         raise RuntimeError("H100_READY.json already exists; acceptance must be fresh")
+    audit_path = runs_root / ".h100/EVAL_GROUND_TRUTH_VALIDATED.json"
+    if audit_path.exists() or audit_path.is_symlink():
+        raise RuntimeError(
+            "evaluation-ground-truth receipt already exists; acceptance must be fresh"
+        )
     if (
         not math.isfinite(remaining_v100_wall_hours)
         or remaining_v100_wall_hours <= 0
@@ -308,6 +314,13 @@ def run_acceptance(args: argparse.Namespace) -> dict:
         expected_hashes=expected_hashes,
         expected_base_payload=expected_base_payload,
         expected_runtime_amendment=expected_runtime_amendment,
+    )
+    evaluation_ground_truth_path = (
+        runs_root / ".h100/EVAL_GROUND_TRUTH_VALIDATED.json"
+    ).absolute()
+    evaluation_ground_truth = audit_ground_truth_dataset(
+        train_csv=repo / "data/raw/xview3/labels/train.csv",
+        splits_json=repo / "data/splits.json",
     )
     smoke_bindings = make_smoke_bindings(
         git_sha=args.expected_git_sha,
@@ -565,6 +578,18 @@ def run_acceptance(args: argparse.Namespace) -> dict:
         )
     atomic_write_json(meta_root / "throughput_projection.json", projection)
 
+    # Publish the immutable GT audit only after every expensive acceptance gate
+    # has passed; READY remains the final acceptance artifact.
+    if evaluation_ground_truth_path.exists() or evaluation_ground_truth_path.is_symlink():
+        raise RuntimeError("evaluation-ground-truth receipt appeared during acceptance")
+    atomic_write_json(evaluation_ground_truth_path, evaluation_ground_truth)
+    evaluation_ground_truth_path.chmod(0o444)
+    evaluation_ground_truth_binding = {
+        "path": str(evaluation_ground_truth_path),
+        "sha256": sha256_file(evaluation_ground_truth_path),
+        "receipt": evaluation_ground_truth,
+    }
+
     payload = {
         "schema": 2,
         "status": "ready",
@@ -581,6 +606,7 @@ def run_acceptance(args: argparse.Namespace) -> dict:
             "sha256": args.source_validation_sha256,
             "receipt": source_validation,
         },
+        "evaluation_ground_truth": evaluation_ground_truth_binding,
         "strict_fp32": hardware["backend"],
         "hardware": hardware,
         "venv": {

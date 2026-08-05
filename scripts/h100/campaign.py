@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Mapping
 
+import yaml
+
 from scripts.h100.build_venv import EXPECTED_PYTHON_VERSION
 from scripts.h100.contracts import (
     EFFECTIVE_BATCH,
@@ -30,26 +32,136 @@ from scripts.h100.contracts import (
     cutover_acceptance_bindings,
     load_cells,
     sha256_file,
-    validate_completion_marker,
     validate_bound_cutover_forecast,
     validate_gpu_inventory,
 )
+from src.analysis.curves import (
+    GRID_COLUMNS,
+    GRID_COUNT_COLUMNS,
+    training_fraction_counts,
+)
 from scripts.h100.lightning_contract import validate_trainer_contract_evidence
 from scripts.h100.precision import assert_sitecustomize_active
+from scripts.h100.operator_cutover import validate_diagnostic_isolation
 from scripts.h100.source_validation import validate_source_receipt
+from src.eval.ground_truth_audit import audit_ground_truth_dataset
+from src.eval.heldout_contract import (
+    COHORT_FILENAME,
+    TEST_RESULT_FILENAME,
+    create_training_cohort,
+    validate_complete_test_cohort,
+    validate_test_result,
+    validate_training_cohort,
+    validate_training_cohort_cell,
+)
+from src.eval.result_contract import ResultContractError, load_completion_marker
 
 HOST_REQUEUE_EXIT_CODE = 75
-SCORED_FIELDS = {
-    "test_inference_precision",
-    "test_f1",
-    "test_precision",
-    "test_recall",
-    "test_near_shore_f1",
-}
 
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def reconcile_stale_open_attempt(
+    provenance: dict[str, object],
+    *,
+    phase: str,
+    recovered_utc: str,
+) -> bool:
+    """Close one crash-orphaned final attempt before a resumed launch.
+
+    A controller or node crash cannot record a monotonic duration. The
+    conservative, deterministic substitute is the timezone-aware wall interval
+    from the persisted attempt start to the new controller's recovery
+    observation. All earlier attempts must already be complete and the prior
+    accumulated total must match them exactly; ambiguous provenance fails
+    closed.
+    """
+
+    attempts = provenance.get("attempts")
+    if not isinstance(attempts, list) or not attempts:
+        raise RuntimeError("occupied cell provenance has no attempts to reconcile")
+    try:
+        prior_seconds = float(provenance["accumulated_active_seconds"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise RuntimeError("occupied cell active-time accounting is absent") from exc
+    if not math.isfinite(prior_seconds) or prior_seconds < 0:
+        raise RuntimeError("occupied cell active-time accounting is invalid")
+
+    measured = 0.0
+    open_indices: list[int] = []
+    exit_fields = {"exit", "exit_code"}
+    for index, raw in enumerate(attempts):
+        if not isinstance(raw, dict):
+            raise RuntimeError("occupied cell attempt provenance is not mutable JSON")
+        if raw.get("attempt") != index + 1:
+            raise RuntimeError(
+                "occupied cell runtime attempts are not sequentially numbered"
+            )
+        completion_present = {
+            key
+            for key in ("finished_utc", "active_seconds", *exit_fields)
+            if key in raw
+        }
+        if not completion_present:
+            open_indices.append(index)
+            continue
+        if (
+            "finished_utc" not in raw
+            or "active_seconds" not in raw
+            or not exit_fields & set(raw)
+        ):
+            raise RuntimeError("occupied cell has a partially closed runtime attempt")
+        try:
+            active_seconds = float(raw["active_seconds"])
+            finished = datetime.fromisoformat(
+                str(raw["finished_utc"]).replace("Z", "+00:00")
+            )
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError("occupied cell has invalid closed-attempt timing") from exc
+        if (
+            not math.isfinite(active_seconds)
+            or active_seconds <= 0
+            or finished.tzinfo is None
+        ):
+            raise RuntimeError("occupied cell has invalid closed-attempt timing")
+        measured += active_seconds
+    if not math.isclose(prior_seconds, measured, rel_tol=1e-12, abs_tol=1e-9):
+        raise RuntimeError("occupied cell accumulated active time is inconsistent")
+    if not open_indices:
+        return False
+    if open_indices != [len(attempts) - 1]:
+        raise RuntimeError("only the final runtime attempt may be open after a crash")
+
+    current = attempts[-1]
+    if current.get("phase") != phase or provenance.get("phase") != phase:
+        raise RuntimeError("crash-orphaned attempt phase differs from the resumed phase")
+    try:
+        started = datetime.fromisoformat(
+            str(current["started_utc"]).replace("Z", "+00:00")
+        )
+        recovered = datetime.fromisoformat(recovered_utc.replace("Z", "+00:00"))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise RuntimeError("crash-orphaned attempt timestamps are invalid") from exc
+    if started.tzinfo is None or recovered.tzinfo is None:
+        raise RuntimeError("crash-orphaned attempt timestamps require timezones")
+    active_seconds = (
+        recovered.astimezone(timezone.utc) - started.astimezone(timezone.utc)
+    ).total_seconds()
+    if not math.isfinite(active_seconds) or active_seconds <= 0:
+        raise RuntimeError("crash-orphaned attempt recovery interval is not positive")
+    current.update(
+        {
+            "finished_utc": recovered.isoformat(),
+            "exit": "controller-or-node-crash-recovered",
+            "active_seconds": active_seconds,
+            "active_seconds_basis": "started-to-recovery-observation",
+            "recovered_from": "open-attempt-on-controller-start",
+        }
+    )
+    provenance["accumulated_active_seconds"] = prior_seconds + active_seconds
+    return True
 
 
 def promote_hpc_checkpoint(run_dir: Path) -> Path:
@@ -70,6 +182,35 @@ def promote_hpc_checkpoint(run_dir: Path) -> Path:
 
 def marker_for(cell: Cell, runs_root: Path) -> Path:
     return runs_root / cell.exp_id / "final_metrics.json"
+
+
+def test_marker_for(cell: Cell, runs_root: Path) -> Path:
+    return runs_root / cell.exp_id / TEST_RESULT_FILENAME
+
+
+def expected_recipe(
+    cell: Cell, *, git_sha: str, detector_sha256: str
+) -> dict[str, object]:
+    return {
+        "exp_id": cell.exp_id,
+        "git_sha": git_sha,
+        "detector_sha256": detector_sha256,
+        "precision": EXPECTED_PRECISION,
+        "micro_batch": MICRO_BATCH,
+        "gradient_accumulation": GRADIENT_ACCUMULATION,
+        "effective_batch": EFFECTIVE_BATCH,
+    }
+
+
+def load_test_scene_ids(repo: Path) -> tuple[str, ...]:
+    try:
+        payload = json.loads((repo / "data/splits.json").read_text(encoding="utf-8"))
+        scene_ids = tuple(sorted(map(str, payload["splits"]["test"])))
+    except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("frozen TEST scene IDs are absent or malformed") from exc
+    if len(scene_ids) != 16 or len(set(scene_ids)) != 16:
+        raise RuntimeError("frozen TEST split must contain exactly 16 unique scenes")
+    return scene_ids
 
 
 def hardware_class(payload: Mapping[str, object]) -> dict:
@@ -103,9 +244,11 @@ def validate_runtime_provenance(
     acceptance_uuid: str,
     source_validation_sha256: str,
     cutover_ready_sha256: str,
-    v100_core_archived_sha256: str,
+    v100_diagnostic_isolation_sha256: str,
     strict_fp32: Mapping[str, str],
     accepted_hardware_class: Mapping[str, object],
+    evaluation_ground_truth_sha256: str,
+    training_cohort: Mapping[str, str] | None = None,
 ) -> None:
     expected = {
         "schema": 2,
@@ -122,7 +265,7 @@ def validate_runtime_provenance(
         "acceptance_uuid": acceptance_uuid,
         "source_validation_sha256": source_validation_sha256,
         "cutover_ready_sha256": cutover_ready_sha256,
-        "v100_core_archived_sha256": v100_core_archived_sha256,
+        "v100_diagnostic_isolation_sha256": v100_diagnostic_isolation_sha256,
         "strict_fp32": dict(strict_fp32),
         "accepted_hardware_class": dict(accepted_hardware_class),
         "precision": EXPECTED_PRECISION,
@@ -130,6 +273,23 @@ def validate_runtime_provenance(
         "gradient_accumulation": GRADIENT_ACCUMULATION,
         "effective_batch": EFFECTIVE_BATCH,
     }
+    phase = provenance.get("phase")
+    if phase not in {"train", "score-test"}:
+        raise RuntimeError(
+            f"recipe-mismatched runtime provenance for {cell.exp_id}: "
+            f"invalid phase {phase!r}"
+        )
+    if phase == "score-test" and training_cohort is None:
+        raise RuntimeError("score-test runtime provenance lacks cohort expectation")
+    expected.update(
+        {
+            "phase": phase,
+            "training_cohort": (
+                dict(training_cohort or {}) if phase == "score-test" else None
+            ),
+            "evaluation_ground_truth_sha256": evaluation_ground_truth_sha256,
+        }
+    )
     mismatches = {
         key: (value, provenance.get(key))
         for key, value in expected.items()
@@ -153,12 +313,65 @@ def validate_runtime_provenance(
     attempts = provenance.get("attempts")
     if not isinstance(attempts, list) or not attempts:
         mismatches["attempts"] = ("nonempty list", attempts)
-    elif any(not str(item.get("gpu_uuid", "")).strip() for item in attempts):
-        mismatches["attempts.gpu_uuid"] = ("nonempty", attempts)
+    elif any(
+        not isinstance(item, Mapping)
+        or not str(item.get("gpu_uuid", "")).strip()
+        for item in attempts
+    ):
+        mismatches["attempts.gpu_uuid"] = ("nonempty mapped attempts", attempts)
+    elif (
+        any(item.get("phase") not in {"train", "score-test"} for item in attempts)
+        or attempts[-1].get("phase") != provenance.get("phase")
+    ):
+        mismatches["attempts.phase"] = (
+            "valid phases ending at top-level phase",
+            attempts,
+        )
     if not str(provenance.get("gpu_uuid", "")).strip():
         mismatches["gpu_uuid"] = ("nonempty", provenance.get("gpu_uuid"))
     if mismatches:
         raise RuntimeError(f"recipe-mismatched runtime provenance for {cell.exp_id}: {mismatches}")
+
+
+def validate_training_completion(
+    cell: Cell,
+    *,
+    runs_root: Path,
+    git_sha: str,
+    detector_sha256: str,
+    candidate_floor: float,
+    seal: bool = False,
+) -> dict[str, object]:
+    run_dir = runs_root / cell.exp_id
+    marker = marker_for(cell, runs_root)
+    try:
+        payload, _checkpoint = load_completion_marker(
+            marker,
+            candidate_floor=candidate_floor,
+            expected_recipe=expected_recipe(
+                cell,
+                git_sha=git_sha,
+                detector_sha256=detector_sha256,
+            ),
+        )
+    except ResultContractError as exc:
+        raise RuntimeError(
+            f"{cell.exp_id}: invalid schema-2 training completion: {exc}"
+        ) from exc
+    try:
+        validate_trainer_contract_evidence(payload.get("h100_runtime_contract"))
+    except RuntimeError as exc:
+        raise RuntimeError(
+            f"{cell.exp_id}: invalid H100 trainer evidence: {exc}"
+        ) from exc
+    last = run_dir / "checkpoints/last.ckpt"
+    if last.is_symlink() or not last.is_file() or last.stat().st_size <= 0:
+        raise RuntimeError(f"{cell.exp_id}: training completion lacks durable last.ckpt")
+    if seal:
+        marker.chmod(0o444)
+    if marker.stat().st_mode & 0o222:
+        raise RuntimeError(f"{cell.exp_id}: training marker is not immutable")
+    return payload
 
 
 def validate_scored_completion(
@@ -167,37 +380,69 @@ def validate_scored_completion(
     runs_root: Path,
     git_sha: str,
     detector_sha256: str,
-) -> dict:
-    run_dir = runs_root / cell.exp_id
-    payload = validate_completion_marker(
-        marker_for(cell, runs_root),
-        cell=cell,
+    repo: Path | None = None,
+    candidate_floor: float | None = None,
+    cohort: Mapping[str, object] | None = None,
+    cohort_sha256: str | None = None,
+    test_scene_ids: tuple[str, ...] | None = None,
+) -> dict[str, object]:
+    source_root = repo or Path(__file__).resolve().parents[2]
+    if candidate_floor is None:
+        detector = yaml.safe_load(
+            (source_root / "configs/detector.yaml").read_text(encoding="utf-8")
+        )
+        candidate_floor = float(detector["decode"]["candidate_floor"])
+    training = validate_training_completion(
+        cell,
+        runs_root=runs_root,
         git_sha=git_sha,
         detector_sha256=detector_sha256,
+        candidate_floor=candidate_floor,
     )
-    mismatches = {}
-    if payload.get("test_inference_precision") != EXPECTED_PRECISION:
-        mismatches["test_inference_precision"] = (
-            EXPECTED_PRECISION,
-            payload.get("test_inference_precision"),
-        )
-    for key in ("test_f1", "test_precision", "test_recall", "test_near_shore_f1"):
-        try:
-            finite = math.isfinite(float(payload[key]))
-        except (KeyError, TypeError, ValueError):
-            finite = False
-        if not finite:
-            mismatches[key] = ("finite", payload.get(key))
-    for name in ("best.ckpt", "last.ckpt"):
-        checkpoint = run_dir / "checkpoints" / name
-        if not checkpoint.is_file() or checkpoint.stat().st_size <= 0:
-            mismatches[name] = ("nonempty checkpoint", None)
-    try:
-        validate_trainer_contract_evidence(payload.get("h100_runtime_contract"))
-    except RuntimeError as exc:
-        mismatches["h100_runtime_contract"] = ("valid", str(exc))
-    if mismatches:
-        raise RuntimeError(f"{cell.exp_id} is not fully train+test complete: {mismatches}")
+    if cohort is None or cohort_sha256 is None:
+        raise RuntimeError("scored completion requires the frozen training cohort")
+    canonical = runs_root / ".h100" / COHORT_FILENAME
+    (
+        validated_cohort,
+        validated_sha256,
+        _cohort_record,
+        _cohort_training,
+    ) = validate_training_cohort_cell(
+        path=canonical,
+        expected_sha256=cohort_sha256,
+        cells=load_cells(source_root),
+        runs_root=runs_root,
+        git_sha=git_sha,
+        detector_sha256=detector_sha256,
+        candidate_floor=candidate_floor,
+        exp_id=cell.exp_id,
+    )
+    if dict(cohort) != validated_cohort:
+        raise RuntimeError("controller training-cohort payload drifted")
+    if cohort_sha256 != validated_sha256:
+        raise RuntimeError("controller training-cohort SHA-256 drifted")
+    scene_ids = test_scene_ids or load_test_scene_ids(source_root)
+    test = validate_test_result(
+        path=test_marker_for(cell, runs_root),
+        exp_id=cell.exp_id,
+        cohort=validated_cohort,
+        cohort_sha256=validated_sha256,
+        test_scene_ids=scene_ids,
+    )
+    metrics = test["metrics"]
+    payload = dict(training)
+    payload.update(
+        {
+            "test_inference_precision": test["inference_precision"],
+            "test_f1": metrics["f1"],
+            "test_precision": metrics["precision"],
+            "test_recall": metrics["recall"],
+            "test_near_shore_f1": metrics["near_shore_f1"],
+            "test_scored_at": test["scored_utc"],
+            "test_result_sha256": sha256_file(test_marker_for(cell, runs_root)),
+            "training_cohort_sha256": validated_sha256,
+        }
+    )
     return payload
 
 
@@ -206,24 +451,221 @@ def checkpoint_for_preemption(run_dir: Path) -> Path:
     phase = None
     if wrapper_path.exists():
         phase = json.loads(wrapper_path.read_text()).get("phase")
-    if phase == "score-test":
+    if phase in {"train-complete", "score-test", "score-test-complete"}:
         last = run_dir / "checkpoints/last.ckpt"
         best = run_dir / "checkpoints/best.ckpt"
-        if not last.is_file() or not best.is_file():
-            raise RuntimeError(f"scoring preemption lacks durable checkpoints: {run_dir}")
+        if any(
+            path.is_symlink() or not path.is_file() or path.stat().st_size <= 0
+            for path in (best, last)
+        ):
+            raise RuntimeError(
+                f"completed/scoring preemption lacks durable checkpoints: {run_dir}"
+            )
         return last
     if phase != "train":
         raise RuntimeError(f"preemption phase is absent or invalid: {run_dir}")
     return promote_hpc_checkpoint(run_dir)
 
 
+def _validated_phase_runtime(
+    provenance: Mapping[str, object],
+    payload: Mapping[str, object],
+    *,
+    exp_id: str,
+    phase: str,
+) -> dict[str, object]:
+    attempts = provenance.get("attempts")
+    phase_runtime = provenance.get("phase_runtime")
+    if not isinstance(attempts, list) or not isinstance(phase_runtime, Mapping):
+        raise RuntimeError(f"{exp_id}: phase runtime provenance is absent")
+    selected = [
+        attempt
+        for attempt in attempts
+        if isinstance(attempt, Mapping) and attempt.get("phase") == phase
+    ]
+    record = phase_runtime.get(phase)
+    if (
+        not selected
+        or not isinstance(record, Mapping)
+        or selected[-1].get("exit_code") != 0
+        or not str(selected[-1].get("finished_utc", "")).strip()
+    ):
+        raise RuntimeError(f"{exp_id}: {phase} phase is not durably complete")
+    try:
+        active_seconds = float(record["active_seconds"])
+        elapsed_hours = float(record["elapsed_hours"])
+        measured = sum(float(attempt["active_seconds"]) for attempt in selected)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise RuntimeError(f"{exp_id}: {phase} phase runtime is invalid") from exc
+    if (
+        not math.isfinite(active_seconds)
+        or active_seconds <= 0
+        or not math.isclose(active_seconds, measured)
+        or not math.isclose(elapsed_hours, active_seconds / 3600.0)
+        or record.get("attempts") != len(selected)
+        or not str(record.get("completed_utc", "")).strip()
+    ):
+        raise RuntimeError(f"{exp_id}: {phase} phase runtime is inconsistent")
+    if phase == "train":
+        expected = {
+            "final_metrics_sha256": sha256_file(Path(str(provenance["run_dir"])) / "final_metrics.json"),
+            "best_checkpoint_sha256": payload["best_checkpoint"]["sha256"],
+            "epochs_run": payload["epochs_run"],
+            "best_dev_f1": payload["best_dev_f1"],
+        }
+    else:
+        expected = {
+            "test_metrics_sha256": payload["test_result_sha256"],
+            "training_cohort_sha256": payload["training_cohort_sha256"],
+            "test_f1": payload["test_f1"],
+        }
+    mismatches = {
+        key: (value, record.get(key))
+        for key, value in expected.items()
+        if record.get(key) != value
+    }
+    if mismatches:
+        raise RuntimeError(f"{exp_id}: {phase} phase binding mismatch: {mismatches}")
+    return dict(record)
+
+
+
+def _recover_completed_phase_runtime(
+    *,
+    provenance_path: Path,
+    provenance: dict[str, object],
+    payload: Mapping[str, object],
+    exp_id: str,
+    phase: str,
+    marker_path: Path,
+) -> dict[str, object]:
+    """Close only the exact marker-written/controller-crash provenance window."""
+
+    attempts = provenance.get("attempts")
+    if not isinstance(attempts, list) or not attempts:
+        raise RuntimeError(f"{exp_id}: no attempt is available for crash recovery")
+    current = attempts[-1]
+    phase_records = provenance.get("phase_runtime")
+    completion_keys = {"finished_utc", "exit_code", "active_seconds"}
+    if (
+        not isinstance(current, dict)
+        or current.get("phase") != phase
+        or completion_keys & set(current)
+        or not isinstance(phase_records, Mapping)
+        or phase in phase_records
+    ):
+        raise RuntimeError(
+            f"{exp_id}: {phase} provenance is not an exact completion crash window"
+        )
+    try:
+        started = datetime.fromisoformat(str(current["started_utc"]))
+        if started.tzinfo is None:
+            raise ValueError("naive timestamp")
+        finished = datetime.fromtimestamp(
+            marker_path.stat().st_mtime,
+            timezone.utc,
+        )
+        active_seconds = (finished - started.astimezone(timezone.utc)).total_seconds()
+        prior_seconds = float(provenance.get("accumulated_active_seconds", 0.0))
+        previous_measured = sum(
+            float(attempt["active_seconds"])
+            for attempt in attempts[:-1]
+            if isinstance(attempt, Mapping)
+        )
+    except (KeyError, OSError, TypeError, ValueError) as exc:
+        raise RuntimeError(
+            f"{exp_id}: {phase} completion crash timing is invalid"
+        ) from exc
+    if (
+        not math.isfinite(active_seconds)
+        or active_seconds <= 0
+        or not math.isfinite(prior_seconds)
+        or prior_seconds < 0
+        or not math.isclose(prior_seconds, previous_measured)
+    ):
+        raise RuntimeError(
+            f"{exp_id}: {phase} completion crash timing is inconsistent"
+        )
+
+    finished_utc = finished.isoformat()
+    current.update(
+        {
+            "finished_utc": finished_utc,
+            "exit_code": 0,
+            "active_seconds": active_seconds,
+            "recovered_from": "validated-completion-marker",
+        }
+    )
+    selected = [
+        attempt
+        for attempt in attempts
+        if isinstance(attempt, Mapping) and attempt.get("phase") == phase
+    ]
+    phase_seconds = sum(float(attempt["active_seconds"]) for attempt in selected)
+    phase_record: dict[str, object] = {
+        "completed_utc": finished_utc,
+        "active_seconds": phase_seconds,
+        "elapsed_hours": phase_seconds / 3600.0,
+        "attempts": len(selected),
+        "controller_crash_recovered": True,
+    }
+    total_seconds = prior_seconds + active_seconds
+    if phase == "train":
+        phase_record.update(
+            {
+                "final_metrics_sha256": sha256_file(marker_path),
+                "best_checkpoint_sha256": payload["best_checkpoint"]["sha256"],
+                "epochs_run": payload["epochs_run"],
+                "best_dev_f1": payload["best_dev_f1"],
+            }
+        )
+        provenance.update(
+            {
+                "training_completed_utc": finished_utc,
+                "epochs_run": payload["epochs_run"],
+                "best_dev_f1": payload["best_dev_f1"],
+                "h100_runtime_contract": payload["h100_runtime_contract"],
+            }
+        )
+    elif phase == "score-test":
+        phase_record.update(
+            {
+                "test_metrics_sha256": payload["test_result_sha256"],
+                "training_cohort_sha256": payload["training_cohort_sha256"],
+                "test_f1": payload["test_f1"],
+            }
+        )
+        provenance.update(
+            {
+                "completed_utc": finished_utc,
+                "elapsed_hours": total_seconds / 3600.0,
+                "test_f1": payload["test_f1"],
+                "test_scored_at": payload["test_scored_at"],
+            }
+        )
+    else:
+        raise RuntimeError(f"unsupported crash-recovery phase: {phase!r}")
+    phase_runtime = dict(provenance.get("phase_runtime", {}))
+    phase_runtime[phase] = phase_record
+    provenance.update(
+        {
+            "phase_runtime": phase_runtime,
+            "accumulated_active_seconds": total_seconds,
+        }
+    )
+    atomic_write_json(provenance_path, provenance)
+    return provenance
+
 def existing_cell_state(
     cell: Cell,
     *,
+    phase: str,
+    repo: Path,
     runs_root: Path,
     campaign_id: str,
     git_sha: str,
     detector_sha256: str,
+    candidate_floor: float,
     venv_sha256: str,
     venv_build_sha256: str,
     base_python: Mapping[str, object],
@@ -232,43 +674,35 @@ def existing_cell_state(
     runtime_amendment: Mapping[str, str],
     acceptance_uuid: str,
     source_validation_sha256: str,
+    evaluation_ground_truth_sha256: str,
     cutover_ready_sha256: str,
-    v100_core_archived_sha256: str,
+    v100_diagnostic_isolation_sha256: str,
     strict_fp32: Mapping[str, str],
     accepted_hardware_class: Mapping[str, object],
+    cohort: Mapping[str, object] | None,
+    cohort_sha256: str | None,
+    test_scene_ids: tuple[str, ...],
 ) -> str:
+    if phase not in {"train", "score-test"}:
+        raise RuntimeError(f"invalid controller phase: {phase!r}")
     run_dir = runs_root / cell.exp_id
-    final = marker_for(cell, runs_root)
-    scored_payload: dict | None = None
-    if final.exists():
-        training_payload = validate_completion_marker(
-            final,
-            cell=cell,
-            git_sha=git_sha,
-            detector_sha256=detector_sha256,
-        )
-        present_scored = SCORED_FIELDS & set(training_payload)
-        if present_scored and present_scored != SCORED_FIELDS:
-            raise RuntimeError(
-                f"partially written test completion marker is invalid: {final}"
-            )
-        for name in ("best.ckpt", "last.ckpt"):
-            checkpoint = run_dir / "checkpoints" / name
-            if not checkpoint.is_file() or checkpoint.stat().st_size <= 0:
-                raise RuntimeError(f"training-complete cell lacks {checkpoint}")
-        if present_scored == SCORED_FIELDS:
-            scored_payload = validate_scored_completion(
-                cell,
-                runs_root=runs_root,
-                git_sha=git_sha,
-                detector_sha256=detector_sha256,
-            )
     if not run_dir.exists():
         return "pending"
+    test_path = test_marker_for(cell, runs_root)
+    if phase == "train" and (test_path.exists() or test_path.is_symlink()):
+        raise RuntimeError(f"{cell.exp_id}: TEST result exists before cohort freeze")
     provenance_path = run_dir / "runtime_provenance.json"
-    if not provenance_path.exists():
+    if provenance_path.is_symlink() or not provenance_path.is_file():
         raise RuntimeError(f"occupied namespace lacks provenance: {run_dir}")
-    provenance = json.loads(provenance_path.read_text())
+    provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+    cohort_binding = (
+        {
+            "path": str(runs_root / ".h100" / COHORT_FILENAME),
+            "sha256": str(cohort_sha256),
+        }
+        if cohort_sha256 is not None
+        else None
+    )
     validate_runtime_provenance(
         provenance,
         cell=cell,
@@ -284,44 +718,110 @@ def existing_cell_state(
         acceptance_uuid=acceptance_uuid,
         source_validation_sha256=source_validation_sha256,
         cutover_ready_sha256=cutover_ready_sha256,
-        v100_core_archived_sha256=v100_core_archived_sha256,
+        v100_diagnostic_isolation_sha256=v100_diagnostic_isolation_sha256,
         strict_fp32=strict_fp32,
         accepted_hardware_class=accepted_hardware_class,
+        evaluation_ground_truth_sha256=evaluation_ground_truth_sha256,
+        training_cohort=cohort_binding,
     )
-    if scored_payload is not None:
+    final = marker_for(cell, runs_root)
+    if not final.exists() and not final.is_symlink():
+        return "resume"
+    training = validate_training_completion(
+        cell,
+        runs_root=runs_root,
+        git_sha=git_sha,
+        detector_sha256=detector_sha256,
+        candidate_floor=candidate_floor,
+        seal=True,
+    )
+    if phase == "train":
         try:
-            finalized_cell_runtime(provenance, scored_payload, cell.exp_id)
+            _validated_phase_runtime(
+                provenance,
+                training,
+                exp_id=cell.exp_id,
+                phase="train",
+            )
         except RuntimeError:
-            # The scorer may have completed immediately before allocation loss.
-            # Relaunching the wrapper is safe: scoring sees test_f1 and no-ops,
-            # then controller poll finalizes the new provenance attempt.
-            return "resume"
+            provenance = _recover_completed_phase_runtime(
+                provenance_path=provenance_path,
+                provenance=provenance,
+                payload=training,
+                exp_id=cell.exp_id,
+                phase="train",
+                marker_path=final,
+            )
+            _validated_phase_runtime(
+                provenance,
+                training,
+                exp_id=cell.exp_id,
+                phase="train",
+            )
         return "complete"
-    return "resume"
+    if cohort is None or cohort_sha256 is None:
+        raise RuntimeError("score-test state inspection requires the frozen cohort")
+    if not test_path.exists() and not test_path.is_symlink():
+        return "resume"
+    scored = validate_scored_completion(
+        cell,
+        repo=repo,
+        runs_root=runs_root,
+        git_sha=git_sha,
+        detector_sha256=detector_sha256,
+        candidate_floor=candidate_floor,
+        cohort=cohort,
+        cohort_sha256=cohort_sha256,
+        test_scene_ids=test_scene_ids,
+    )
+    try:
+        finalized_cell_runtime(provenance, scored, cell.exp_id)
+    except RuntimeError:
+        provenance = _recover_completed_phase_runtime(
+            provenance_path=provenance_path,
+            provenance=provenance,
+            payload=scored,
+            exp_id=cell.exp_id,
+            phase="score-test",
+            marker_path=test_path,
+        )
+        finalized_cell_runtime(provenance, scored, cell.exp_id)
+    return "complete"
 
 
 def finalized_cell_runtime(
     provenance: Mapping[str, object], marker: Mapping[str, object], exp_id: str
 ) -> dict[str, object]:
+    _validated_phase_runtime(
+        provenance,
+        marker,
+        exp_id=exp_id,
+        phase="train",
+    )
+    _validated_phase_runtime(
+        provenance,
+        marker,
+        exp_id=exp_id,
+        phase="score-test",
+    )
     attempts = provenance.get("attempts")
     if not isinstance(attempts, list) or not attempts:
         raise RuntimeError(f"{exp_id}: finalized provenance has no attempts")
-    last = attempts[-1]
-    if (
-        not isinstance(last, Mapping)
-        or last.get("exit_code") != 0
-        or not str(last.get("finished_utc", "")).strip()
-    ):
-        raise RuntimeError(f"{exp_id}: final attempt is not durably complete")
     try:
         active_seconds = float(provenance["accumulated_active_seconds"])
         elapsed_hours = float(provenance["elapsed_hours"])
     except (KeyError, TypeError, ValueError) as exc:
         raise RuntimeError(f"{exp_id}: finalized runtime is invalid") from exc
+    measured = sum(
+        float(attempt["active_seconds"])
+        for attempt in attempts
+        if isinstance(attempt, Mapping)
+    )
     if (
-        not math.isfinite(active_seconds)
+        provenance.get("phase") != "score-test"
+        or not math.isfinite(active_seconds)
         or active_seconds <= 0
-        or not math.isfinite(elapsed_hours)
+        or not math.isclose(active_seconds, measured)
         or not math.isclose(elapsed_hours, active_seconds / 3600.0)
         or not str(provenance.get("completed_utc", "")).strip()
         or provenance.get("epochs_run") != marker.get("epochs_run")
@@ -354,9 +854,11 @@ def validate_failed_namespace(
     acceptance_uuid: str,
     source_validation_sha256: str,
     cutover_ready_sha256: str,
-    v100_core_archived_sha256: str,
+    v100_diagnostic_isolation_sha256: str,
     strict_fp32: Mapping[str, str],
     accepted_hardware_class: Mapping[str, object],
+    evaluation_ground_truth_sha256: str,
+    training_cohort: Mapping[str, str] | None,
 ) -> None:
     run_dir = runs_root / cell.exp_id
     provenance_path = run_dir / "runtime_provenance.json"
@@ -378,9 +880,11 @@ def validate_failed_namespace(
         acceptance_uuid=acceptance_uuid,
         source_validation_sha256=source_validation_sha256,
         cutover_ready_sha256=cutover_ready_sha256,
-        v100_core_archived_sha256=v100_core_archived_sha256,
+        v100_diagnostic_isolation_sha256=v100_diagnostic_isolation_sha256,
         strict_fp32=strict_fp32,
         accepted_hardware_class=accepted_hardware_class,
+        evaluation_ground_truth_sha256=evaluation_ground_truth_sha256,
+        training_cohort=training_cohort,
     )
 
 
@@ -484,6 +988,16 @@ def collect_and_validate_grid(
     git_sha: str,
     detector_sha256: str,
 ) -> Path:
+    try:
+        expected_counts = training_fraction_counts(
+            repo=repo,
+            fractions=tuple(sorted({float(cell.fraction) for cell in cells})),
+        )
+    except (KeyError, OSError, TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "could not derive exact frozen TRAIN fraction counts"
+        ) from exc
+    arms = yaml.safe_load((repo / "configs/arms.yaml").read_text())["arms"]
     grid = runs_root / "summary/grid.csv"
     subprocess.run(
         [
@@ -500,24 +1014,84 @@ def collect_and_validate_grid(
         check=True,
     )
     with grid.open(newline="", encoding="utf-8") as handle:
-        rows = list(csv.DictReader(handle))
+        reader = csv.DictReader(handle)
+        fields = tuple(reader.fieldnames or ())
+        rows = list(reader)
+    if fields != GRID_COLUMNS:
+        raise RuntimeError(f"grid.csv columns mismatch: {fields}")
     expected_ids = {cell.exp_id for cell in cells}
+    expected_cells = {cell.exp_id: cell for cell in cells}
     actual_ids = {row.get("exp_id") for row in rows}
     if len(rows) != 32 or actual_ids != expected_ids:
         raise RuntimeError("grid.csv is not the exact 32-cell core matrix")
     for row in rows:
+        exp_id = str(row.get("exp_id", ""))
+        if set(row) != set(GRID_COLUMNS) or any(
+            not isinstance(value, str)
+            or not value.strip()
+            or value.strip().casefold()
+            in {
+                "nan",
+                "+nan",
+                "-nan",
+                "inf",
+                "+inf",
+                "-inf",
+                "infinity",
+                "+infinity",
+                "-infinity",
+            }
+            for value in row.values()
+        ):
+            raise RuntimeError(f"grid.csv contains an absent/NaN value for {exp_id}")
+        cell = expected_cells[exp_id]
         try:
-            finite = math.isfinite(float(row["test_f1"]))
-        except (KeyError, TypeError, ValueError):
-            finite = False
-        if not finite:
-            raise RuntimeError(f"grid.csv lacks finite test_f1 for {row.get('exp_id')}")
+            fraction = float(row["label_frac"])
+            seed = int(row["seed"])
+            epochs_run = int(row["epochs_run"])
+            metrics = {
+                key: float(row[key])
+                for key in ("dev_f1", "dev_threshold", "test_f1")
+            }
+            counts = {
+                key: int(row[key])
+                for key in GRID_COUNT_COLUMNS
+                if row[key].isdecimal()
+            }
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RuntimeError(f"grid.csv numeric values are invalid for {exp_id}") from exc
+        if len(counts) != len(GRID_COUNT_COLUMNS):
+            raise RuntimeError(f"grid.csv count columns are not integers for {exp_id}")
+        expected_role = str(arms[cell.init]["role"])
+        if (
+            row["init"] != cell.init
+            or row["track"] != cell.track
+            or row["role"] != expected_role
+            or not math.isclose(
+                fraction, float(cell.fraction), rel_tol=0.0, abs_tol=1e-12
+            )
+            or seed != cell.seed
+            or row["precision"] != EXPECTED_PRECISION
+            or epochs_run <= 0
+        ):
+            raise RuntimeError(f"grid.csv core identity mismatch for {exp_id}")
+        if (
+            any(not math.isfinite(value) for value in metrics.values())
+            or any(not 0.0 <= value <= 1.0 for value in metrics.values())
+        ):
+            raise RuntimeError(f"grid.csv metrics are non-finite/out of range for {exp_id}")
+        wanted_counts = expected_counts[float(cell.fraction)]
+        if counts != wanted_counts:
+            raise RuntimeError(
+                f"grid.csv TRAIN fraction counts mismatch for {exp_id}: "
+                f"{counts} != {wanted_counts}"
+            )
         if row.get("monotonicity_ok", "").lower() != "true":
             raise RuntimeError(
-                f"grid.csv monotonicity STOP for {row.get('exp_id')}"
+                f"grid.csv monotonicity STOP for {exp_id}"
             )
         if row.get("git_sha") != git_sha or row.get("detector_sha256") != detector_sha256:
-            raise RuntimeError(f"grid.csv provenance mismatch for {row.get('exp_id')}")
+            raise RuntimeError(f"grid.csv provenance mismatch for {exp_id}")
     return grid
 
 
@@ -531,6 +1105,14 @@ class Controller:
         self.git_sha = args.expected_git_sha
         self.detector_sha256 = sha256_file(self.repo / "configs/detector.yaml")
         self.venv_sha256 = args.venv_sha256
+        self.detector_config = yaml.safe_load(
+            (self.repo / "configs/detector.yaml").read_text(encoding="utf-8")
+        )
+        self.data_config = yaml.safe_load(
+            (self.repo / "configs/data.yaml").read_text(encoding="utf-8")
+        )
+        self.candidate_floor = float(self.detector_config["decode"]["candidate_floor"])
+        self.test_scene_ids = load_test_scene_ids(self.repo)
         self.venv_build_sha256 = args.venv_build_sha256
         self.venv_root = args.venv_root.absolute()
         expected_python = self.venv_root / "bin/python"
@@ -604,6 +1186,45 @@ class Controller:
         ):
             raise RuntimeError("campaign source receipt differs from H100 acceptance")
         meta_root = self.runs_root / ".h100"
+        ground_truth_binding = self.acceptance.get("evaluation_ground_truth")
+        if (
+            not isinstance(ground_truth_binding, Mapping)
+            or set(ground_truth_binding) != {"path", "sha256", "receipt"}
+        ):
+            raise RuntimeError("campaign evaluation-ground-truth binding is invalid")
+        ground_truth_path = Path(str(ground_truth_binding["path"])).absolute()
+        expected_ground_truth_path = (
+            meta_root / "EVAL_GROUND_TRUTH_VALIDATED.json"
+        ).absolute()
+        if (
+            ground_truth_path != expected_ground_truth_path
+            or ground_truth_path.is_symlink()
+            or not ground_truth_path.is_file()
+            or ground_truth_path.stat().st_mode & 0o222
+        ):
+            raise RuntimeError(
+                "campaign evaluation-ground-truth receipt is not canonical and immutable"
+            )
+        self.evaluation_ground_truth_sha256 = str(ground_truth_binding["sha256"])
+        if sha256_file(ground_truth_path) != self.evaluation_ground_truth_sha256:
+            raise RuntimeError("campaign evaluation-ground-truth SHA-256 mismatch")
+        try:
+            self.evaluation_ground_truth = json.loads(
+                ground_truth_path.read_text(encoding="utf-8")
+            )
+        except (OSError, json.JSONDecodeError) as exc:
+            raise RuntimeError("campaign evaluation-ground-truth receipt is invalid") from exc
+        if self.evaluation_ground_truth != ground_truth_binding["receipt"]:
+            raise RuntimeError("campaign evaluation-ground-truth receipt binding drifted")
+        raw_xview3 = self.repo / str(self.data_config["paths"]["raw_xview3"])
+        recomputed_ground_truth = audit_ground_truth_dataset(
+            train_csv=raw_xview3 / "labels/train.csv",
+            splits_json=self.repo / str(self.data_config["paths"]["splits"]),
+        )
+        if recomputed_ground_truth != self.evaluation_ground_truth:
+            raise RuntimeError(
+                "campaign evaluation ground truth differs from accepted source bytes"
+            )
         canonical_paths = {
             "source validation": (
                 args.source_validation_json.absolute(),
@@ -613,13 +1234,9 @@ class Controller:
                 args.cutover_ready_json.absolute(),
                 meta_root / "CUTOVER_READY.json",
             ),
-            "V100_CORE_ARCHIVED": (
-                args.v100_core_archived_json.absolute(),
-                meta_root / "V100_CORE_ARCHIVED.json",
-            ),
-            "V100 archive manifest": (
-                args.v100_archive_manifest_json.absolute(),
-                meta_root / "V100_CORE_ARCHIVE_MANIFEST.json",
+            "V100 diagnostic isolation": (
+                args.v100_diagnostic_isolation_json.absolute(),
+                meta_root / "V100_DIAGNOSTIC_ISOLATION.json",
             ),
         }
         for label, (actual, expected) in canonical_paths.items():
@@ -638,42 +1255,70 @@ class Controller:
         ):
             raise RuntimeError("controller cutover acceptance subset is inconsistent")
         validate_bound_cutover_forecast(self.cutover_ready)
-        self.v100_core_archived_sha256 = args.v100_core_archived_sha256
+        references = self.cutover_ready.get("references")
+        if not isinstance(references, Mapping) or set(references) != {"r2", "r3"}:
+            raise RuntimeError("CUTOVER_READY reference identities are absent")
+        reference_identities = []
+        for name in ("r2", "r3"):
+            record = references[name]
+            provenance = record.get("provenance") if isinstance(record, Mapping) else None
+            if not isinstance(provenance, Mapping):
+                raise RuntimeError(f"CUTOVER_READY {name} provenance is absent")
+            reference_identities.append(
+                (provenance.get("git_sha"), provenance.get("campaign_id"))
+            )
         if (
-            sha256_file(args.v100_core_archived_json)
-            != self.v100_core_archived_sha256
+            reference_identities[0] != reference_identities[1]
+            or not all(
+                isinstance(value, str) and bool(value)
+                for value in reference_identities[0]
+            )
         ):
-            raise RuntimeError("controller V100_CORE_ARCHIVED SHA-256 mismatch")
-        self.v100_core_archived = json.loads(
-            args.v100_core_archived_json.read_text()
+            raise RuntimeError("CUTOVER_READY R2/R3 V100 identities disagree")
+        reference_git_sha, reference_campaign_id = map(
+            str, reference_identities[0]
         )
-        if self.v100_core_archived.get("cutover_ready_sha256") != (
-            self.cutover_ready_sha256
-        ):
-            raise RuntimeError("operator archive receipt does not bind CUTOVER_READY")
-        expected_h100 = {
-            "acceptance_uuid": self.acceptance_uuid,
-            "git_sha": self.git_sha,
-            "venv_sha256": self.venv_sha256,
-            "base_payload": self.base_payload,
-            "runtime_amendment": self.runtime_amendment,
-        }
-        if self.v100_core_archived.get("h100") != expected_h100:
-            raise RuntimeError("operator archive receipt differs from accepted H100 identity")
-        self.archive_manifest_sha256 = args.v100_archive_manifest_sha256
-        if sha256_file(args.v100_archive_manifest_json) != (
-            self.archive_manifest_sha256
-        ):
-            raise RuntimeError("controller V100 archive manifest SHA-256 mismatch")
-        self.archive_manifest = json.loads(
-            args.v100_archive_manifest_json.read_text()
+        reference_campaign_record = self.cutover_ready.get("reference_campaign")
+        reference_campaign_manifest = (
+            reference_campaign_record.get("manifest")
+            if isinstance(reference_campaign_record, Mapping)
+            else None
         )
-        archive_binding = self.v100_core_archived.get("archive", {})
-        if archive_binding != {
-            "manifest_path": str(args.v100_archive_manifest_json.absolute()),
-            "manifest_sha256": self.archive_manifest_sha256,
-        }:
-            raise RuntimeError("operator receipt archive-manifest binding mismatch")
+        if (
+            not isinstance(reference_campaign_record, Mapping)
+            or set(reference_campaign_record) != {"manifest", "manifest_sha256"}
+            or not isinstance(reference_campaign_manifest, Mapping)
+            or reference_campaign_manifest.get("git_sha") != reference_git_sha
+            or reference_campaign_manifest.get("campaign_id")
+            != reference_campaign_id
+        ):
+            raise RuntimeError("CUTOVER_READY reference campaign binding is invalid")
+        v100_core_git_sha = str(
+            reference_campaign_manifest.get("core_git_sha", "")
+        )
+        v100_core_campaign_id = str(
+            reference_campaign_manifest.get("core_campaign_id", "")
+        )
+        if not v100_core_git_sha or not v100_core_campaign_id:
+            raise RuntimeError("CUTOVER_READY V100 core diagnostic identity is absent")
+        self.v100_diagnostic_isolation_sha256 = (
+            args.v100_diagnostic_isolation_sha256
+        )
+        diagnostic_validation = validate_diagnostic_isolation(
+            cutover_ready=args.cutover_ready_json,
+            cutover_ready_sha256=self.cutover_ready_sha256,
+            attestation=args.v100_diagnostic_isolation_json,
+            attestation_sha256=self.v100_diagnostic_isolation_sha256,
+            expected_h100_git_sha=self.git_sha,
+            expected_h100_campaign_id=self.args.campaign_id,
+            expected_reference_git_sha=reference_git_sha,
+            expected_reference_campaign_id=reference_campaign_id,
+            expected_v100_core_git_sha=v100_core_git_sha,
+            expected_v100_core_campaign_id=v100_core_campaign_id,
+        )
+        self.v100_diagnostic_isolation = dict(
+            diagnostic_validation["attestation"]
+        )
         self.strict_fp32 = dict(self.acceptance.get("strict_fp32", {}))
         if set(self.strict_fp32.values()) != {"ieee"}:
             raise RuntimeError("campaign acceptance is not strict IEEE FP32")
@@ -693,7 +1338,13 @@ class Controller:
         except BlockingIOError as exc:
             raise RuntimeError("another H100 campaign controller holds campaign.lock") from exc
         self.running: dict[int, tuple[subprocess.Popen, Cell, float]] = {}
-        self.complete_ids: set[str] = set()
+        self.phase = "train"
+        self.training_complete_ids: set[str] = set()
+        self.test_complete_ids: set[str] = set()
+        self.complete_ids = self.training_complete_ids
+        self.cohort_path = meta_root / COHORT_FILENAME
+        self.cohort: dict[str, object] | None = None
+        self.cohort_sha256: str | None = None
         self.failure_seen = False
         self.failed_ids: set[str] = set()
         self.failure_allowed_ids: set[str] = set()
@@ -701,6 +1352,7 @@ class Controller:
         self.preemption_forwarded = False
         self.events: list[dict] = []
         self.cell_runtime: dict[str, dict] = {}
+        self.cell_phase_runtime: dict[str, dict] = {}
         self.request_dir = self.runs_root / ".h100/requeue-requests"
         self.manifest_path = self.runs_root / ".h100/campaign_manifest.json"
         signal.signal(signal.SIGUSR1, self._on_usr1)
@@ -719,6 +1371,7 @@ class Controller:
             "schema": 2,
             "campaign_id": self.args.campaign_id,
             "status": status or ("failed" if self.failure_seen else "running"),
+            "phase": self.phase,
             "git_sha": self.git_sha,
             "detector_sha256": self.detector_sha256,
             "precision": EXPECTED_PRECISION,
@@ -733,9 +1386,9 @@ class Controller:
             "runtime_amendment": self.runtime_amendment,
             "acceptance_uuid": self.acceptance_uuid,
             "source_validation_sha256": self.source_validation_sha256,
+            "evaluation_ground_truth_sha256": self.evaluation_ground_truth_sha256,
             "cutover_ready_sha256": self.cutover_ready_sha256,
-            "v100_core_archived_sha256": self.v100_core_archived_sha256,
-            "archive_manifest_sha256": self.archive_manifest_sha256,
+            "v100_diagnostic_isolation_sha256": self.v100_diagnostic_isolation_sha256,
             "hardware": self.args.hardware,
             "accepted_hardware_class": self.accepted_hardware_class,
             "allocation_hardware_class": self.allocation_hardware_class,
@@ -750,35 +1403,40 @@ class Controller:
                 "slurm_smoke": self.acceptance.get("slurm_smoke"),
                 "scratch_free_bytes": self.acceptance.get("scratch_free_bytes"),
             },
-            "operator_cutover": {
-                "cutover_ready_sha256": self.cutover_ready_sha256,
-                "v100_core_archived_sha256": self.v100_core_archived_sha256,
-                "archive_manifest_sha256": self.archive_manifest_sha256,
-                "v100_core_archived_path": str(
-                    self.args.v100_core_archived_json.absolute()
-                ),
-                "archive_manifest_path": str(
-                    self.args.v100_archive_manifest_json.absolute()
-                ),
-                "v100_core_archived": self.v100_core_archived,
-                "archive_manifest": self.archive_manifest,
+            "v100_diagnostic_isolation": {
+                "path": str(self.args.v100_diagnostic_isolation_json.absolute()),
+                "sha256": self.v100_diagnostic_isolation_sha256,
+                "receipt": self.v100_diagnostic_isolation,
             },
             "source_validation": {
                 "path": str(self.args.source_validation_json.absolute()),
                 "sha256": self.source_validation_sha256,
                 "receipt": self.source_validation,
             },
+            "evaluation_ground_truth": {
+                "path": str(self.runs_root / ".h100/EVAL_GROUND_TRUTH_VALIDATED.json"),
+                "sha256": self.evaluation_ground_truth_sha256,
+                "receipt": self.evaluation_ground_truth,
+            },
+            "training_cohort": (
+                {"path": str(self.cohort_path), "sha256": self.cohort_sha256}
+                if self.cohort_sha256 is not None
+                else None
+            ),
             "throughput_projection": self.acceptance.get("projection"),
             "host": socket.gethostname(),
             "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
             "cell_order": [cell.exp_id for cell in self.cells],
             "complete": sorted(self.complete_ids),
+            "training_complete": sorted(self.training_complete_ids),
+            "test_complete": sorted(self.test_complete_ids),
             "running": {
                 str(gpu): cell.exp_id
                 for gpu, (_process, cell, _started) in self.running.items()
             },
             "events": self.events,
             "cell_runtime": self.cell_runtime,
+            "cell_phase_runtime": self.cell_phase_runtime,
             "fail_stop": {
                 "engaged": self.failure_seen,
                 "failed": sorted(self.failed_ids),
@@ -791,8 +1449,36 @@ class Controller:
     def initialize(self) -> None:
         self.runs_root.mkdir(parents=True, exist_ok=True)
         resumed = self.manifest_path.exists()
+        if self.cohort_path.exists() or self.cohort_path.is_symlink():
+            self.cohort, self.cohort_sha256 = validate_training_cohort(
+                path=self.cohort_path,
+                cells=self.cells,
+                runs_root=self.runs_root,
+                git_sha=self.git_sha,
+                detector_sha256=self.detector_sha256,
+                candidate_floor=self.candidate_floor,
+            )
+            self.phase = "score-test"
+            self.training_complete_ids = {cell.exp_id for cell in self.cells}
+            self.complete_ids = self.test_complete_ids
+        else:
+            self.phase = "train"
+            self.complete_ids = self.training_complete_ids
+            leaked = [
+                cell.exp_id
+                for cell in self.cells
+                if test_marker_for(cell, self.runs_root).exists()
+                or test_marker_for(cell, self.runs_root).is_symlink()
+            ]
+            if leaked:
+                raise RuntimeError(
+                    "TEST results exist before the all-32 training cohort: "
+                    + ", ".join(leaked)
+                )
+
+        prior: dict[str, object] | None = None
         if self.manifest_path.exists():
-            prior = json.loads(self.manifest_path.read_text())
+            prior = json.loads(self.manifest_path.read_text(encoding="utf-8"))
             bindings = {
                 "campaign_id": self.args.campaign_id,
                 "git_sha": self.git_sha,
@@ -805,20 +1491,54 @@ class Controller:
                 "runtime_amendment": self.runtime_amendment,
                 "acceptance_uuid": self.acceptance_uuid,
                 "source_validation_sha256": self.source_validation_sha256,
+                "evaluation_ground_truth_sha256": self.evaluation_ground_truth_sha256,
                 "cutover_ready_sha256": self.cutover_ready_sha256,
-                "v100_core_archived_sha256": self.v100_core_archived_sha256,
-                "archive_manifest_sha256": self.archive_manifest_sha256,
+                "v100_diagnostic_isolation_sha256": self.v100_diagnostic_isolation_sha256,
                 "strict_fp32": self.strict_fp32,
                 "accepted_hardware_class": self.accepted_hardware_class,
             }
             validate_campaign_resume_bindings(prior, bindings)
+            prior_phase = prior.get("phase")
+            recovering_transition = (
+                prior_phase == "train"
+                and self.phase == "score-test"
+                and set(prior.get("training_complete", []))
+                == {cell.exp_id for cell in self.cells}
+            )
+            if prior_phase != self.phase and not recovering_transition:
+                raise RuntimeError(
+                    "existing campaign phase conflicts with canonical cohort state"
+                )
+            prior_cohort = prior.get("training_cohort")
+            current_cohort = (
+                {"path": str(self.cohort_path), "sha256": self.cohort_sha256}
+                if self.cohort_sha256 is not None
+                else None
+            )
+            if (
+                recovering_transition
+                and prior_cohort is not None
+            ) or (
+                not recovering_transition
+                and prior_cohort != current_cohort
+            ):
+                raise RuntimeError(
+                    "existing campaign training-cohort binding drifted"
+                )
             self.events = list(prior.get("events", []))
             self.cell_runtime = dict(prior.get("cell_runtime", {}))
+            self.cell_phase_runtime = dict(prior.get("cell_phase_runtime", {}))
             (
                 self.failure_seen,
                 self.failed_ids,
                 self.failure_allowed_ids,
             ) = restore_fail_stop(prior, self.cells)
+
+        cohort_binding = (
+            {"path": str(self.cohort_path), "sha256": str(self.cohort_sha256)}
+            if self.cohort_sha256 is not None
+            else None
+        )
         for cell in self.cells:
             if cell.exp_id in self.failed_ids:
                 validate_failed_namespace(
@@ -836,17 +1556,22 @@ class Controller:
                     acceptance_uuid=self.acceptance_uuid,
                     source_validation_sha256=self.source_validation_sha256,
                     cutover_ready_sha256=self.cutover_ready_sha256,
-                    v100_core_archived_sha256=self.v100_core_archived_sha256,
+                    v100_diagnostic_isolation_sha256=self.v100_diagnostic_isolation_sha256,
                     strict_fp32=self.strict_fp32,
                     accepted_hardware_class=self.accepted_hardware_class,
+                    evaluation_ground_truth_sha256=self.evaluation_ground_truth_sha256,
+                    training_cohort=cohort_binding,
                 )
                 continue
             state = existing_cell_state(
                 cell,
+                phase=self.phase,
+                repo=self.repo,
                 runs_root=self.runs_root,
                 campaign_id=self.args.campaign_id,
                 git_sha=self.git_sha,
                 detector_sha256=self.detector_sha256,
+                candidate_floor=self.candidate_floor,
                 venv_sha256=self.venv_sha256,
                 venv_build_sha256=self.venv_build_sha256,
                 base_python=self.base_python,
@@ -855,21 +1580,37 @@ class Controller:
                 runtime_amendment=self.runtime_amendment,
                 acceptance_uuid=self.acceptance_uuid,
                 source_validation_sha256=self.source_validation_sha256,
+                evaluation_ground_truth_sha256=self.evaluation_ground_truth_sha256,
                 cutover_ready_sha256=self.cutover_ready_sha256,
-                v100_core_archived_sha256=self.v100_core_archived_sha256,
+                v100_diagnostic_isolation_sha256=self.v100_diagnostic_isolation_sha256,
                 strict_fp32=self.strict_fp32,
                 accepted_hardware_class=self.accepted_hardware_class,
+                cohort=self.cohort,
+                cohort_sha256=self.cohort_sha256,
+                test_scene_ids=self.test_scene_ids,
             )
-            if state == "complete":
-                self.complete_ids.add(cell.exp_id)
+            if state != "complete":
+                continue
+            self.complete_ids.add(cell.exp_id)
+            provenance = json.loads(
+                (self.runs_root / cell.exp_id / "runtime_provenance.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.cell_phase_runtime[cell.exp_id] = dict(
+                provenance.get("phase_runtime", {})
+            )
+            if self.phase == "score-test":
                 marker = validate_scored_completion(
                     cell,
+                    repo=self.repo,
                     runs_root=self.runs_root,
                     git_sha=self.git_sha,
                     detector_sha256=self.detector_sha256,
-                )
-                provenance = json.loads(
-                    (self.runs_root / cell.exp_id / "runtime_provenance.json").read_text()
+                    candidate_floor=self.candidate_floor,
+                    cohort=self.cohort,
+                    cohort_sha256=self.cohort_sha256,
+                    test_scene_ids=self.test_scene_ids,
                 )
                 self.cell_runtime[cell.exp_id] = finalized_cell_runtime(
                     provenance, marker, cell.exp_id
@@ -877,19 +1618,49 @@ class Controller:
         self.request_dir.mkdir(parents=True, exist_ok=True)
         for request in self.request_dir.glob("gpu-*.request"):
             request.unlink()
-        self.record("controller_started", resumed=resumed)
-
+        self.record(
+            "controller_started",
+            resumed=resumed,
+            phase=self.phase,
+            recovered_cohort_transition=bool(
+                prior is not None
+                and prior.get("phase") == "train"
+                and self.phase == "score-test"
+            ),
+        )
     def launch(self, gpu: int, cell: Cell) -> None:
+        if self.phase == "score-test" and (
+            self.cohort is None or self.cohort_sha256 is None
+        ):
+            raise RuntimeError("refusing to launch TEST scoring without frozen cohort")
         run_dir = self.runs_root / cell.exp_id
         run_dir.mkdir(parents=True, exist_ok=True)
         last_ckpt = run_dir / "checkpoints/last.ckpt"
         hardware = self.args.hardware["devices"][gpu]
         provenance_path = run_dir / "runtime_provenance.json"
-        prior = json.loads(provenance_path.read_text()) if provenance_path.exists() else {}
+        prior = (
+            json.loads(provenance_path.read_text(encoding="utf-8"))
+            if provenance_path.exists()
+            else {}
+        )
+        recovered_open_attempt = False
+        if prior:
+            recovered_open_attempt = reconcile_stale_open_attempt(
+                prior,
+                phase=self.phase,
+                recovered_utc=utc_now(),
+            )
+        cohort_binding = (
+            {"path": str(self.cohort_path), "sha256": str(self.cohort_sha256)}
+            if self.phase == "score-test"
+            else None
+        )
         attempts = list(prior.get("attempts", []))
         attempts.append(
             {
                 "attempt": len(attempts) + 1,
+                "phase": self.phase,
+                "training_cohort_sha256": self.cohort_sha256,
                 "started_utc": utc_now(),
                 "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
                 "gpu_local_index": gpu,
@@ -900,7 +1671,7 @@ class Controller:
                 "driver_version": self.allocation_hardware_class["driver_version"],
                 "torch": self.allocation_hardware_class["torch"],
                 "cuda_build": self.allocation_hardware_class["cuda_build"],
-                "resumed_from_last_ckpt": last_ckpt.exists(),
+                "resumed_from_last_ckpt": self.phase == "train" and last_ckpt.exists(),
             }
         )
         provenance = {
@@ -908,6 +1679,9 @@ class Controller:
             "schema": 2,
             "campaign_id": self.args.campaign_id,
             "exp_id": cell.exp_id,
+            "run_dir": str(run_dir),
+            "phase": self.phase,
+            "training_cohort": cohort_binding,
             "git_sha": self.git_sha,
             "detector_sha256": self.detector_sha256,
             "precision": EXPECTED_PRECISION,
@@ -922,8 +1696,9 @@ class Controller:
             "runtime_amendment": self.runtime_amendment,
             "acceptance_uuid": self.acceptance_uuid,
             "source_validation_sha256": self.source_validation_sha256,
+            "evaluation_ground_truth_sha256": self.evaluation_ground_truth_sha256,
             "cutover_ready_sha256": self.cutover_ready_sha256,
-            "v100_core_archived_sha256": self.v100_core_archived_sha256,
+            "v100_diagnostic_isolation_sha256": self.v100_diagnostic_isolation_sha256,
             "strict_fp32": self.strict_fp32,
             "accepted_hardware_class": self.accepted_hardware_class,
             "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
@@ -938,6 +1713,7 @@ class Controller:
             "cuda_build": self.allocation_hardware_class["cuda_build"],
             "started_utc": prior.get("started_utc", attempts[0]["started_utc"]),
             "attempts": attempts,
+            "phase_runtime": dict(prior.get("phase_runtime", {})),
             "accumulated_active_seconds": float(
                 prior.get("accumulated_active_seconds", 0.0)
             ),
@@ -953,6 +1729,8 @@ class Controller:
             str(self.repo),
             "--runs-root",
             str(self.runs_root),
+            "--phase",
+            self.phase,
             "--exp-id",
             cell.exp_id,
             "--init",
@@ -961,9 +1739,22 @@ class Controller:
             str(cell.fraction),
             "--git-sha",
             self.git_sha,
+            "--detector-sha256",
+            self.detector_sha256,
+            "--candidate-floor",
+            str(self.candidate_floor),
             "--workers",
             str(self.args.workers_per_gpu),
         ]
+        if self.phase == "score-test":
+            command.extend(
+                [
+                    "--training-cohort",
+                    str(self.cohort_path),
+                    "--training-cohort-sha256",
+                    str(self.cohort_sha256),
+                ]
+            )
         env = {
             **os.environ,
             "CUDA_VISIBLE_DEVICES": str(gpu),
@@ -980,8 +1771,14 @@ class Controller:
         )
         output.close()
         self.running[gpu] = (process, cell, time.monotonic())
-        self.record("cell_launched", gpu=gpu, exp_id=cell.exp_id)
-
+        self.record(
+            "cell_launched",
+            gpu=gpu,
+            exp_id=cell.exp_id,
+            phase=self.phase,
+            training_cohort_sha256=self.cohort_sha256,
+            recovered_open_attempt=recovered_open_attempt,
+        )
     def requeue_request_ready(self, gpu: int) -> bool:
         request = self.request_dir / f"gpu-{gpu}.request"
         try:
@@ -1009,18 +1806,34 @@ class Controller:
             elapsed = time.monotonic() - started
             del self.running[gpu]
             valid = False
+            payload: dict[str, object] | None = None
+            provenance_path = self.runs_root / cell.exp_id / "runtime_provenance.json"
             if code == 0:
                 try:
-                    payload = validate_scored_completion(
-                        cell,
-                        runs_root=self.runs_root,
-                        git_sha=self.git_sha,
-                        detector_sha256=self.detector_sha256,
+                    if self.phase == "train":
+                        payload = validate_training_completion(
+                            cell,
+                            runs_root=self.runs_root,
+                            git_sha=self.git_sha,
+                            detector_sha256=self.detector_sha256,
+                            candidate_floor=self.candidate_floor,
+                            seal=True,
+                        )
+                    else:
+                        payload = validate_scored_completion(
+                            cell,
+                            repo=self.repo,
+                            runs_root=self.runs_root,
+                            git_sha=self.git_sha,
+                            detector_sha256=self.detector_sha256,
+                            candidate_floor=self.candidate_floor,
+                            cohort=self.cohort,
+                            cohort_sha256=self.cohort_sha256,
+                            test_scene_ids=self.test_scene_ids,
+                        )
+                    provenance = json.loads(
+                        provenance_path.read_text(encoding="utf-8")
                     )
-                    provenance_path = (
-                        self.runs_root / cell.exp_id / "runtime_provenance.json"
-                    )
-                    provenance = json.loads(provenance_path.read_text())
                     validate_runtime_provenance(
                         provenance,
                         cell=cell,
@@ -1036,45 +1849,123 @@ class Controller:
                         acceptance_uuid=self.acceptance_uuid,
                         source_validation_sha256=self.source_validation_sha256,
                         cutover_ready_sha256=self.cutover_ready_sha256,
-                        v100_core_archived_sha256=self.v100_core_archived_sha256,
+                        v100_diagnostic_isolation_sha256=self.v100_diagnostic_isolation_sha256,
                         strict_fp32=self.strict_fp32,
                         accepted_hardware_class=self.accepted_hardware_class,
+                        evaluation_ground_truth_sha256=self.evaluation_ground_truth_sha256,
+                        training_cohort=(
+                            {
+                                "path": str(self.cohort_path),
+                                "sha256": str(self.cohort_sha256),
+                            }
+                            if self.phase == "score-test"
+                            else None
+                        ),
                     )
                     valid = True
                 except RuntimeError as exc:
-                    self.record("invalid_completion_marker", exp_id=cell.exp_id, error=str(exc))
+                    self.record(
+                        "invalid_completion_marker",
+                        exp_id=cell.exp_id,
+                        phase=self.phase,
+                        error=str(exc),
+                    )
             if valid:
-                self.complete_ids.add(cell.exp_id)
-                provenance_path = self.runs_root / cell.exp_id / "runtime_provenance.json"
-                provenance = json.loads(provenance_path.read_text())
-                total_seconds = float(provenance.get("accumulated_active_seconds", 0.0)) + elapsed
-                provenance["attempts"][-1].update(
-                    {"finished_utc": utc_now(), "exit_code": code, "active_seconds": elapsed}
+                assert payload is not None
+                provenance = json.loads(
+                    provenance_path.read_text(encoding="utf-8")
                 )
+                finished = utc_now()
+                provenance["attempts"][-1].update(
+                    {
+                        "finished_utc": finished,
+                        "exit_code": code,
+                        "active_seconds": elapsed,
+                    }
+                )
+                total_seconds = (
+                    float(provenance.get("accumulated_active_seconds", 0.0))
+                    + elapsed
+                )
+                selected = [
+                    attempt
+                    for attempt in provenance["attempts"]
+                    if attempt.get("phase") == self.phase
+                ]
+                phase_seconds = sum(
+                    float(attempt["active_seconds"]) for attempt in selected
+                )
+                phase_record: dict[str, object] = {
+                    "completed_utc": finished,
+                    "active_seconds": phase_seconds,
+                    "elapsed_hours": phase_seconds / 3600.0,
+                    "attempts": len(selected),
+                }
+                if self.phase == "train":
+                    phase_record.update(
+                        {
+                            "final_metrics_sha256": sha256_file(
+                                marker_for(cell, self.runs_root)
+                            ),
+                            "best_checkpoint_sha256": payload["best_checkpoint"]["sha256"],
+                            "epochs_run": payload["epochs_run"],
+                            "best_dev_f1": payload["best_dev_f1"],
+                        }
+                    )
+                    provenance.update(
+                        {
+                            "training_completed_utc": finished,
+                            "epochs_run": payload["epochs_run"],
+                            "best_dev_f1": payload["best_dev_f1"],
+                            "h100_runtime_contract": payload["h100_runtime_contract"],
+                        }
+                    )
+                    self.training_complete_ids.add(cell.exp_id)
+                else:
+                    phase_record.update(
+                        {
+                            "test_metrics_sha256": payload["test_result_sha256"],
+                            "training_cohort_sha256": payload[
+                                "training_cohort_sha256"
+                            ],
+                            "test_f1": payload["test_f1"],
+                        }
+                    )
+                    provenance.update(
+                        {
+                            "completed_utc": finished,
+                            "elapsed_hours": total_seconds / 3600.0,
+                            "test_f1": payload["test_f1"],
+                            "test_scored_at": payload["test_scored_at"],
+                        }
+                    )
+                    self.test_complete_ids.add(cell.exp_id)
+                phase_runtime = dict(provenance.get("phase_runtime", {}))
+                phase_runtime[self.phase] = phase_record
                 provenance.update(
                     {
-                        "completed_utc": utc_now(),
+                        "phase_runtime": phase_runtime,
                         "accumulated_active_seconds": total_seconds,
-                        "elapsed_hours": total_seconds / 3600.0,
-                        "epochs_run": payload.get("epochs_run"),
-                        "best_dev_f1": payload.get("best_dev_f1"),
-                        "test_f1": payload.get("test_f1"),
-                        "test_scored_at": payload.get("test_scored_at"),
-                        "h100_runtime_contract": payload["h100_runtime_contract"],
                     }
                 )
                 atomic_write_json(provenance_path, provenance)
-                self.cell_runtime[cell.exp_id] = {
-                    "elapsed_hours": total_seconds / 3600.0,
-                    "attempts": len(provenance["attempts"]),
-                    "epochs_run": payload.get("epochs_run"),
-                    "test_f1": payload.get("test_f1"),
-                }
+                _validated_phase_runtime(
+                    provenance,
+                    payload,
+                    exp_id=cell.exp_id,
+                    phase=self.phase,
+                )
+                self.cell_phase_runtime[cell.exp_id] = phase_runtime
+                if self.phase == "score-test":
+                    self.cell_runtime[cell.exp_id] = finalized_cell_runtime(
+                        provenance, payload, cell.exp_id
+                    )
                 self.record(
-                    "cell_complete",
+                    "cell_phase_complete",
                     gpu=gpu,
                     exp_id=cell.exp_id,
-                    elapsed_hours=total_seconds / 3600.0,
+                    phase=self.phase,
+                    elapsed_hours=phase_seconds / 3600.0,
                 )
             else:
                 first_failure = not self.failure_seen
@@ -1088,11 +1979,17 @@ class Controller:
                     )
                     self.record(
                         "fail_stop_engaged",
+                        phase=self.phase,
                         failed_exp_id=cell.exp_id,
                         allowed_to_finish=sorted(self.failure_allowed_ids),
                     )
-                self.record("cell_failed", gpu=gpu, exp_id=cell.exp_id, exit_code=code)
-
+                self.record(
+                    "cell_failed",
+                    gpu=gpu,
+                    exp_id=cell.exp_id,
+                    phase=self.phase,
+                    exit_code=code,
+                )
     def _stop_children(self) -> None:
         for process, _cell, _started in self.running.values():
             if process.poll() is None:
@@ -1112,10 +2009,90 @@ class Controller:
                 process.kill()
                 process.wait()
 
+    def freeze_training_cohort(self) -> None:
+        if (
+            self.phase != "train"
+            or self.running
+            or self.failure_seen
+            or self.training_complete_ids
+            != {cell.exp_id for cell in self.cells}
+        ):
+            raise RuntimeError(
+                "training cohort freeze requires all 32 successful training cells"
+            )
+        leaked = [
+            cell.exp_id
+            for cell in self.cells
+            if test_marker_for(cell, self.runs_root).exists()
+            or test_marker_for(cell, self.runs_root).is_symlink()
+        ]
+        if leaked:
+            raise RuntimeError(
+                "TEST result appeared before cohort freeze: " + ", ".join(leaked)
+            )
+        create_training_cohort(
+            cells=self.cells,
+            runs_root=self.runs_root,
+            output=self.cohort_path,
+            git_sha=self.git_sha,
+            detector_sha256=self.detector_sha256,
+            candidate_floor=self.candidate_floor,
+        )
+        self.cohort, self.cohort_sha256 = validate_training_cohort(
+            path=self.cohort_path,
+            cells=self.cells,
+            runs_root=self.runs_root,
+            git_sha=self.git_sha,
+            detector_sha256=self.detector_sha256,
+            candidate_floor=self.candidate_floor,
+        )
+        self.phase = "score-test"
+        self.complete_ids = self.test_complete_ids
+        self.record(
+            "training_cohort_frozen",
+            path=str(self.cohort_path),
+            sha256=self.cohort_sha256,
+            cells=len(self.training_complete_ids),
+        )
+
+
     def finalize_grid(self) -> int:
-        if self.running or len(self.complete_ids) != len(self.cells):
-            raise RuntimeError("campaign grid finalization requires every cell complete")
+        if (
+            self.phase != "score-test"
+            or self.cohort is None
+            or self.cohort_sha256 is None
+            or self.running
+            or self.training_complete_ids
+            != {cell.exp_id for cell in self.cells}
+            or self.test_complete_ids
+            != {cell.exp_id for cell in self.cells}
+        ):
+            raise RuntimeError(
+                "campaign grid finalization requires the frozen 32-cell TEST cohort"
+            )
         try:
+            validated_cohort, validated_sha256 = validate_training_cohort(
+                path=self.cohort_path,
+                cells=self.cells,
+                runs_root=self.runs_root,
+                git_sha=self.git_sha,
+                detector_sha256=self.detector_sha256,
+                candidate_floor=self.candidate_floor,
+            )
+            if (
+                validated_cohort != self.cohort
+                or validated_sha256 != self.cohort_sha256
+            ):
+                raise RuntimeError(
+                    "training cohort drifted before final grid validation"
+                )
+            validate_complete_test_cohort(
+                cells=self.cells,
+                runs_root=self.runs_root,
+                cohort=self.cohort,
+                cohort_sha256=self.cohort_sha256,
+                test_scene_ids=self.test_scene_ids,
+            )
             grid = collect_and_validate_grid(
                 repo=self.repo,
                 runs_root=self.runs_root,
@@ -1150,7 +2127,11 @@ class Controller:
             )
             return 1
         if not self.running:
-            if len(self.complete_ids) == len(self.cells):
+            if self.complete_ids == {cell.exp_id for cell in self.cells}:
+                if self.phase == "train":
+                    self.freeze_training_cohort()
+                    self.write_manifest(status="host-requeue-required")
+                    return HOST_REQUEUE_EXIT_CODE
                 return self.finalize_grid()
             self.write_manifest(status="host-requeue-required")
             return HOST_REQUEUE_EXIT_CODE
@@ -1201,7 +2182,11 @@ class Controller:
         # same grid finalization as the normal controller loop; otherwise the
         # allocation requeues to launch the remaining cells.
         if not self.running:
-            if len(self.complete_ids) == len(self.cells):
+            if self.complete_ids == {cell.exp_id for cell in self.cells}:
+                if self.phase == "train":
+                    self.freeze_training_cohort()
+                    self.write_manifest(status="host-requeue-required")
+                    return HOST_REQUEUE_EXIT_CODE
                 return self.finalize_grid()
             self.write_manifest(status="host-requeue-required")
             return HOST_REQUEUE_EXIT_CODE
@@ -1261,7 +2246,10 @@ class Controller:
             if self.failure_seen and not self.running:
                 self.write_manifest(status="failed")
                 return 1
-            if len(self.complete_ids) == len(self.cells) and not self.running:
+            if self.complete_ids == {cell.exp_id for cell in self.cells} and not self.running:
+                if self.phase == "train":
+                    self.freeze_training_cohort()
+                    continue
                 return self.finalize_grid()
             time.sleep(self.args.poll_seconds)
 
@@ -1281,10 +2269,8 @@ def main() -> int:
     parser.add_argument("--source-validation-sha256", required=True)
     parser.add_argument("--cutover-ready-json", type=Path, required=True)
     parser.add_argument("--cutover-ready-sha256", required=True)
-    parser.add_argument("--v100-core-archived-json", type=Path, required=True)
-    parser.add_argument("--v100-core-archived-sha256", required=True)
-    parser.add_argument("--v100-archive-manifest-json", type=Path, required=True)
-    parser.add_argument("--v100-archive-manifest-sha256", required=True)
+    parser.add_argument("--v100-diagnostic-isolation-json", type=Path, required=True)
+    parser.add_argument("--v100-diagnostic-isolation-sha256", required=True)
     parser.add_argument("--workers-per-gpu", type=int, default=6)
     parser.add_argument("--poll-seconds", type=float, default=10.0)
     parser.add_argument("--checkpoint-timeout", type=float, default=240.0)

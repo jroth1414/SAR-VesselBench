@@ -28,6 +28,11 @@ EXPECTED_COMPUTE_CAPABILITY = (9, 0)
 MIN_SCRATCH_BYTES = 500_000_000_000
 SLURM_ALLOCATION_WALL_HOURS = 36.5
 SLURM_SIGNAL_LEAD_HOURS = 0.25
+V100_DIAGNOSTIC_RUNNING = "continues-running-non-reportable-diagnostic"
+V100_DIAGNOSTIC_COMPLETE = "complete-non-reportable-diagnostic"
+V100_DIAGNOSTIC_STATUSES = frozenset(
+    {V100_DIAGNOSTIC_RUNNING, V100_DIAGNOSTIC_COMPLETE}
+)
 
 FROZEN_PATHS = (
     "configs/detector.yaml",
@@ -49,6 +54,7 @@ def cutover_acceptance_bindings(ready: Mapping[str, object]) -> dict[str, object
         "runtime_amendment",
         "gates",
         "source_validation",
+        "evaluation_ground_truth",
         "test_suite",
         "projection",
         "slurm_smoke",
@@ -66,16 +72,21 @@ def cutover_acceptance_bindings(ready: Mapping[str, object]) -> dict[str, object
 
 def validate_bound_cutover_forecast(
     cutover: Mapping[str, object],
-) -> dict[str, float]:
+) -> dict[str, object]:
     """Validate the cutover-time V100 forecast against the bound H100 receipt."""
 
     forecast = cutover.get("cutover_forecast")
     acceptance = cutover.get("acceptance")
     projection = acceptance.get("projection") if isinstance(acceptance, Mapping) else None
-    keys = {
+    numeric_keys = {
         "conservative_h100_wall_hours",
         "acceptance_remaining_v100_wall_hours",
         "current_remaining_v100_wall_hours",
+    }
+    keys = {
+        *numeric_keys,
+        "v100_diagnostic_status",
+        "h100_scientifically_mandatory",
     }
     if (
         not isinstance(forecast, Mapping)
@@ -84,23 +95,51 @@ def validate_bound_cutover_forecast(
     ):
         raise RuntimeError("CUTOVER_READY forecast binding is absent or malformed")
     try:
-        values = {key: float(forecast[key]) for key in keys}
+        values = {key: float(forecast[key]) for key in numeric_keys}
         accepted_h100 = float(projection["conservative_h100_wall_hours"])
         accepted_v100 = float(projection["remaining_v100_wall_hours"])
     except (KeyError, TypeError, ValueError) as exc:
         raise RuntimeError("CUTOVER_READY forecast values are invalid") from exc
-    if any(not math.isfinite(value) or value <= 0 for value in values.values()):
-        raise RuntimeError("CUTOVER_READY forecast values must be finite and positive")
+    if any(not math.isfinite(value) for value in values.values()):
+        raise RuntimeError("CUTOVER_READY forecast values must be finite")
+    if (
+        values["conservative_h100_wall_hours"] <= 0
+        or values["acceptance_remaining_v100_wall_hours"] <= 0
+        or values["current_remaining_v100_wall_hours"] < 0
+    ):
+        raise RuntimeError(
+            "CUTOVER_READY H100/acceptance forecasts must be positive and "
+            "current V100 remaining hours must be nonnegative"
+        )
     if (
         not math.isclose(values["conservative_h100_wall_hours"], accepted_h100)
         or not math.isclose(
             values["acceptance_remaining_v100_wall_hours"], accepted_v100
         )
-        or values["conservative_h100_wall_hours"]
-        >= values["current_remaining_v100_wall_hours"]
     ):
-        raise RuntimeError("CUTOVER_READY no longer proves a current H100 advantage")
-    return values
+        raise RuntimeError("CUTOVER_READY forecast differs from H100 acceptance")
+    if accepted_h100 >= accepted_v100:
+        raise RuntimeError("CUTOVER_READY does not preserve the acceptance comparison")
+
+    status = forecast.get("v100_diagnostic_status")
+    if status not in V100_DIAGNOSTIC_STATUSES:
+        raise RuntimeError("CUTOVER_READY V100 diagnostic status is invalid")
+    if forecast.get("h100_scientifically_mandatory") is not True:
+        raise RuntimeError("CUTOVER_READY must keep the H100 rerun scientifically mandatory")
+    current = values["current_remaining_v100_wall_hours"]
+    if current > 0:
+        if status != V100_DIAGNOSTIC_RUNNING or accepted_h100 >= current:
+            raise RuntimeError("CUTOVER_READY no longer proves a current H100 advantage")
+    elif status != V100_DIAGNOSTIC_COMPLETE:
+        raise RuntimeError(
+            "zero remaining V100 hours require an explicit complete "
+            "non-reportable diagnostic status"
+        )
+    return {
+        **values,
+        "v100_diagnostic_status": status,
+        "h100_scientifically_mandatory": True,
+    }
 
 # CNN cells are longer than ViT cells.  The scientific matrix is unchanged;
 # this is only the launch order within each expensive-first fraction.

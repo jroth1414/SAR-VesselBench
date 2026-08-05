@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import json
 import os
 import re
@@ -11,11 +12,14 @@ import subprocess
 import sys
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import yaml
 
+from src.analysis import curves
 from scripts.h100 import (
     acceptance,
     build_venv,
@@ -41,8 +45,6 @@ SBATCH = REPO / "slurm/h100/campaign.sbatch"
 SMOKE_SBATCH = REPO / "slurm/h100/smoke.sbatch"
 SUBMIT = REPO / "slurm/h100/submit.sh"
 SITE_EXAMPLE = REPO / "slurm/h100/site.env.example"
-V100_RECEIPT_SCHEMA = REPO / "slurm/h100/V100_CORE_ARCHIVED.schema.json"
-V100_ARCHIVE_SCHEMA = REPO / "slurm/h100/V100_CORE_ARCHIVE_MANIFEST.schema.json"
 
 RUNTIME_GIT_SHA = "1" * 40
 BASE_GIT_SHA = source_validation.BASE_PAYLOAD_GIT_SHA
@@ -395,7 +397,7 @@ def runtime_provenance(cell, *, finalized=False):
         "acceptance_uuid": "acceptance",
         "source_validation_sha256": "source-receipt",
         "cutover_ready_sha256": "cutover-receipt",
-        "v100_core_archived_sha256": "v100-receipt",
+        "v100_diagnostic_isolation_sha256": "v100-receipt",
         "strict_fp32": strict_backend(),
         "accepted_hardware_class": accepted_class,
         "precision": "32-true",
@@ -435,10 +437,13 @@ def runtime_provenance(cell, *, finalized=False):
 
 def existing_state_kwargs(runs):
     return {
+        "phase": "train",
+        "repo": REPO,
         "runs_root": runs,
         "campaign_id": "campaign",
-        "git_sha": "git",
-        "detector_sha256": "detector",
+        "git_sha": "a" * 40,
+        "detector_sha256": "b" * 64,
+        "candidate_floor": 0.05,
         "venv_sha256": VENV_SHA256,
         "venv_build_sha256": VENV_BUILD_SHA256,
         "base_python": base_python(),
@@ -447,10 +452,14 @@ def existing_state_kwargs(runs):
         "runtime_amendment": runtime_amendment(),
         "acceptance_uuid": "acceptance",
         "source_validation_sha256": "source-receipt",
+        "evaluation_ground_truth_sha256": "ground-truth-receipt",
         "cutover_ready_sha256": "cutover-receipt",
-        "v100_core_archived_sha256": "v100-receipt",
+        "v100_diagnostic_isolation_sha256": "v100-receipt",
         "strict_fp32": strict_backend(),
         "accepted_hardware_class": campaign.hardware_class(h100_hardware()),
+        "cohort": None,
+        "cohort_sha256": None,
+        "test_scene_ids": tuple(f"scene-{index:02d}" for index in range(16)),
     }
 
 
@@ -582,110 +591,6 @@ def ready_payload(smoke_path: Path, smoke_receipt: dict, bindings: dict) -> dict
     }
 
 
-def operator_evidence_fixture(tmp_path: Path) -> dict:
-    meta = (tmp_path / ".h100").absolute()
-    external = (tmp_path / "external").absolute()
-    meta.mkdir()
-    external.mkdir()
-    h100_git = RUNTIME_GIT_SHA
-    v100_git = "9" * 40
-    base = base_payload()
-    runtime = runtime_amendment()
-    cutover_path = meta / "CUTOVER_READY.json"
-    cutover_payload = {
-        "schema": 2,
-        "status": "cutover-ready",
-        "created_utc": "2026-07-27T00:00:00+00:00",
-        "acceptance": {
-            "uuid": "acceptance-uuid",
-            "schema": 2,
-            "source": {"git_sha": h100_git},
-            "venv": {"sha256": VENV_SHA256},
-            "base_payload": base,
-            "runtime_amendment": runtime,
-            "projection": {
-                "conservative_h100_wall_hours": 2.0,
-                "remaining_v100_wall_hours": 3.0,
-            },
-        },
-        "cutover_forecast": {
-            "conservative_h100_wall_hours": 2.0,
-            "acceptance_remaining_v100_wall_hours": 3.0,
-            "current_remaining_v100_wall_hours": 2.5,
-        },
-        "references": {
-            name: {
-                "metrics": {"exp_id": name},
-                "metrics_sha256": "7" * 64,
-                "provenance": {"git_sha": v100_git, "campaign_id": "v100-campaign"},
-                "provenance_sha256": "8" * 64,
-            }
-            for name in ("r2", "r3")
-        },
-        "v100_action": "none; this guard never stops or signals V100 processes",
-    }
-    contracts.atomic_write_json(cutover_path, cutover_payload)
-    canonical_manifest = meta / "V100_CORE_ARCHIVE_MANIFEST.json"
-    source_manifest = external / "archive-manifest.json"
-    manifest_payload = {
-        "schema": 1,
-        "status": "v100-core-diagnostics-archived",
-        "scope": "v100-core-diagnostics",
-        "diagnostic_status": "non-reportable-diagnostic",
-        "git_sha": v100_git,
-        "campaign_id": "v100-campaign",
-        "stopped_utc": "2026-07-27T01:00:00+00:00",
-        "archived_utc": "2026-07-27T01:10:00+00:00",
-        "file_count": 2,
-        "total_bytes": 20,
-    }
-    contracts.atomic_write_json(source_manifest, manifest_payload)
-    manifest_sha = contracts.sha256_file(source_manifest)
-    source_receipt = external / "V100_CORE_ARCHIVED.json"
-    receipt_payload = {
-        "schema": 2,
-        "status": "v100-core-archived",
-        "created_utc": "2026-07-27T01:15:00+00:00",
-        "attestation": "external-human-operator",
-        "cutover_ready_sha256": contracts.sha256_file(cutover_path),
-        "h100": {
-            "acceptance_uuid": "acceptance-uuid",
-            "git_sha": h100_git,
-            "venv_sha256": VENV_SHA256,
-            "base_payload": base,
-            "runtime_amendment": runtime,
-        },
-        "v100": {
-            "git_sha": v100_git,
-            "campaign_id": "v100-campaign",
-            "stopped_utc": "2026-07-27T01:00:00+00:00",
-            "stop_mode": "graceful",
-            "running_core_processes": 0,
-            "diagnostic_status": "non-reportable-diagnostic",
-        },
-        "archive": {
-            "manifest_path": str(canonical_manifest),
-            "manifest_sha256": manifest_sha,
-        },
-    }
-    contracts.atomic_write_json(source_receipt, receipt_payload)
-    return {
-        "meta_root": meta,
-        "cutover_ready": cutover_path,
-        "cutover_ready_sha256": contracts.sha256_file(cutover_path),
-        "receipt": source_receipt,
-        "receipt_sha256": contracts.sha256_file(source_receipt),
-
-        "archive_manifest": source_manifest,
-        "archive_manifest_sha256": manifest_sha,
-        "bound_archive_manifest": canonical_manifest,
-        "expected_h100_git_sha": h100_git,
-        "expected_venv_sha256": VENV_SHA256,
-        "expected_base_payload": base,
-        "expected_runtime_amendment": runtime,
-        "expected_reference_git_sha": v100_git,
-        "expected_reference_campaign_id": "v100-campaign",
-    }
 
 
 def test_matrix_is_exactly_32_and_expensive_first():
@@ -765,6 +670,7 @@ def _bare_preemption_controller(
     controller.repo = REPO
     controller.runs_root = tmp_path / "runs"
     controller.cells = cells
+    controller.phase = "score-test"
     controller.git_sha = RUNTIME_GIT_SHA
     controller.detector_sha256 = "f" * 64
     controller.venv_sha256 = VENV_SHA256
@@ -775,25 +681,36 @@ def _bare_preemption_controller(
     controller.runtime_amendment = {}
     controller.acceptance_uuid = "acceptance"
     controller.source_validation_sha256 = "a" * 64
+    controller.evaluation_ground_truth_sha256 = "d" * 64
     controller.cutover_ready_sha256 = "b" * 64
-    controller.v100_core_archived_sha256 = "c" * 64
+    controller.v100_diagnostic_isolation_sha256 = "c" * 64
     controller.strict_fp32 = {}
     controller.accepted_hardware_class = {}
     controller.running = {0: (process, cell, time.monotonic())}
-    controller.complete_ids = set()
+    controller.training_complete_ids = {item.exp_id for item in cells}
+    controller.test_complete_ids = set()
+    controller.complete_ids = controller.test_complete_ids
+    controller.cohort_path = controller.runs_root / ".h100/TRAINING_COHORT.json"
+    controller.cohort = {}
+    controller.cohort_sha256 = "e" * 64
+    controller.candidate_floor = 0.05
+    controller.test_scene_ids = tuple(
+        f"scene-{index:02d}" for index in range(16)
+    )
     controller.failure_seen = False
     controller.failed_ids = set()
     controller.failure_allowed_ids = set()
     controller.preemption_seen = True
     controller.preemption_forwarded = False
     controller.cell_runtime = {}
+    controller.cell_phase_runtime = {}
     controller.request_dir = controller.runs_root / ".h100/requeue-requests"
     controller.request_dir.mkdir(parents=True)
     run_dir = controller.runs_root / cell.exp_id
     run_dir.mkdir(parents=True)
     contracts.atomic_write_json(
         run_dir / "runtime_provenance.json",
-        {"attempts": [{}], "accumulated_active_seconds": 0.0},
+        {"attempts": [{"phase": "score-test"}], "accumulated_active_seconds": 0.0},
     )
     controller.test_events = []
     controller.test_statuses = []
@@ -839,6 +756,8 @@ def test_preemption_completion_race_reaps_code_zero_and_finalizes_or_requeues(
             "best_dev_f1": 0.1,
             "test_f1": 0.2,
             "test_scored_at": "2026-07-30T00:00:00+00:00",
+            "test_result_sha256": "1" * 64,
+            "training_cohort_sha256": "e" * 64,
             "h100_runtime_contract": {},
         },
     )
@@ -846,6 +765,31 @@ def test_preemption_completion_race_reaps_code_zero_and_finalizes_or_requeues(
         campaign,
         "validate_runtime_provenance",
         lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        campaign,
+        "_validated_phase_runtime",
+        lambda *_args, **_kwargs: {},
+    )
+    monkeypatch.setattr(
+        campaign,
+        "finalized_cell_runtime",
+        lambda *_args, **_kwargs: {
+            "elapsed_hours": 0.1,
+            "attempts": 1,
+            "epochs_run": 1,
+            "test_f1": 0.2,
+        },
+    )
+    monkeypatch.setattr(
+        campaign,
+        "validate_training_cohort",
+        lambda **_kwargs: (controller.cohort, controller.cohort_sha256),
+    )
+    monkeypatch.setattr(
+        campaign,
+        "validate_complete_test_cohort",
+        lambda **_kwargs: {},
     )
     kill_attempts = []
 
@@ -870,7 +814,7 @@ def test_preemption_completion_race_reaps_code_zero_and_finalizes_or_requeues(
     assert not controller.failure_seen
     assert kill_attempts == [(process.pid, signal.SIGUSR1)]
     assert controller.test_statuses[-1] == expected_status
-    assert any(item["event"] == "cell_complete" for item in controller.test_events)
+    assert any(item["event"] == "cell_phase_complete" for item in controller.test_events)
     if pending_cell:
         assert grid_calls == []
     else:
@@ -963,6 +907,11 @@ def test_cell_completion_signal_race_writes_job_bound_requeue_request(
     monkeypatch.setenv("SLURM_JOB_ID", "job-cell-race")
     monkeypatch.setattr(h100_cell, "assert_sitecustomize_active", lambda: None)
     monkeypatch.setattr(h100_cell, "assert_launch_process_contract", lambda: None)
+    monkeypatch.setattr(
+        h100_cell,
+        "_validate_training",
+        lambda *_args, **_kwargs: {},
+    )
 
     def missing_process(*_args):
         raise ProcessLookupError
@@ -991,10 +940,15 @@ def test_cell_completion_signal_race_writes_job_bound_requeue_request(
     args = SimpleNamespace(
         repo=REPO,
         runs_root=runs,
+        phase="train",
         exp_id=exp_id,
         init="convnext_random",
         label_frac=1.0,
         git_sha=RUNTIME_GIT_SHA,
+        detector_sha256="f" * 64,
+        candidate_floor=0.05,
+        training_cohort=None,
+        training_cohort_sha256=None,
         workers=1,
     )
 
@@ -1002,10 +956,10 @@ def test_cell_completion_signal_race_writes_job_bound_requeue_request(
     assert (request_dir / "gpu-0.request").read_text() == "job-cell-race\n"
     assert not (run_dir / "final_metrics.json").exists()
     wrapper = json.loads((run_dir / "cell_wrapper.json").read_text())
-    assert wrapper == {"phase": "score-test", "exp_id": exp_id}
+    assert wrapper == {"phase": "train-complete", "exp_id": exp_id}
 
 
-def test_cell_scoring_signal_requeues_before_final_metrics_exist(
+def test_cell_scoring_signal_requeues_before_test_metrics_exist(
     tmp_path,
     monkeypatch,
 ):
@@ -1019,19 +973,21 @@ def test_cell_scoring_signal_requeues_before_final_metrics_exist(
     monkeypatch.setenv("SLURM_JOB_ID", "job-score-race")
     monkeypatch.setattr(h100_cell, "assert_sitecustomize_active", lambda: None)
     monkeypatch.setattr(h100_cell, "assert_launch_process_contract", lambda: None)
-
-    class TrainProcess:
-        pid = 7655
-
-        def poll(self):
-            return None
-
-        def wait(self):
-            checkpoints = run_dir / "checkpoints"
-            checkpoints.mkdir(parents=True)
-            (checkpoints / "best.ckpt").write_bytes(b"best")
-            (checkpoints / "last.ckpt").write_bytes(b"last")
-            return 0
+    monkeypatch.setattr(
+        h100_cell,
+        "_validated_cohort",
+        lambda *_args, **_kwargs: ({}, "e" * 64),
+    )
+    monkeypatch.setattr(
+        h100_cell,
+        "_validate_training",
+        lambda *_args, **_kwargs: {},
+    )
+    monkeypatch.setattr(
+        h100_cell,
+        "_validate_scored",
+        lambda *_args, **_kwargs: {},
+    )
 
     class ScoreProcess:
         pid = 7656
@@ -1046,39 +1002,396 @@ def test_cell_scoring_signal_requeues_before_final_metrics_exist(
             signal.raise_signal(signal.SIGUSR1)
             return 0
 
-    processes = iter((TrainProcess(), ScoreProcess()))
     monkeypatch.setattr(
         h100_cell.subprocess,
         "Popen",
-        lambda *_args, **_kwargs: next(processes),
+        lambda *_args, **_kwargs: ScoreProcess(),
     )
     args = SimpleNamespace(
         repo=REPO,
         runs_root=runs,
+        phase="score-test",
         exp_id=exp_id,
         init="convnext_random",
         label_frac=1.0,
         git_sha=RUNTIME_GIT_SHA,
+        detector_sha256="f" * 64,
+        candidate_floor=0.05,
+        training_cohort=runs / ".h100/TRAINING_COHORT.json",
+        training_cohort_sha256="e" * 64,
         workers=1,
     )
 
     assert h100_cell.run_cell(args) == h100_cell.PREEMPTED_EXIT_CODE
     assert (request_dir / "gpu-0.request").read_text() == "job-score-race\n"
-    assert not (run_dir / "final_metrics.json").exists()
+    assert not (run_dir / "test_metrics.json").exists()
     wrapper = json.loads((run_dir / "cell_wrapper.json").read_text())
-    assert wrapper == {"phase": "score-test", "exp_id": exp_id}
+    assert wrapper == {
+        "phase": "score-test",
+        "exp_id": exp_id,
+        "training_cohort_sha256": "e" * 64,
+    }
 
 
-def test_final_grid_requires_exact_32_finite_rows_and_monotonicity(tmp_path, monkeypatch):
+def test_repeated_controller_crashes_close_open_attempts_before_last_ckpt_resume(
+    tmp_path,
+    monkeypatch,
+):
+    cell = contracts.load_cells(REPO)[0]
+    controller = object.__new__(campaign.Controller)
+    hardware = h100_hardware()
+    accepted_class = campaign.hardware_class(hardware)
+    controller.args = SimpleNamespace(
+        campaign_id="crash-recovery-fixture",
+        hardware=hardware,
+        workers_per_gpu=1,
+    )
+    controller.repo = REPO
+    controller.runs_root = tmp_path / "runs"
+    controller.phase = "train"
+    controller.git_sha = RUNTIME_GIT_SHA
+    controller.detector_sha256 = "f" * 64
+    controller.candidate_floor = 0.05
+    controller.venv_sha256 = VENV_SHA256
+    controller.venv_build_sha256 = VENV_BUILD_SHA256
+    controller.base_python = base_python()
+    controller.wheelhouse = wheelhouse()
+    controller.base_payload = base_payload()
+    controller.runtime_amendment = runtime_amendment()
+    controller.acceptance_uuid = "acceptance"
+    controller.source_validation_sha256 = "a" * 64
+    controller.evaluation_ground_truth_sha256 = "d" * 64
+    controller.cutover_ready_sha256 = "b" * 64
+    controller.v100_diagnostic_isolation_sha256 = "c" * 64
+    controller.strict_fp32 = strict_backend()
+    controller.accepted_hardware_class = accepted_class
+    controller.allocation_hardware_class = accepted_class
+    controller.cohort_path = controller.runs_root / ".h100/TRAINING_COHORT.json"
+    controller.cohort = None
+    controller.cohort_sha256 = None
+    controller.request_dir = controller.runs_root / ".h100/requeue-requests"
+    controller.running = {}
+    events = []
+    controller.record = lambda event, **payload: events.append(
+        {"event": event, **payload}
+    )
+
+    run_dir = controller.runs_root / cell.exp_id
+    checkpoints = run_dir / "checkpoints"
+    checkpoints.mkdir(parents=True)
+    (checkpoints / "last.ckpt").write_bytes(b"durable-resume")
+    device = hardware["devices"][0]
+    contracts.atomic_write_json(
+        run_dir / "runtime_provenance.json",
+        {
+            "phase": "train",
+            "attempts": [
+                {
+                    "attempt": 1,
+                    "phase": "train",
+                    "started_utc": "2026-08-04T00:00:00+00:00",
+                    "slurm_job_id": "job-before-crash",
+                    "gpu_local_index": 0,
+                    "gpu_uuid": device["uuid"],
+                }
+            ],
+            "phase_runtime": {},
+            "accumulated_active_seconds": 0.0,
+        },
+    )
+    timestamps = iter(
+        (
+            "2026-08-04T00:00:10+00:00",
+            "2026-08-04T00:00:11+00:00",
+            "2026-08-04T00:00:21+00:00",
+            "2026-08-04T00:00:22+00:00",
+        )
+    )
+    monkeypatch.setattr(campaign, "utc_now", lambda: next(timestamps))
+    monkeypatch.setenv("SLURM_JOB_ID", "job-after-crash")
+
+    class RunningProcess:
+        pid = 8800
+
+        def poll(self):
+            return None
+
+    monkeypatch.setattr(
+        campaign.subprocess,
+        "Popen",
+        lambda *_args, **_kwargs: RunningProcess(),
+    )
+
+    controller.launch(0, cell)
+    controller.running.clear()  # model a second abrupt controller/node loss
+    controller.launch(0, cell)
+
+    provenance = json.loads(
+        (run_dir / "runtime_provenance.json").read_text(encoding="utf-8")
+    )
+    attempts = provenance["attempts"]
+    assert len(attempts) == 3
+    assert attempts[0]["exit"] == "controller-or-node-crash-recovered"
+    assert attempts[0]["active_seconds"] == 10.0
+    assert attempts[1]["exit"] == "controller-or-node-crash-recovered"
+    assert attempts[1]["active_seconds"] == 10.0
+    assert attempts[2]["resumed_from_last_ckpt"] is True
+    assert "active_seconds" not in attempts[2]
+    assert provenance["accumulated_active_seconds"] == 20.0
+    assert [event["recovered_open_attempt"] for event in events] == [True, True]
+
+
+@pytest.mark.parametrize("phase", ("train", "score-test"))
+def test_crash_reconciliation_closes_each_supported_phase(phase):
+    provenance = {
+        "phase": phase,
+        "attempts": [
+            {
+                "attempt": 1,
+                "phase": phase,
+                "started_utc": "2026-08-04T00:00:00+00:00",
+            }
+        ],
+        "accumulated_active_seconds": 0.0,
+    }
+    assert campaign.reconcile_stale_open_attempt(
+        provenance,
+        phase=phase,
+        recovered_utc="2026-08-04T00:00:05+00:00",
+    )
+    assert provenance["accumulated_active_seconds"] == 5.0
+    assert provenance["attempts"][0] == {
+        "attempt": 1,
+        "phase": phase,
+        "started_utc": "2026-08-04T00:00:00+00:00",
+        "finished_utc": "2026-08-04T00:00:05+00:00",
+        "exit": "controller-or-node-crash-recovered",
+        "active_seconds": 5.0,
+        "active_seconds_basis": "started-to-recovery-observation",
+        "recovered_from": "open-attempt-on-controller-start",
+    }
+
+
+def test_crash_reconciliation_rejects_ambiguous_open_history():
+    provenance = {
+        "phase": "train",
+        "attempts": [
+            {
+                "attempt": 1,
+                "phase": "train",
+                "started_utc": "2026-08-04T00:00:00+00:00",
+            },
+            {
+                "attempt": 2,
+                "phase": "train",
+                "started_utc": "2026-08-04T00:00:01+00:00",
+            },
+        ],
+        "accumulated_active_seconds": 0.0,
+    }
+    with pytest.raises(RuntimeError, match="only the final"):
+        campaign.reconcile_stale_open_attempt(
+            provenance,
+            phase="train",
+            recovered_utc="2026-08-04T00:00:05+00:00",
+        )
+
+
+def test_score_phase_cannot_launch_before_canonical_cohort():
+    controller = object.__new__(campaign.Controller)
+    controller.phase = "score-test"
+    controller.cohort = None
+    controller.cohort_sha256 = None
+    cell = contracts.load_cells(REPO)[0]
+    with pytest.raises(RuntimeError, match="without frozen cohort"):
+        controller.launch(0, cell)
+
+
+def test_training_cohort_transition_requires_exact_all_32_ids(
+    tmp_path,
+    monkeypatch,
+):
+    controller = object.__new__(campaign.Controller)
+    controller.phase = "train"
+    controller.running = {}
+    controller.failure_seen = False
+    controller.cells = contracts.load_cells(REPO)
+    expected_ids = {cell.exp_id for cell in controller.cells}
+    controller.training_complete_ids = {
+        *list(expected_ids)[:-1],
+        "not-a-core-cell",
+    }
+    controller.test_complete_ids = set()
+    controller.complete_ids = controller.training_complete_ids
+    controller.runs_root = tmp_path / "runs"
+    controller.cohort_path = controller.runs_root / ".h100/TRAINING_COHORT.json"
+    controller.git_sha = "a" * 40
+    controller.detector_sha256 = "b" * 64
+    controller.candidate_floor = 0.05
+    events = []
+    controller.record = lambda event, **payload: events.append(
+        {"event": event, **payload}
+    )
+    calls = []
+    monkeypatch.setattr(
+        campaign,
+        "create_training_cohort",
+        lambda **kwargs: calls.append(("create", kwargs)),
+    )
+    monkeypatch.setattr(
+        campaign,
+        "validate_training_cohort",
+        lambda **kwargs: ({"cell_count": 32}, "c" * 64),
+    )
+
+    with pytest.raises(RuntimeError, match="all 32"):
+        controller.freeze_training_cohort()
+    assert calls == []
+
+    controller.training_complete_ids = expected_ids
+    controller.complete_ids = controller.training_complete_ids
+    controller.freeze_training_cohort()
+    assert controller.phase == "score-test"
+    assert controller.complete_ids is controller.test_complete_ids
+    assert [kind for kind, _kwargs in calls] == ["create"]
+    assert events[-1]["event"] == "training_cohort_frozen"
+    assert events[-1]["cells"] == 32
+
+
+def test_training_fraction_counts_use_frozen_nested_scenes_and_canonical_gt(
+    tmp_path,
+):
+    from src.data.datasets import nested_fraction_scenes
+
+    repo = tmp_path / "repo"
+    (repo / "configs").mkdir(parents=True)
+    labels_root = repo / "data/raw/xview3/labels"
+    labels_root.mkdir(parents=True)
+    scenes = [f"scene-{index:02d}" for index in range(10)]
+    (repo / "data/splits.json").write_text(
+        json.dumps(
+            {
+                "splits": {
+                    "train": scenes,
+                    "dev": [],
+                    "test": [],
+                    "eval_final": [],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    (repo / "configs/data.yaml").write_text(
+        "seed: 0\n"
+        "paths:\n"
+        "  splits: data/splits.json\n"
+        "  raw_xview3: data/raw/xview3\n",
+        encoding="utf-8",
+    )
+    fields = (
+        "scene_id",
+        "confidence",
+        "is_vessel",
+        "source",
+        "distance_from_shore_km",
+        "detect_scene_column",
+        "detect_scene_row",
+    )
+    with (labels_root / "train.csv").open(
+        "w", newline="", encoding="utf-8"
+    ) as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        for index, scene_id in enumerate(scenes):
+            writer.writerow(
+                {
+                    "scene_id": scene_id,
+                    "confidence": "MEDIUM",
+                    "is_vessel": "true",
+                    "source": "manual" if index % 2 == 0 else "ais",
+                    "distance_from_shore_km": 2.0 if index % 3 == 0 else 3.0,
+                    "detect_scene_column": index,
+                    "detect_scene_row": index + 1,
+                }
+            )
+            writer.writerow(
+                {
+                    "scene_id": scene_id,
+                    "confidence": "HIGH",
+                    "is_vessel": "false",
+                    "source": "ais",
+                    "distance_from_shore_km": 1.0,
+                    "detect_scene_column": index,
+                    "detect_scene_row": index + 1,
+                }
+            )
+            writer.writerow(
+                {
+                    "scene_id": scene_id,
+                    "confidence": "LOW",
+                    "is_vessel": "",
+                    "source": "manual",
+                    "distance_from_shore_km": 1.0,
+                    "detect_scene_column": index,
+                    "detect_scene_row": index + 1,
+                }
+            )
+
+    fractions = (0.1, 0.25, 0.5, 1.0)
+    observed = curves.training_fraction_counts(repo=repo, fractions=fractions)
+    for fraction in fractions:
+        selected = nested_fraction_scenes(
+            scenes,
+            fraction,
+            frac_seed=0,
+        )
+        indexes = {scenes.index(scene_id) for scene_id in selected}
+        assert observed[fraction] == {
+            "train_scene_count": len(selected),
+            "train_vessel_count": len(selected),
+            "train_dark_vessel_count": sum(index % 2 == 0 for index in indexes),
+            "train_near_shore_vessel_count": sum(
+                index % 3 == 0 for index in indexes
+            ),
+        }
+
+
+def test_final_grid_requires_exact_counts_no_nans_and_monotonicity(
+    tmp_path,
+    monkeypatch,
+):
     cells = contracts.load_cells(REPO)
     runs = tmp_path / "runs"
+    arms = yaml.safe_load((REPO / "configs/arms.yaml").read_text())["arms"]
+    fraction_counts = {
+        fraction: {
+            "train_scene_count": int(round(fraction * 100)),
+            "train_vessel_count": int(round(fraction * 1000)),
+            "train_dark_vessel_count": 0,
+            "train_near_shore_vessel_count": int(round(fraction * 10)),
+        }
+        for fraction in (0.1, 0.25, 0.5, 1.0)
+    }
     rows = [
         {
             "exp_id": cell.exp_id,
-            "test_f1": "0.5",
-            "monotonicity_ok": "True",
-            "git_sha": "git",
+            "init": cell.init,
+            "track": cell.track,
+            "role": arms[cell.init]["role"],
+            "label_frac": str(cell.fraction),
+            "seed": str(cell.seed),
+            "precision": "32-true",
             "detector_sha256": "detector",
+            "git_sha": "git",
+            "dev_f1": "0.4",
+            "dev_threshold": "0.3",
+            "test_f1": "0.5",
+            "epochs_run": "2",
+            **{
+                key: str(value)
+                for key, value in fraction_counts[cell.fraction].items()
+            },
+            "monotonicity_ok": "True",
         }
         for cell in cells
     ]
@@ -1087,10 +1400,18 @@ def test_final_grid_requires_exact_32_finite_rows_and_monotonicity(tmp_path, mon
         assert cwd == REPO and check is True
         grid = runs / "summary/grid.csv"
         grid.parent.mkdir(parents=True, exist_ok=True)
-        grid.write_text(",".join(rows[0]) + "\n" + "\n".join(",".join(row.values()) for row in rows) + "\n")
+        with grid.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=curves.GRID_COLUMNS)
+            writer.writeheader()
+            writer.writerows(rows)
         return subprocess.CompletedProcess([], 0)
 
     monkeypatch.setattr(campaign.subprocess, "run", fake_collect)
+    monkeypatch.setattr(
+        campaign,
+        "training_fraction_counts",
+        lambda **_kwargs: fraction_counts,
+    )
     assert campaign.collect_and_validate_grid(
         repo=REPO,
         runs_root=runs,
@@ -1100,6 +1421,30 @@ def test_final_grid_requires_exact_32_finite_rows_and_monotonicity(tmp_path, mon
     ) == runs / "summary/grid.csv"
     rows[0]["monotonicity_ok"] = "False"
     with pytest.raises(RuntimeError, match="monotonicity STOP"):
+        campaign.collect_and_validate_grid(
+            repo=REPO,
+            runs_root=runs,
+            cells=cells,
+            git_sha="git",
+            detector_sha256="detector",
+        )
+    rows[0]["monotonicity_ok"] = "True"
+    rows[0]["train_vessel_count"] = str(
+        int(rows[0]["train_vessel_count"]) + 1
+    )
+    with pytest.raises(RuntimeError, match="TRAIN fraction counts mismatch"):
+        campaign.collect_and_validate_grid(
+            repo=REPO,
+            runs_root=runs,
+            cells=cells,
+            git_sha="git",
+            detector_sha256="detector",
+        )
+    rows[0]["train_vessel_count"] = str(
+        fraction_counts[cells[0].fraction]["train_vessel_count"]
+    )
+    rows[0]["dev_f1"] = "NaN"
+    with pytest.raises(RuntimeError, match="absent/NaN"):
         campaign.collect_and_validate_grid(
             repo=REPO,
             runs_root=runs,
@@ -1183,52 +1528,130 @@ def test_completion_marker_is_recipe_and_hash_checked(tmp_path):
         contracts.validate_completion_marker(marker, cell=cell, git_sha="git", detector_sha256="detector")
 
 
-def test_completed_cell_reuse_requires_schema2_native_provenance(tmp_path):
+def _write_valid_training_marker(runs, cell):
+    import torch
+
+    run = runs / cell.exp_id
+    checkpoints = run / "checkpoints"
+    checkpoints.mkdir(parents=True)
+    best = checkpoints / "best.ckpt"
+    torch.save({"epoch": 3, "callbacks": {}}, best)
+    torch.save({"epoch": 3, "callbacks": {}}, checkpoints / "last.ckpt")
+    precision = 3 / 4
+    recall = 3 / 5
+    f1 = 2 * precision * recall / (precision + recall)
+    best_dev = {
+        "epoch": 3,
+        "f1": f1,
+        "precision": precision,
+        "recall": recall,
+        "tp": 3,
+        "fp": 1,
+        "fn": 2,
+        "ignored_predictions": 1,
+        "threshold": 0.4,
+        "n_candidates": 8,
+    }
+    payload = {
+        "result_schema": 2,
+        "exp_id": cell.exp_id,
+        "git_sha": "a" * 40,
+        "detector_sha256": "b" * 64,
+        "precision": "32-true",
+        "micro_batch": 16,
+        "gradient_accumulation": 1,
+        "effective_batch": 16,
+        "epochs_run": 4,
+        "best_dev_f1": f1,
+        "best_dev": best_dev,
+        "best_checkpoint": {
+            "relative_path": "checkpoints/best.ckpt",
+            "sha256": contracts.sha256_file(best),
+            "epoch": 3,
+        },
+        "last_dev": dict(best_dev),
+        "train_loss": 1.25,
+        "h100_runtime_contract": h100_runtime_contract(),
+    }
+    marker = run / "final_metrics.json"
+    contracts.atomic_write_json(marker, payload)
+    marker.chmod(0o644)
+    return run, marker, payload
+
+
+def test_existing_state_recovers_and_seals_valid_writable_training_marker(
+    tmp_path,
+    monkeypatch,
+):
+    cell = contracts.load_cells(REPO)[0]
+    runs = tmp_path / "runs"
+    run, marker, payload = _write_valid_training_marker(runs, cell)
+    started = datetime.fromtimestamp(
+        marker.stat().st_mtime - 10.0,
+        timezone.utc,
+    ).isoformat()
+    contracts.atomic_write_json(
+        run / "runtime_provenance.json",
+        {
+            "phase": "train",
+            "run_dir": str(run),
+            "attempts": [{"phase": "train", "started_utc": started}],
+            "accumulated_active_seconds": 0.0,
+            "phase_runtime": {},
+        },
+    )
+    monkeypatch.setattr(
+        campaign,
+        "validate_runtime_provenance",
+        lambda *_args, **_kwargs: None,
+    )
+
+    assert stat.S_IMODE(marker.stat().st_mode) & 0o222
+    assert campaign.existing_cell_state(
+        cell,
+        **existing_state_kwargs(runs),
+    ) == "complete"
+    assert stat.S_IMODE(marker.stat().st_mode) == 0o444
+    assert json.loads(marker.read_text()) == payload
+    recovered = json.loads((run / "runtime_provenance.json").read_text())
+    assert recovered["attempts"][-1]["exit_code"] == 0
+    assert (
+        recovered["attempts"][-1]["recovered_from"]
+        == "validated-completion-marker"
+    )
+    assert recovered["phase_runtime"]["train"]["controller_crash_recovered"] is True
+
+
+def test_existing_state_does_not_seal_invalid_training_marker(
+    tmp_path,
+    monkeypatch,
+):
+    cell = contracts.load_cells(REPO)[0]
+    runs = tmp_path / "runs"
+    run, marker, _payload = _write_valid_training_marker(runs, cell)
+    (run / "checkpoints/best.ckpt").write_bytes(b"tampered")
+    (run / "runtime_provenance.json").write_text("{}")
+    monkeypatch.setattr(
+        campaign,
+        "validate_runtime_provenance",
+        lambda *_args, **_kwargs: None,
+    )
+
+    with pytest.raises(RuntimeError, match="invalid schema-2 training completion"):
+        campaign.existing_cell_state(cell, **existing_state_kwargs(runs))
+    assert stat.S_IMODE(marker.stat().st_mode) & 0o222
+
+
+def test_existing_cell_rejects_legacy_runtime_provenance(tmp_path):
     cell = contracts.load_cells(REPO)[0]
     runs = tmp_path / "runs"
     run = runs / cell.exp_id
-    (run / "checkpoints").mkdir(parents=True)
-    (run / "checkpoints/best.ckpt").write_bytes(b"best")
-    (run / "checkpoints/last.ckpt").write_bytes(b"last")
-    marker = completion_payload(cell, scored=True)
-    (run / "final_metrics.json").write_text(json.dumps(marker))
-    provenance = runtime_provenance(cell, finalized=True)
-    (run / "runtime_provenance.json").write_text(json.dumps(provenance))
-    kwargs = existing_state_kwargs(runs)
-    assert campaign.existing_cell_state(cell, **kwargs) == "complete"
-    provenance["schema"] = 1
-    provenance["sif_sha256"] = "legacy"
-    (run / "runtime_provenance.json").write_text(json.dumps(provenance))
+    run.mkdir(parents=True)
+    (run / "runtime_provenance.json").write_text(
+        json.dumps({"schema": 1, "sif_sha256": "legacy"})
+    )
     with pytest.raises(RuntimeError, match="runtime provenance"):
-        campaign.existing_cell_state(cell, **kwargs)
-
-
-def test_training_only_and_unfinalized_scored_cells_resume(tmp_path):
-    cell = contracts.load_cells(REPO)[0]
-    runs = tmp_path / "runs"
-    run = runs / cell.exp_id
-    (run / "checkpoints").mkdir(parents=True)
-    (run / "checkpoints/best.ckpt").write_bytes(b"best")
-    (run / "checkpoints/last.ckpt").write_bytes(b"last")
-    marker = completion_payload(cell)
-    (run / "final_metrics.json").write_text(json.dumps(marker))
-    provenance = runtime_provenance(cell)
-    (run / "runtime_provenance.json").write_text(json.dumps(provenance))
-    kwargs = existing_state_kwargs(runs)
-    assert campaign.existing_cell_state(cell, **kwargs) == "resume"
-    marker.update({
-        "test_inference_precision": "32-true",
-        "test_f1": 0.4,
-        "test_precision": 0.5,
-        "test_recall": 0.3,
-        "test_near_shore_f1": 0.2,
-    })
-    (run / "final_metrics.json").write_text(json.dumps(marker))
-    assert campaign.existing_cell_state(cell, **kwargs) == "resume"
-    provenance["runtime_amendment"] = {**runtime_amendment(), "manifest_sha256": "bad"}
-    (run / "runtime_provenance.json").write_text(json.dumps(provenance))
-    with pytest.raises(RuntimeError, match="runtime provenance"):
-        campaign.existing_cell_state(cell, **kwargs)
+        campaign.existing_cell_state(cell, **existing_state_kwargs(runs))
 
 
 def test_acceptance_probe_marker_requires_finite_fp32_batch16(tmp_path):
@@ -1273,9 +1696,75 @@ def test_projection_and_scratch_gates_are_exact():
 
 def test_cutover_rechecks_current_v100_forecast():
     ready = {"projection": {"conservative_h100_wall_hours": 20.0, "remaining_v100_wall_hours": 30.0}}
-    assert cutover.validate_current_v100_advantage(ready, 25.0)["current_remaining_v100_wall_hours"] == 25.0
+    forecast = cutover.validate_current_v100_advantage(
+        ready,
+        25.0,
+        current_v100_diagnostic_status=contracts.V100_DIAGNOSTIC_RUNNING,
+    )
+    assert forecast == {
+        "conservative_h100_wall_hours": 20.0,
+        "acceptance_remaining_v100_wall_hours": 30.0,
+        "current_remaining_v100_wall_hours": 25.0,
+        "v100_diagnostic_status": contracts.V100_DIAGNOSTIC_RUNNING,
+        "h100_scientifically_mandatory": True,
+    }
     with pytest.raises(RuntimeError, match="no longer slower"):
-        cutover.validate_current_v100_advantage(ready, 19.0)
+        cutover.validate_current_v100_advantage(
+            ready,
+            19.0,
+            current_v100_diagnostic_status=contracts.V100_DIAGNOSTIC_RUNNING,
+        )
+    with pytest.raises(RuntimeError, match="no longer slower"):
+        cutover.validate_current_v100_advantage(
+            ready,
+            25.0,
+            current_v100_diagnostic_status=contracts.V100_DIAGNOSTIC_COMPLETE,
+        )
+
+
+def test_cutover_allows_zero_only_for_completed_nonreportable_v100_diagnostic():
+    ready = {
+        "projection": {
+            "conservative_h100_wall_hours": 20.0,
+            "remaining_v100_wall_hours": 30.0,
+        }
+    }
+    forecast = cutover.validate_current_v100_advantage(
+        ready,
+        0.0,
+        current_v100_diagnostic_status=contracts.V100_DIAGNOSTIC_COMPLETE,
+    )
+    assert forecast["v100_diagnostic_status"] == (
+        "complete-non-reportable-diagnostic"
+    )
+    assert forecast["h100_scientifically_mandatory"] is True
+    with pytest.raises(RuntimeError, match="explicit complete"):
+        cutover.validate_current_v100_advantage(
+            ready,
+            0.0,
+            current_v100_diagnostic_status=contracts.V100_DIAGNOSTIC_RUNNING,
+        )
+    with pytest.raises(RuntimeError, match="nonnegative"):
+        cutover.validate_current_v100_advantage(
+            ready,
+            -0.1,
+            current_v100_diagnostic_status=contracts.V100_DIAGNOSTIC_COMPLETE,
+        )
+
+
+def test_cutover_preserves_original_acceptance_comparison():
+    ready = {
+        "projection": {
+            "conservative_h100_wall_hours": 30.0,
+            "remaining_v100_wall_hours": 20.0,
+        }
+    }
+    with pytest.raises(RuntimeError, match="original acceptance comparison"):
+        cutover.validate_current_v100_advantage(
+            ready,
+            40.0,
+            current_v100_diagnostic_status=contracts.V100_DIAGNOSTIC_RUNNING,
+        )
 
 
 def test_hpc_checkpoint_is_atomically_promoted(tmp_path):
@@ -1305,9 +1794,29 @@ def test_slurm_smoke_proves_external_sigusr1_requeue_and_resume(tmp_path):
     }
     assert [item["restart_count"] for item in receipt["allocations"]] == [0, 1]
     assert receipt["checkpoint"]["hpc_sha256"] == receipt["checkpoint"]["last_sha256"]
+    assert (
+        receipt["checkpoint"]["dev_scene_eval_state"]
+        == slurm_smoke.SYNTHETIC_DEV_SCENE_EVAL_STATE
+    )
+    assert (
+        receipt["resume"]["restored_dev_scene_eval_state"]
+        == slurm_smoke.SYNTHETIC_DEV_SCENE_EVAL_STATE
+    )
+    assert receipt["resume"]["dev_scene_eval_state_preserved"] is True
     assert receipt["resume"]["final_step"] > receipt["resume"]["resumed_step"]
     assert not list((ready.parent / "synthetic-cell").rglob("*.promoting"))
     assert not any((tmp_path / "runs" / cell.exp_id).exists() for cell in contracts.load_cells(REPO))
+
+
+def test_slurm_smoke_rejects_dev_scene_eval_state_drift(tmp_path):
+    ready, bindings, receipt = completed_smoke(tmp_path)
+    receipt["resume"]["restored_dev_scene_eval_state"]["best"] = 0.25
+    contracts.atomic_write_json(ready, receipt)
+    with pytest.raises(RuntimeError, match="restore exact DevSceneEval"):
+        slurm_smoke.validate_smoke_receipt(
+            ready,
+            expected_bindings=bindings,
+        )
 
 
 def test_slurm_smoke_external_signal_timeout_is_fail_closed(tmp_path):
@@ -1462,11 +1971,25 @@ def test_submit_and_site_interfaces_are_safe_and_untracked():
         "H100_TRANSFER_PYTHON",
         "H100_JOB_LOG_DIR",
         "H100_V100_CONTROL_PLANE",
-        "H100_REFERENCES_ROOT",
-        "BOX_JWT_CONFIG",
-        "BOX_FOLDER_ID",
+        "H100_REFERENCES_PACKAGE_ROOT",
+        "H100_REFERENCES_PACKAGE_ID",
+        "H100_REFERENCES_PRODUCER_GIT_SHA",
+        "H100_REFERENCES_IDENTITY_SHA256",
+        "H100_REFERENCES_MANIFEST_SHA256",
+        "H100_REFERENCES_READY_SHA256",
+        "H100_REFERENCES_SHA256SUMS_SHA256",
+        "H100_DIAGNOSTIC_ISOLATION_PACKAGE_ROOT",
+        "H100_DIAGNOSTIC_ISOLATION_PACKAGE_ID",
+        "H100_DIAGNOSTIC_ISOLATION_PRODUCER_GIT_SHA",
+        "H100_DIAGNOSTIC_ISOLATION_IDENTITY_SHA256",
+        "H100_DIAGNOSTIC_ISOLATION_MANIFEST_SHA256",
+        "H100_DIAGNOSTIC_ISOLATION_READY_SHA256",
+        "H100_DIAGNOSTIC_ISOLATION_SHA256SUMS_SHA256",
     ):
         assert name in example
+    assert re.search(
+        r"(?m)^\s*(?:export\s+)?BOX_(?:JWT_CONFIG|FOLDER_ID)=", example
+    ) is None
     assert "H100_MAIL_TYPE=ALL" in example
     operational = "\n".join(
         path.read_text() for path in (SUBMIT, SBATCH, SMOKE_SBATCH)
@@ -1475,7 +1998,7 @@ def test_submit_and_site_interfaces_are_safe_and_untracked():
     assert "H100_V100_RUNS_ROOT" not in operational
     assert "H100_V100_CONTROL_PLANE=box-transfer-v1" in example
     assert operational.count("box-transfer-v1") >= 3
-    assert "STOP before cutover-check or campaign" in example
+    assert "leaving the live V100 campaign untouched" in example
     assert '"$mode" == "cutover-check"' in submit
     assert (REPO / "slurm/h100/.gitignore").read_text().strip() == "site.env"
     assert "refusing tracked site.env" in submit
@@ -1545,30 +2068,6 @@ def test_cutover_validates_schema2_native_ready_and_rejects_v1_sif(tmp_path):
         )
 
 
-def test_reference_specific_r2_r3_validation(tmp_path):
-    r2 = tmp_path / "yolo26-f100"
-    r2.mkdir()
-    (r2 / "final_metrics.json").write_text(json.dumps({
-        "exp_id": "yolo26-f100",
-        "threshold": 0.1,
-        "dev_f1": 0.2,
-        "test_f1": 0.3,
-        "test_precision": 0.4,
-        "test_recall": 0.5,
-        "test_near_shore_f1": 0.1,
-    }))
-    (r2 / "runtime_provenance.json").write_text(json.dumps(reference_provenance()))
-    kwargs = {"expected_git_sha": "v100-sha", "expected_campaign_id": "fresh34-v100-fp32-20260726"}
-    cutover.validate_r2(r2, **kwargs)
-    r3 = tmp_path / "locateanything-zs"
-    r3.mkdir()
-    prompts = {
-        name: {"f1": 0.1, "precision": 0.2, "recall": 0.3, "threshold": 0.4}
-        for name in ("boat", "ship", "vessel")
-    }
-    (r3 / "final_metrics.json").write_text(json.dumps({"exp_id": "locateanything-zs", "best_prompt": "boat", "per_prompt": prompts}))
-    (r3 / "runtime_provenance.json").write_text(json.dumps(reference_provenance()))
-    cutover.validate_r3(r3, **kwargs)
 
 
 def test_cutover_contains_no_process_control():
@@ -1580,56 +2079,6 @@ def test_cutover_contains_no_process_control():
     assert "v100_action" in (REPO / "scripts/h100/cutover.py").read_text()
 
 
-def test_operator_cutover_persists_byte_identical_schema2_evidence(tmp_path):
-    fixture = operator_evidence_fixture(tmp_path)
-    validation_args = {key: value for key, value in fixture.items() if key != "meta_root"}
-    validated = operator_cutover.validate_operator_archive(**validation_args)
-    assert validated["status"] == "operator-cutover-validated"
-    receipt_bytes = fixture["receipt"].read_bytes()
-    manifest_bytes = fixture["archive_manifest"].read_bytes()
-    evidence = operator_cutover.persist_operator_evidence(
-        meta_root=fixture["meta_root"],
-        cutover_ready=fixture["cutover_ready"],
-        cutover_ready_sha256=fixture["cutover_ready_sha256"],
-        receipt=fixture["receipt"],
-        receipt_sha256=fixture["receipt_sha256"],
-        archive_manifest=fixture["archive_manifest"],
-        archive_manifest_sha256=fixture["archive_manifest_sha256"],
-    )
-    canonical_receipt = fixture["meta_root"] / "V100_CORE_ARCHIVED.json"
-    canonical_manifest = fixture["meta_root"] / "V100_CORE_ARCHIVE_MANIFEST.json"
-    assert canonical_receipt.read_bytes() == receipt_bytes
-    assert canonical_manifest.read_bytes() == manifest_bytes
-    assert evidence["v100_core_archived"]["sha256"] == fixture["receipt_sha256"]
-    assert stat.S_IMODE(canonical_receipt.stat().st_mode) == 0o444
-    assert stat.S_IMODE(canonical_manifest.stat().st_mode) == 0o444
-
-
-def test_operator_cutover_rejects_symlink_and_nonzero_v100_processes(tmp_path):
-    fixture = operator_evidence_fixture(tmp_path)
-    receipt_link = tmp_path / "receipt-link.json"
-    receipt_link.symlink_to(fixture["receipt"])
-    args = {key: value for key, value in fixture.items() if key != "meta_root"}
-    with pytest.raises(RuntimeError, match="symlink"):
-        operator_cutover.validate_operator_archive(**{**args, "receipt": receipt_link})
-    receipt = json.loads(fixture["receipt"].read_text())
-    receipt["v100"]["running_core_processes"] = 1
-    contracts.atomic_write_json(fixture["receipt"], receipt)
-    with pytest.raises(RuntimeError, match="V100 archive state mismatch"):
-        operator_cutover.validate_operator_archive(
-            **{**args, "receipt_sha256": contracts.sha256_file(fixture["receipt"])}
-        )
-
-
-def test_operator_cutover_schemas_are_exact_and_closed():
-    receipt = json.loads(V100_RECEIPT_SCHEMA.read_text())
-    archive = json.loads(V100_ARCHIVE_SCHEMA.read_text())
-    assert receipt["additionalProperties"] is False
-    assert receipt["properties"]["schema"] == {"const": 2}
-    assert receipt["properties"]["h100"]["properties"]["venv_sha256"] == {"$ref": "#/$defs/sha256"}
-    assert set(receipt["properties"]["h100"]["required"]) == operator_cutover.H100_KEYS
-    assert archive["additionalProperties"] is False
-    assert archive["properties"]["scope"] == {"const": "v100-core-diagnostics"}
 
 
 def test_source_receipt_is_dual_identity_schema2_and_rejects_v1_sif(tmp_path):
@@ -1676,9 +2125,9 @@ def test_campaign_resume_bindings_are_hash_locked():
         "campaign_id": "campaign",
         "acceptance_uuid": "acceptance",
         "source_validation_sha256": "a" * 64,
+        "evaluation_ground_truth_sha256": "d" * 64,
         "cutover_ready_sha256": "b" * 64,
-        "v100_core_archived_sha256": "c" * 64,
-        "archive_manifest_sha256": "d" * 64,
+        "v100_diagnostic_isolation_sha256": "c" * 64,
     }
     campaign.validate_campaign_resume_bindings(dict(bindings), bindings)
     with pytest.raises(RuntimeError, match="source_validation_sha256"):
@@ -1709,8 +2158,9 @@ def test_sbatch_supplies_required_native_acceptance_and_campaign_arguments():
         "--source-validation-json",
         "--source-validation-sha256",
         "--cutover-ready-json",
-        "--v100-core-archived-json",
-        "--v100-archive-manifest-json",
+        "--cutover-ready-sha256",
+        "--v100-diagnostic-isolation-json",
+        "--v100-diagnostic-isolation-sha256",
     )
     acceptance_source = (REPO / "scripts/h100/acceptance.py").read_text()
     campaign_source = (REPO / "scripts/h100/campaign.py").read_text()
@@ -1742,18 +2192,58 @@ def test_host_gates_precede_native_pythonpath_and_campaign_resets_canonical_path
     assert "tests/test_h100_handoff.py" in host_test_gate.HOST_TESTS
     assert "tests/test_experiment_manifest.py" in host_test_gate.HOST_TESTS
     assert "tests/test_h100_submit_isolation.py" in host_test_gate.HOST_TESTS
-    for name in ("V100_CORE_ARCHIVED.json", "V100_CORE_ARCHIVE_MANIFEST.json"):
-        assert name in job
+    assert "V100_DIAGNOSTIC_ISOLATION.json" in job
+    assert "V100_CORE_ARCHIVED.json" not in job
+    assert "V100_CORE_ARCHIVE_MANIFEST.json" not in job
 
 
 def test_submit_cutover_is_non_submitting_and_uses_transfer_python():
     submit = SUBMIT.read_text()
     cutover_block = submit.index('if [[ "$mode" == "cutover-check" ]]')
     sbatch_at = submit.index("sbatch", cutover_block)
+    cutover_end = submit.index("CUTOVER_READY written", cutover_block)
+    cutover_invocation = submit[cutover_block:cutover_end]
     assert cutover_block < submit.index("exit 0", cutover_block) < sbatch_at
     assert submit.count('PYTHONNOUSERSITE=1 PYTHONPATH="$repo" "$H100_TRANSFER_PYTHON"') >= 2
     assert "--persist-meta-root" in submit
-    assert "--bound-archive-manifest" in submit
+    cutover_source = (REPO / "scripts/h100/cutover.py").read_text()
+    for option in (
+        "--expected-h100-campaign-id",
+        "--expected-venv-sha256",
+        "--expected-base-payload-package-id",
+        "--expected-base-payload-git-sha",
+        "--expected-base-payload-manifest-sha256",
+        "--expected-base-payload-ready-sha256",
+        "--expected-base-payload-sha256sums-sha256",
+        "--expected-base-payload-repo-bundle-sha256",
+        "--expected-runtime-amendment-package-id",
+        "--expected-runtime-amendment-git-sha",
+        "--expected-runtime-amendment-manifest-sha256",
+        "--expected-runtime-amendment-ready-sha256",
+        "--expected-runtime-amendment-sha256sums-sha256",
+        "--expected-runtime-amendment-bundle-sha256",
+    ):
+        assert option in cutover_source
+        assert option in cutover_invocation
+    for option in (
+        "--references-package-root",
+        "--expected-references-package-id",
+        "--expected-references-producer-git-sha",
+        "--expected-references-identity-sha256",
+        "--expected-references-manifest-sha256",
+        "--expected-references-ready-sha256",
+        "--expected-references-sha256sums-sha256",
+        "--diagnostic-isolation-package-root",
+        "--expected-diagnostic-isolation-package-id",
+        "--expected-diagnostic-isolation-producer-git-sha",
+        "--expected-diagnostic-isolation-identity-sha256",
+        "--expected-diagnostic-isolation-manifest-sha256",
+        "--expected-diagnostic-isolation-ready-sha256",
+        "--expected-diagnostic-isolation-sha256sums-sha256",
+    ):
+        assert option in submit
+    assert "V100 remains untouched" in submit
+    assert "--bound-archive-manifest" not in submit
 
 
 def test_reverse_results_delegates_shared_handoff_schema(tmp_path):
@@ -1761,10 +2251,17 @@ def test_reverse_results_delegates_shared_handoff_schema(tmp_path):
         repo=tmp_path / "repo",
         runs_root=tmp_path / "runs",
         campaign_manifest=tmp_path / "runs/.h100/campaign_manifest.json",
-        output=tmp_path / "out",
+        output_dir=tmp_path / "out",
         max_part_bytes=123,
     )
     assert argv[1:5] == ["-m", "scripts.handoff", "build-results", "--repo"]
     assert argv[-2:] == ["--max-part-bytes", "123"]
+    assert "--output-dir" in argv
     reverse_source = (REPO / "scripts/h100/reverse_results.py").read_text()
     assert 'runs_root / "summary/grid.csv"' in reverse_source
+    cli_source = (REPO / "scripts/handoff/__main__.py").read_text()
+    build_results_block = cli_source.split(
+        'elif args.command == "build-results":', 1
+    )[1].split("else:  # pragma: no cover", 1)[0]
+    assert "_client(" not in build_results_block
+    assert "preflight_box(" not in build_results_block

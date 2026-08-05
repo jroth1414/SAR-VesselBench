@@ -19,8 +19,6 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import hashlib
-import json
-import math
 import os
 import subprocess
 import sys
@@ -28,6 +26,8 @@ import time
 from pathlib import Path
 
 import yaml
+
+from src.eval.result_contract import ResultContractError, load_completion_marker
 
 SHORT = {
     "vit_random": "vitrand",
@@ -52,6 +52,7 @@ REPO = Path(__file__).resolve().parents[1]
 DETECTOR_PATH = REPO / "configs" / "detector.yaml"
 EXPECTED_DETECTOR_SHA256 = hashlib.sha256(DETECTOR_PATH.read_bytes()).hexdigest()
 EXPECTED_PRECISION = yaml.safe_load(DETECTOR_PATH.read_text())["schedule"]["precision"]
+CANDIDATE_FLOOR = yaml.safe_load(DETECTOR_PATH.read_text())["decode"]["candidate_floor"]
 EXPECTED_GIT_SHA = subprocess.run(
     ["git", "-c", f"safe.directory={REPO}", "rev-parse", "HEAD"],
     cwd=REPO,
@@ -80,21 +81,23 @@ def cell_done(
     if not final.exists():
         return False
     try:
-        payload = json.loads(final.read_text())
-        best_dev_f1 = float(payload["best_dev_f1"])
-    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-        raise RuntimeError(f"invalid completion marker: {final}") from exc
-    if (
-        payload.get("exp_id") != exp_id(init, frac)
-        or not math.isfinite(best_dev_f1)
-        or payload.get("precision") != EXPECTED_PRECISION
-        or payload.get("detector_sha256") != EXPECTED_DETECTOR_SHA256
-        or payload.get("git_sha") != EXPECTED_GIT_SHA
-        or payload.get("micro_batch") != 16
-        or payload.get("gradient_accumulation") != 1
-        or payload.get("effective_batch") != 16
-    ):
-        raise RuntimeError(f"invalid completion marker contents or recipe: {final}")
+        load_completion_marker(
+            final,
+            candidate_floor=CANDIDATE_FLOOR,
+            expected_recipe={
+                "exp_id": exp_id(init, frac),
+                "git_sha": EXPECTED_GIT_SHA,
+                "detector_sha256": EXPECTED_DETECTOR_SHA256,
+                "precision": EXPECTED_PRECISION,
+                "micro_batch": 16,
+                "gradient_accumulation": 1,
+                "effective_batch": 16,
+            },
+        )
+    except ResultContractError as exc:
+        raise RuntimeError(
+            f"invalid schema-2 completion marker contents or recipe: {final}"
+        ) from exc
     return True
 
 

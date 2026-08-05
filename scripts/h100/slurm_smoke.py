@@ -33,6 +33,33 @@ HEX40 = re.compile(r"^[0-9a-f]{40}$")
 SIGNAL_READY_NAME = "SLURM_SMOKE_SIGNAL_READY.pid"
 SIGNAL_ORIGIN = "slurm-batch-to-native-venv-child"
 DEFAULT_SIGNAL_TIMEOUT_SECONDS = 30.0
+SYNTHETIC_DEV_SCENE_EVAL_STATE = {
+    "best": 0.5,
+    "best_result": {
+        "epoch": 4,
+        "f1": 0.5,
+        "precision": 0.5,
+        "recall": 0.5,
+        "tp": 1,
+        "fp": 1,
+        "fn": 1,
+        "ignored_predictions": 2,
+        "threshold": 0.4,
+        "n_candidates": 4,
+    },
+    "last_result": {
+        "epoch": 9,
+        "f1": 0.4,
+        "precision": 1.0 / 3.0,
+        "recall": 0.5,
+        "tp": 1,
+        "fp": 2,
+        "fn": 1,
+        "ignored_predictions": 1,
+        "threshold": 0.6,
+        "n_candidates": 4,
+    },
+}
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 BASE_TRANSFER_KEYS = {
     "package_id",
@@ -246,6 +273,12 @@ def validate_smoke_receipt(path: Path, *, expected_bindings: Mapping[str, object
         raise RuntimeError("Slurm smoke checkpoint/resume evidence is absent")
     if checkpoint.get("atomic_promotion") is not True:
         raise RuntimeError("Slurm smoke checkpoint was not atomically promoted")
+    if checkpoint.get("dev_scene_eval_state") != SYNTHETIC_DEV_SCENE_EVAL_STATE:
+        raise RuntimeError("Slurm smoke checkpoint lacks exact DevSceneEval state")
+    if resume.get("restored_dev_scene_eval_state") != SYNTHETIC_DEV_SCENE_EVAL_STATE:
+        raise RuntimeError("Slurm smoke did not restore exact DevSceneEval state")
+    if resume.get("dev_scene_eval_state_preserved") is not True:
+        raise RuntimeError("Slurm smoke did not prove callback-state preservation")
     if checkpoint.get("hpc_sha256") != checkpoint.get("last_sha256"):
         raise RuntimeError("promoted checkpoint bytes differ from the HPC checkpoint")
     if resume.get("from_last_ckpt") is not True:
@@ -279,6 +312,7 @@ def _write_synthetic_checkpoint(run_dir: Path, step: int) -> Path:
             "step": step,
             "signal": "SIGUSR1",
             "created_utc": utc_now(),
+            "callbacks": {"DevSceneEval": SYNTHETIC_DEV_SCENE_EVAL_STATE},
         },
     )
     return checkpoint
@@ -394,6 +428,13 @@ def _first_allocation(
     last_sha = sha256_file(promoted)
     if hpc_sha != last_sha or promoted.with_suffix(".ckpt.promoting").exists():
         raise RuntimeError("atomic checkpoint promotion verification failed")
+    checkpoint_payload = _read_json(promoted)
+    callbacks = checkpoint_payload.get("callbacks")
+    dev_scene_eval = (
+        callbacks.get("DevSceneEval") if isinstance(callbacks, Mapping) else None
+    )
+    if dev_scene_eval != SYNTHETIC_DEV_SCENE_EVAL_STATE:
+        raise RuntimeError("synthetic checkpoint lost DevSceneEval callback state")
 
     state.update(
         {
@@ -404,6 +445,7 @@ def _first_allocation(
                 "hpc_sha256": hpc_sha,
                 "last_sha256": last_sha,
                 "atomic_promotion": True,
+                "dev_scene_eval_state": dev_scene_eval,
             },
             "updated_utc": utc_now(),
         }
@@ -477,6 +519,17 @@ def _second_allocation(
     if checkpoint.get("cell_id") != SYNTHETIC_CELL_ID:
         raise RuntimeError("last.ckpt belongs to the wrong synthetic cell")
     resumed_step = int(checkpoint.get("step", -1))
+    callbacks = checkpoint.get("callbacks")
+    restored_dev_scene_eval = (
+        callbacks.get("DevSceneEval") if isinstance(callbacks, Mapping) else None
+    )
+    if (
+        restored_dev_scene_eval != SYNTHETIC_DEV_SCENE_EVAL_STATE
+        or state.get("checkpoint", {}).get("dev_scene_eval_state")
+        != SYNTHETIC_DEV_SCENE_EVAL_STATE
+    ):
+        raise RuntimeError("DevSceneEval callback state drifted across requeue")
+
     if resumed_step < 0 or finish_step <= resumed_step:
         raise RuntimeError("synthetic resume target must advance beyond last.ckpt")
 
@@ -490,6 +543,8 @@ def _second_allocation(
                 "from_last_ckpt": True,
                 "resumed_step": resumed_step,
                 "final_step": finish_step,
+                "restored_dev_scene_eval_state": restored_dev_scene_eval,
+                "dev_scene_eval_state_preserved": True,
             },
             "updated_utc": utc_now(),
         }

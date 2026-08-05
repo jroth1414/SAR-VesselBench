@@ -1,9 +1,11 @@
 """Guard the amended 32-core + 2-reference experiment manifest."""
 
+import hashlib
 import json
 from pathlib import Path
 
 import pytest
+import torch
 import yaml
 
 from scripts import export_results, run_grid_node, run_grid_queue
@@ -110,22 +112,43 @@ def test_runner_completion_markers_are_value_checked(tmp_path):
     exp = run_grid_node.exp_id(init, frac)
     run_dir = tmp_path / exp
     run_dir.mkdir()
+    checkpoint = run_dir / "checkpoints" / "best.ckpt"
+    checkpoint.parent.mkdir()
+    torch.save({"epoch": 3}, checkpoint)
     final = run_dir / "final_metrics.json"
-    final.write_text(
-        json.dumps(
-            {
-                "exp_id": exp,
-                "best_dev_f1": 0.5,
-                "precision": run_grid_node.EXPECTED_PRECISION,
-                "detector_sha256": run_grid_node.EXPECTED_DETECTOR_SHA256,
-                "git_sha": run_grid_node.EXPECTED_GIT_SHA,
-                "micro_batch": 16,
-                "gradient_accumulation": 1,
-                "effective_batch": 16,
-            }
-        ),
-        newline="\n",
-    )
+    dev = {
+        "epoch": 3,
+        "f1": 0.5,
+        "precision": 0.5,
+        "recall": 0.5,
+        "tp": 1,
+        "fp": 1,
+        "fn": 1,
+        "ignored_predictions": 0,
+        "threshold": 0.5,
+        "n_candidates": 2,
+    }
+    payload = {
+        "result_schema": 2,
+        "exp_id": exp,
+        "best_dev_f1": 0.5,
+        "best_dev": dev,
+        "best_checkpoint": {
+            "relative_path": "checkpoints/best.ckpt",
+            "sha256": hashlib.sha256(checkpoint.read_bytes()).hexdigest(),
+            "epoch": 3,
+        },
+        "last_dev": dict(dev),
+        "epochs_run": 4,
+        "train_loss": 1.0,
+        "precision": run_grid_node.EXPECTED_PRECISION,
+        "detector_sha256": run_grid_node.EXPECTED_DETECTOR_SHA256,
+        "git_sha": run_grid_node.EXPECTED_GIT_SHA,
+        "micro_batch": 16,
+        "gradient_accumulation": 1,
+        "effective_batch": 16,
+    }
+    final.write_text(json.dumps(payload), newline="\n")
 
     assert run_grid_node.EXPECTED_PRECISION == "32-true"
     assert (
@@ -135,36 +158,15 @@ def test_runner_completion_markers_are_value_checked(tmp_path):
     assert run_grid_node.cell_done(init, frac, tmp_path)
     assert run_grid_queue.cell_done(exp, tmp_path)
 
-    final.write_text(
-        json.dumps(
-            {
-                "exp_id": "wrong-id",
-                "best_dev_f1": 0.5,
-                "precision": run_grid_node.EXPECTED_PRECISION,
-                "detector_sha256": run_grid_node.EXPECTED_DETECTOR_SHA256,
-                "git_sha": run_grid_node.EXPECTED_GIT_SHA,
-                "micro_batch": 16,
-                "gradient_accumulation": 1,
-                "effective_batch": 16,
-            }
-        ),
-        newline="\n",
-    )
+    payload["exp_id"] = "wrong-id"
+    final.write_text(json.dumps(payload), newline="\n")
     with pytest.raises(RuntimeError, match="contents"):
         run_grid_node.cell_done(init, frac, tmp_path)
     with pytest.raises(RuntimeError, match="contents"):
         run_grid_queue.cell_done(exp, tmp_path)
 
-    payload = {
-        "exp_id": exp,
-        "best_dev_f1": 0.5,
-        "precision": "16-mixed",
-        "detector_sha256": run_grid_node.EXPECTED_DETECTOR_SHA256,
-        "git_sha": run_grid_node.EXPECTED_GIT_SHA,
-        "micro_batch": 16,
-        "gradient_accumulation": 1,
-        "effective_batch": 16,
-    }
+    payload["exp_id"] = exp
+    payload["precision"] = "16-mixed"
     final.write_text(json.dumps(payload), newline="\n")
     with pytest.raises(RuntimeError, match="recipe"):
         run_grid_node.cell_done(init, frac, tmp_path)

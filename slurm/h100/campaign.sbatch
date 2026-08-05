@@ -118,8 +118,7 @@ if [[ "${H100_MODE:?H100_MODE missing}" == "campaign" ]]; then
   # paths. The allocation ignores external source paths from the verified
   # compute-site snapshot.
   H100_CUTOVER_READY="$meta_root/CUTOVER_READY.json"
-  H100_V100_CORE_ARCHIVED="$meta_root/V100_CORE_ARCHIVED.json"
-  H100_V100_ARCHIVE_MANIFEST="$meta_root/V100_CORE_ARCHIVE_MANIFEST.json"
+  H100_V100_DIAGNOSTIC_ISOLATION="$meta_root/V100_DIAGNOSTIC_ISOLATION.json"
 fi
 
 check_sha() {
@@ -150,8 +149,8 @@ check_sha "$H100_VENV_BUILD_SHA256" "$H100_VENV_BUILD_JSON"
 check_sha "$H100_BASE_PYTHON_SHA256" "$H100_BASE_PYTHON"
 if [[ "${H100_MODE:?H100_MODE missing}" == "campaign" ]]; then
   check_sha "$H100_CUTOVER_READY_SHA256" "$H100_CUTOVER_READY"
-  check_sha "$H100_V100_CORE_ARCHIVED_SHA256" "$H100_V100_CORE_ARCHIVED"
-  check_sha "$H100_V100_ARCHIVE_MANIFEST_SHA256" "$H100_V100_ARCHIVE_MANIFEST"
+  check_sha "$H100_V100_DIAGNOSTIC_ISOLATION_SHA256" \
+    "$H100_V100_DIAGNOSTIC_ISOLATION"
 fi
 
 scratch="${SLURM_TMPDIR:?SLURM_TMPDIR is required}"
@@ -360,33 +359,6 @@ allocation_hardware_tmp="${allocation_hardware}.tmp.$$"
 )
 mv "$allocation_hardware_tmp" "$allocation_hardware"
 
-(
-  cd "$repo"
-  run_venv -m scripts.h100.operator_cutover \
-    --cutover-ready "$H100_CUTOVER_READY" \
-    --cutover-ready-sha256 "$H100_CUTOVER_READY_SHA256" \
-    --receipt "$H100_V100_CORE_ARCHIVED" \
-    --receipt-sha256 "$H100_V100_CORE_ARCHIVED_SHA256" \
-    --archive-manifest "$H100_V100_ARCHIVE_MANIFEST" \
-    --archive-manifest-sha256 "$H100_V100_ARCHIVE_MANIFEST_SHA256" \
-    --expected-h100-git-sha "$H100_EXPECTED_GIT_SHA" \
-    --expected-venv-sha256 "$H100_VENV_SHA256" \
-    --expected-base-payload-package-id "$H100_BASE_PACKAGE_ID" \
-    --expected-base-payload-git-sha "$H100_BASE_GIT_SHA" \
-    --expected-base-payload-manifest-sha256 "$H100_BASE_MANIFEST_SHA256" \
-    --expected-base-payload-ready-sha256 "$H100_BASE_READY_SHA256" \
-    --expected-base-payload-sha256sums-sha256 "$H100_BASE_SHA256SUMS_SHA256" \
-    --expected-base-payload-repo-bundle-sha256 "$H100_BASE_REPO_BUNDLE_SHA256" \
-    --expected-runtime-amendment-package-id "$H100_RUNTIME_PACKAGE_ID" \
-    --expected-runtime-amendment-git-sha "$H100_RUNTIME_GIT_SHA" \
-    --expected-runtime-amendment-manifest-sha256 "$H100_RUNTIME_MANIFEST_SHA256" \
-    --expected-runtime-amendment-ready-sha256 "$H100_RUNTIME_READY_SHA256" \
-    --expected-runtime-amendment-sha256sums-sha256 "$H100_RUNTIME_SHA256SUMS_SHA256" \
-    --expected-runtime-amendment-bundle-sha256 "$H100_RUNTIME_BUNDLE_SHA256" \
-    --expected-reference-git-sha "$H100_EXPECTED_REFERENCE_GIT_SHA" \
-    --expected-reference-campaign-id "$H100_REFERENCE_CAMPAIGN_ID"
-)
-
 controller_pid=""
 forward_usr1() {
   if [[ -n "$controller_pid" ]]; then
@@ -410,10 +382,9 @@ cd "$repo"
     --source-validation-sha256 "$source_validation_sha256" \
     --cutover-ready-json "$H100_CUTOVER_READY" \
     --cutover-ready-sha256 "$H100_CUTOVER_READY_SHA256" \
-    --v100-core-archived-json "$H100_V100_CORE_ARCHIVED" \
-    --v100-core-archived-sha256 "$H100_V100_CORE_ARCHIVED_SHA256" \
-    --v100-archive-manifest-json "$H100_V100_ARCHIVE_MANIFEST" \
-    --v100-archive-manifest-sha256 "$H100_V100_ARCHIVE_MANIFEST_SHA256" \
+    --v100-diagnostic-isolation-json "$H100_V100_DIAGNOSTIC_ISOLATION" \
+    --v100-diagnostic-isolation-sha256 \
+      "$H100_V100_DIAGNOSTIC_ISOLATION_SHA256" \
     --workers-per-gpu 6 &
 controller_pid="$!"
 controller_rc=0
