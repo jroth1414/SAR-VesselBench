@@ -34,7 +34,7 @@ def command(
     repo: Path,
     runs_root: Path,
     campaign_manifest: Path,
-    output: Path,
+    output_dir: Path,
     max_part_bytes: int,
 ) -> list[str]:
     if max_part_bytes <= 0:
@@ -50,8 +50,8 @@ def command(
         str(runs_root),
         "--campaign-manifest",
         str(campaign_manifest),
-        "--output",
-        str(output),
+        "--output-dir",
+        str(output_dir),
         "--max-part-bytes",
         str(max_part_bytes),
     ]
@@ -62,7 +62,12 @@ def main() -> int:
     parser.add_argument("--repo", type=Path, required=True)
     parser.add_argument("--runs-root", type=Path, required=True)
     parser.add_argument("--campaign-manifest", type=Path, required=True)
-    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        required=True,
+        help="parent for the automatically named content-addressed package",
+    )
     parser.add_argument("--max-part-bytes", type=int, required=True)
     args = parser.parse_args()
     validate_grid(args.runs_root.resolve())
@@ -71,7 +76,7 @@ def main() -> int:
             repo=args.repo.resolve(),
             runs_root=args.runs_root.resolve(),
             campaign_manifest=args.campaign_manifest.resolve(),
-            output=args.output.resolve(),
+            output_dir=args.output_dir.resolve(),
             max_part_bytes=args.max_part_bytes,
         ),
         cwd=args.repo.resolve(),

@@ -18,7 +18,9 @@ import yaml
 
 from scripts.h100.build_venv import verify as verify_native_venv
 from scripts.h100.campaign import (
+    finalized_cell_runtime,
     hardware_class,
+    load_test_scene_ids,
     validate_runtime_provenance,
     validate_scored_completion,
 )
@@ -38,6 +40,7 @@ from scripts.h100.contracts import (
 )
 from scripts.h100.cutover import validate_h100_ready
 from scripts.h100.host_test_gate import validate_host_gate
+from scripts.h100.operator_cutover import validate_diagnostic_isolation
 from scripts.h100.slurm_smoke import (
     READY_NAME as SMOKE_READY_NAME,
     STATE_NAME as SMOKE_STATE_NAME,
@@ -49,10 +52,23 @@ from scripts.h100.source_validation import (
     RUNTIME_AMENDMENT_KEYS,
     validate_source_receipt,
 )
+from src.analysis.curves import training_fraction_counts
+from src.eval.ground_truth_audit import audit_ground_truth_dataset
+from src.eval.heldout_contract import (
+    COHORT_FILENAME,
+    HeldoutContractError,
+    TEST_RESULT_FILENAME,
+    validate_complete_test_cohort,
+    validate_training_cohort,
+)
+from src.references.runtime_provenance import (
+    CAMPAIGN_MANIFEST_KEYS,
+    CAMPAIGN_MANIFEST_SCHEMA,
+    CAMPAIGN_ROLE,
+)
 
 from .package import (
     EXPECTED_TORCH,
-    RUNTIME_BRANCH,
     FORMAT_VERSION,
     PackageError,
     _archive_artifact,
@@ -68,8 +84,10 @@ from .package import (
     _write_bytes,
     verify_package,
 )
+from .runtime_amendment import RUNTIME_BRANCH
 
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
+_CAMPAIGN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _ALLOCATION_NAME = re.compile(
     r"^h100_runtime-(?P<job_id>[^/]+)-r(?P<restart>[0-9]+)\.json$"
 )
@@ -94,7 +112,41 @@ _GRID_FIELDS = (
     "dev_threshold",
     "test_f1",
     "epochs_run",
+    "train_scene_count",
+    "train_vessel_count",
+    "train_dark_vessel_count",
+    "train_near_shore_vessel_count",
     "monotonicity_ok",
+)
+_GRID_COUNT_FIELDS = (
+    "train_scene_count",
+    "train_vessel_count",
+    "train_dark_vessel_count",
+    "train_near_shore_vessel_count",
+)
+_MONOTONICITY_TOLERANCE = 0.02
+_RESULT_TEXT_SUFFIXES = frozenset(
+    {
+        ".cfg",
+        ".conf",
+        ".csv",
+        ".env",
+        ".ini",
+        ".json",
+        ".log",
+        ".md",
+        ".out",
+        ".py",
+        ".sh",
+        ".toml",
+        ".txt",
+        ".yaml",
+        ".yml",
+    }
+)
+_RESULT_BOX_SECRET = re.compile(
+    rb"[\"']?BOX_(?:JWT_CONFIG|FOLDER_ID)[\"']?\s*(?::|=)",
+    re.IGNORECASE,
 )
 _ACCEPTANCE_LOGS = (
     "pytest-venv-remaining.log",
@@ -115,8 +167,13 @@ def _mapping(value: object, description: str) -> dict[str, object]:
     return dict(value)
 
 
-def _result_identity(campaign: Mapping[str, object]) -> tuple[dict[str, object], str]:
-    """Bind the scientific recipe and accepted/live H100 hardware classes."""
+def _result_identity(
+    campaign: Mapping[str, object],
+    *,
+    artifacts: Sequence[Mapping[str, object]],
+    max_part_bytes: int,
+) -> tuple[dict[str, object], str]:
+    """Bind the recipe, hardware, and complete validated package contents."""
 
     acceptance = _mapping(campaign.get("acceptance"), "campaign acceptance")
     hardware = _mapping(campaign.get("hardware"), "campaign allocation hardware")
@@ -127,6 +184,7 @@ def _result_identity(campaign: Mapping[str, object]) -> tuple[dict[str, object],
         else []
     )
     identity = {
+        "schema": 2,
         "campaign_id": campaign.get("campaign_id"),
         "git_commit": campaign.get("git_sha"),
         "detector_sha256": campaign.get("detector_sha256"),
@@ -140,24 +198,61 @@ def _result_identity(campaign: Mapping[str, object]) -> tuple[dict[str, object],
         "source_validation_sha256": campaign.get(
             "source_validation_sha256"
         ),
+        "evaluation_ground_truth": campaign.get("evaluation_ground_truth"),
+        "training_cohort": campaign.get("training_cohort"),
         "strict_fp32": campaign.get("strict_fp32"),
         "accepted_hardware_class": campaign.get("accepted_hardware_class"),
         "allocation_hardware_class": campaign.get("allocation_hardware_class"),
         "allocation_gpu_uuids": allocation_gpu_uuids,
-        "operator_cutover": campaign.get("operator_cutover"),
+        "v100_diagnostic_isolation": campaign.get(
+            "v100_diagnostic_isolation"
+        ),
         "cell_runtime": campaign.get("cell_runtime"),
         "precision": campaign.get("precision"),
         "micro_batch": campaign.get("micro_batch"),
         "gradient_accumulation": campaign.get("gradient_accumulation"),
         "effective_batch": campaign.get("effective_batch"),
+        "maximum_physical_file_bytes": max_part_bytes,
+        "artifact_digest_index": [dict(artifact) for artifact in artifacts],
     }
     digest = hashlib.sha256(_canonical_json(identity)).hexdigest()
     return identity, digest
 
 
-def _result_package_id(campaign: Mapping[str, object]) -> str:
-    _identity, digest = _result_identity(campaign)
-    return f"xview3-h100-results-{campaign['git_sha']}-{digest}"
+def _scan_result_box_secrets(path: Path) -> None:
+    """Reject Box runtime settings in assignment, mapping, or JSON form."""
+
+    name = path.name.lower()
+    suffix = (
+        ".env"
+        if name == ".env" or name.startswith(".env.")
+        else path.suffix.lower()
+    )
+    if suffix not in _RESULT_TEXT_SUFFIXES:
+        return
+    overlap = 128
+    tail = b""
+    try:
+        with path.open("rb") as handle:
+            while block := handle.read(1024 * 1024):
+                window = tail + block
+                if _RESULT_BOX_SECRET.search(window):
+                    raise PackageError(
+                        f"Box runtime setting detected in reverse-result source: {path}"
+                    )
+                tail = window[-overlap:]
+    except OSError as exc:
+        raise PackageError(f"could not scan reverse-result source: {path}") from exc
+
+
+def _result_source_entries(
+    source: Path, archive_root: PurePosixPath
+) -> list[tuple[Path, PurePosixPath]]:
+    entries = _source_entries(source, archive_root)
+    for path, _archive_path in entries:
+        if path.is_file():
+            _scan_result_box_secrets(path)
+    return entries
 
 
 def _json(path: Path) -> dict[str, object]:
@@ -172,6 +267,17 @@ def _json(path: Path) -> dict[str, object]:
     return value
 
 
+def _immutable_json(path: Path, description: str) -> dict[str, object]:
+    payload = _json(path)
+    try:
+        writable = path.stat().st_mode & 0o222
+    except OSError as exc:
+        raise PackageError(f"could not stat {description}: {path}") from exc
+    if writable:
+        raise PackageError(f"{description} is not immutable: {path}")
+    return payload
+
+
 def _exact_bindings(
     payload: Mapping[str, object],
     expected: Mapping[str, object],
@@ -184,6 +290,77 @@ def _exact_bindings(
     }
     if mismatches:
         raise PackageError(f"{description} binding mismatch: {mismatches}")
+
+
+def _reference_campaign_binding(
+    cutover: Mapping[str, object],
+    *,
+    h100_git_sha: str,
+    reference_provenance: Sequence[Mapping[str, object]],
+) -> tuple[str, str, str, str]:
+    """Validate the CUTOVER-bound reference/core identity trust anchor."""
+
+    binding = _mapping(
+        cutover.get("reference_campaign"),
+        "CUTOVER_READY reference campaign",
+    )
+    if set(binding) != {"manifest", "manifest_sha256"}:
+        raise PackageError("CUTOVER_READY reference campaign binding is malformed")
+    manifest = _mapping(
+        binding.get("manifest"), "CUTOVER_READY reference campaign manifest"
+    )
+    if set(manifest) != set(CAMPAIGN_MANIFEST_KEYS):
+        raise PackageError("CUTOVER_READY reference campaign manifest schema is invalid")
+    manifest_bytes = (
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n"
+    ).encode("utf-8")
+    manifest_sha256 = str(binding.get("manifest_sha256", ""))
+    if (
+        not _HEX64.fullmatch(manifest_sha256)
+        or hashlib.sha256(manifest_bytes).hexdigest() != manifest_sha256
+    ):
+        raise PackageError("CUTOVER_READY reference campaign manifest hash mismatch")
+
+    reference_git_sha = str(manifest.get("git_sha", ""))
+    reference_campaign_id = str(manifest.get("campaign_id", ""))
+    v100_core_git_sha = str(manifest.get("core_git_sha", ""))
+    v100_core_campaign_id = str(manifest.get("core_campaign_id", ""))
+    if (
+        manifest.get("schema") != CAMPAIGN_MANIFEST_SCHEMA
+        or manifest.get("campaign_role") != CAMPAIGN_ROLE
+        or reference_git_sha != h100_git_sha
+        or not re.fullmatch(r"[0-9a-f]{40}", v100_core_git_sha)
+        or not _CAMPAIGN_ID.fullmatch(reference_campaign_id)
+        or not _CAMPAIGN_ID.fullmatch(v100_core_campaign_id)
+    ):
+        raise PackageError("CUTOVER_READY reference campaign identity is invalid")
+    provenance_hashes = {
+        "environment_sha256": manifest.get("environment_sha256"),
+        "environment_lock_sha256": manifest.get("environment_lock_sha256"),
+        "campaign_manifest_sha256": manifest_sha256,
+        "runtime_launcher_sha256": manifest.get("runtime_launcher_sha256"),
+    }
+    if any(
+        not _HEX64.fullmatch(str(value or ""))
+        for value in provenance_hashes.values()
+    ):
+        raise PackageError("CUTOVER_READY reference campaign contains an invalid hash")
+    for provenance in reference_provenance:
+        _exact_bindings(
+            provenance,
+            {
+                "git_sha": reference_git_sha,
+                "campaign_id": reference_campaign_id,
+                **provenance_hashes,
+            },
+            "CUTOVER_READY reference provenance/campaign",
+        )
+    return (
+        reference_git_sha,
+        reference_campaign_id,
+        v100_core_git_sha,
+        v100_core_campaign_id,
+    )
 
 
 def _strict_backend(value: object, description: str) -> dict[str, object]:
@@ -321,6 +498,17 @@ def _validate_campaign(
         raise PackageError("campaign manifest does not complete the exact unique grid")
     if campaign.get("running") != {}:
         raise PackageError("campaign manifest still has running cells")
+    for key in ("training_complete", "test_complete"):
+        values = campaign.get(key)
+        if (
+            not isinstance(values, list)
+            or len(values) != 32
+            or len(set(values)) != 32
+            or set(values) != expected_ids
+        ):
+            raise PackageError(f"campaign {key} is not the exact 32-cell grid")
+    if campaign.get("phase") != "score-test":
+        raise PackageError("campaign did not complete the separated TEST phase")
     if campaign.get("cell_order") != expected_order:
         raise PackageError("campaign cell_order is not exact expensive-first order")
 
@@ -331,6 +519,9 @@ def _validate_campaign(
     build_path = meta_root / "venv_build.json"
     cutover_path = meta_root / "CUTOVER_READY.json"
     source_validation_path = meta_root / "SOURCE_VALIDATED.json"
+    evaluation_ground_truth_path = meta_root / "EVAL_GROUND_TRUTH_VALIDATED.json"
+    cohort_path = meta_root / COHORT_FILENAME
+    diagnostic_isolation_path = meta_root / "V100_DIAGNOSTIC_ISOLATION.json"
     host_test_receipt_path = meta_root / "HOST_HANDOFF_TESTS.json"
     host_test_log_path = (
         meta_root / "acceptance-logs" / "pytest-handoff-host.log"
@@ -346,6 +537,9 @@ def _validate_campaign(
     venv_build = _json(build_path)
     cutover = _json(cutover_path)
     source_validation = _json(source_validation_path)
+    evaluation_ground_truth = _immutable_json(
+        evaluation_ground_truth_path, "evaluation-ground-truth receipt"
+    )
     host_test_receipt = _json(host_test_receipt_path)
     test_suite = _json(test_suite_path)
     smoke_receipt_raw = _json(smoke_ready_path)
@@ -479,6 +673,64 @@ def _validate_campaign(
     ):
         raise PackageError("source-validation receipt bindings mismatch")
 
+    evaluation_ground_truth_sha256 = sha256_file(evaluation_ground_truth_path)
+    expected_evaluation_ground_truth = {
+        "path": str(evaluation_ground_truth_path),
+        "sha256": evaluation_ground_truth_sha256,
+        "receipt": evaluation_ground_truth,
+    }
+    if (
+        ready.get("evaluation_ground_truth") != expected_evaluation_ground_truth
+        or campaign.get("evaluation_ground_truth_sha256")
+        != evaluation_ground_truth_sha256
+        or campaign.get("evaluation_ground_truth")
+        != expected_evaluation_ground_truth
+    ):
+        raise PackageError("evaluation-ground-truth receipt bindings mismatch")
+    try:
+        base_payload_root = base_extraction_receipt.parent
+        recomputed_ground_truth = audit_ground_truth_dataset(
+            train_csv=(
+                base_payload_root / "data/raw/xview3/labels/train.csv"
+            ),
+            splits_json=repo / "data/splits.json",
+        )
+    except (OSError, ValueError) as exc:
+        raise PackageError(
+            f"evaluation-ground-truth receipt could not be recomputed: {exc}"
+        ) from exc
+    if recomputed_ground_truth != evaluation_ground_truth:
+        raise PackageError("evaluation-ground-truth receipt differs from source bytes")
+
+    try:
+        detector_config = yaml.safe_load(
+            (repo / "configs/detector.yaml").read_text(encoding="utf-8")
+        )
+        candidate_floor = float(detector_config["decode"]["candidate_floor"])
+        test_scene_ids = load_test_scene_ids(repo)
+        cohort, cohort_sha256 = validate_training_cohort(
+            path=cohort_path,
+            cells=cells,
+            runs_root=runs_root,
+            git_sha=git_sha,
+            detector_sha256=detector_sha256,
+            candidate_floor=candidate_floor,
+        )
+        test_results = validate_complete_test_cohort(
+            cells=cells,
+            runs_root=runs_root,
+            cohort=cohort,
+            cohort_sha256=cohort_sha256,
+            test_scene_ids=test_scene_ids,
+        )
+    except (OSError, KeyError, TypeError, ValueError, HeldoutContractError) as exc:
+        raise PackageError(f"held-out cohort contract is invalid: {exc}") from exc
+    if cohort_path.stat().st_mode & 0o222:
+        raise PackageError("training cohort is not immutable")
+    expected_cohort = {"path": str(cohort_path), "sha256": cohort_sha256}
+    if campaign.get("training_cohort") != expected_cohort:
+        raise PackageError("campaign training-cohort binding mismatch")
+
     host_test_receipt_sha256 = sha256_file(host_test_receipt_path)
     host_test_receipt = validate_host_gate(
         host_test_receipt_path,
@@ -591,70 +843,26 @@ def _validate_campaign(
     ) != ready:
         raise PackageError("CUTOVER_READY does not embed the accepted H100 receipt")
     cutover_sha256 = sha256_file(cutover_path)
-    operator_cutover = _mapping(
-        campaign.get("operator_cutover"), "campaign operator cutover"
+    diagnostic_isolation = _immutable_json(
+        diagnostic_isolation_path, "V100 diagnostic-isolation attestation"
     )
-    archived_receipt_path = meta_root / "V100_CORE_ARCHIVED.json"
-    archive_manifest_path = meta_root / "V100_CORE_ARCHIVE_MANIFEST.json"
-    archived_receipt_canonical = _json(archived_receipt_path)
-    archive_manifest_canonical = _json(archive_manifest_path)
-    v100_core_archived_sha256 = str(
-        operator_cutover.get("v100_core_archived_sha256", "")
-    )
-    archive_manifest_sha256 = str(
-        operator_cutover.get("archive_manifest_sha256", "")
-    )
-    if (
-        operator_cutover.get("cutover_ready_sha256") != cutover_sha256
-        or not _HEX64.fullmatch(v100_core_archived_sha256)
-        or not _HEX64.fullmatch(archive_manifest_sha256)
-    ):
-        raise PackageError("campaign operator-cutover hashes are invalid")
+    diagnostic_isolation_sha256 = sha256_file(diagnostic_isolation_path)
+    expected_diagnostic_binding = {
+        "path": str(diagnostic_isolation_path),
+        "sha256": diagnostic_isolation_sha256,
+        "receipt": diagnostic_isolation,
+    }
     _exact_bindings(
         campaign,
         {
             "acceptance_uuid": ready.get("acceptance_uuid"),
             "source_validation_sha256": source_validation_sha256,
             "cutover_ready_sha256": cutover_sha256,
-            "v100_core_archived_sha256": v100_core_archived_sha256,
-            "archive_manifest_sha256": archive_manifest_sha256,
+            "v100_diagnostic_isolation_sha256": diagnostic_isolation_sha256,
+            "v100_diagnostic_isolation": expected_diagnostic_binding,
         },
         "campaign acceptance/cutover receipts",
     )
-    if (
-        sha256_file(archived_receipt_path) != v100_core_archived_sha256
-        or sha256_file(archive_manifest_path) != archive_manifest_sha256
-        or operator_cutover.get("v100_core_archived_path")
-        != str(archived_receipt_path)
-        or operator_cutover.get("archive_manifest_path")
-        != str(archive_manifest_path)
-        or operator_cutover.get("v100_core_archived")
-        != archived_receipt_canonical
-        or operator_cutover.get("archive_manifest")
-        != archive_manifest_canonical
-    ):
-        raise PackageError("canonical operator evidence/campaign binding mismatch")
-    archived_receipt = _mapping(
-        operator_cutover.get("v100_core_archived"),
-        "campaign V100 archive attestation",
-    )
-    if (
-        archived_receipt.get("status") != "v100-core-archived"
-        or archived_receipt.get("attestation") != "external-human-operator"
-        or archived_receipt.get("cutover_ready_sha256") != cutover_sha256
-    ):
-        raise PackageError("campaign V100 archive attestation is invalid")
-    if archived_receipt != archived_receipt_canonical:
-        raise PackageError("campaign/operator receipt payload mismatch")
-    if archived_receipt.get("archive") != {
-        "manifest_path": str(archive_manifest_path),
-        "manifest_sha256": archive_manifest_sha256,
-    }:
-        raise PackageError("operator receipt archive-manifest binding mismatch")
-    if archive_manifest_canonical.get("status") != (
-        "v100-core-diagnostics-archived"
-    ):
-        raise PackageError("canonical V100 archive manifest is not complete")
     try:
         expected_cutover_acceptance = cutover_acceptance_bindings(ready)
     except RuntimeError as exc:
@@ -665,6 +873,44 @@ def _validate_campaign(
         validate_bound_cutover_forecast(cutover)
     except RuntimeError as exc:
         raise PackageError(str(exc)) from exc
+    references = _mapping(cutover.get("references"), "CUTOVER_READY references")
+    if set(references) != {"r2", "r3"}:
+        raise PackageError("CUTOVER_READY does not bind exactly R2 and R3")
+    reference_provenance: list[dict[str, object]] = []
+    for name in ("r2", "r3"):
+        record = _mapping(references[name], f"CUTOVER_READY {name}")
+        provenance = _mapping(
+            record.get("provenance"), f"CUTOVER_READY {name} provenance"
+        )
+        reference_provenance.append(provenance)
+    (
+        reference_git_sha,
+        reference_campaign_id,
+        v100_core_git_sha,
+        v100_core_campaign_id,
+    ) = _reference_campaign_binding(
+        cutover,
+        h100_git_sha=git_sha,
+        reference_provenance=reference_provenance,
+    )
+    try:
+        diagnostic_validation = validate_diagnostic_isolation(
+            cutover_ready=cutover_path,
+            cutover_ready_sha256=cutover_sha256,
+            attestation=diagnostic_isolation_path,
+            attestation_sha256=diagnostic_isolation_sha256,
+            expected_h100_git_sha=git_sha,
+            expected_h100_campaign_id=str(campaign["campaign_id"]),
+            expected_h100_runs_root=str(runs_root),
+            expected_reference_git_sha=reference_git_sha,
+            expected_reference_campaign_id=reference_campaign_id,
+            expected_v100_core_git_sha=v100_core_git_sha,
+            expected_v100_core_campaign_id=v100_core_campaign_id,
+        )
+    except RuntimeError as exc:
+        raise PackageError(f"diagnostic-isolation validation failed: {exc}") from exc
+    if diagnostic_validation.get("attestation") != diagnostic_isolation:
+        raise PackageError("diagnostic-isolation attestation changed while validating")
 
     _smoke_state_matches(smoke_state, smoke_receipt, smoke_sha256)
     allocation_records = _allocation_files(
@@ -700,6 +946,7 @@ def _validate_campaign(
             raise PackageError("Slurm *.out evidence contains a non-file or symlink")
 
     context: dict[str, object] = {
+        "repo": repo,
         "meta_root": meta_root,
         "ready_path": ready_path,
         "runtime_path": runtime_path,
@@ -708,12 +955,19 @@ def _validate_campaign(
         "cutover_path": cutover_path,
         "source_validation_path": source_validation_path,
         "source_validation_sha256": source_validation_sha256,
+        "evaluation_ground_truth_path": evaluation_ground_truth_path,
+        "evaluation_ground_truth_sha256": evaluation_ground_truth_sha256,
+        "cohort_path": cohort_path,
+        "cohort": cohort,
+        "cohort_sha256": cohort_sha256,
+        "candidate_floor": candidate_floor,
+        "test_scene_ids": test_scene_ids,
+        "test_results": test_results,
+        "diagnostic_isolation_path": diagnostic_isolation_path,
         "host_test_receipt_path": host_test_receipt_path,
         "host_test_log_path": host_test_log_path,
         "test_suite_path": test_suite_path,
         "test_suite_sha256": test_suite_sha256,
-        "archived_receipt_path": archived_receipt_path,
-        "archive_manifest_path": archive_manifest_path,
         "smoke_ready_path": smoke_ready_path,
         "smoke_state_path": smoke_state_path,
         "venv_sha256": venv_sha256,
@@ -725,9 +979,9 @@ def _validate_campaign(
         "strict_fp32": strict_fp32,
         "accepted_hardware_class": accepted_hardware_class,
         "allocation_hardware_class": allocation_hardware_class,
-        "operator_cutover": operator_cutover,
         "cutover_ready_sha256": cutover_sha256,
-        "v100_core_archived_sha256": v100_core_archived_sha256,
+        "diagnostic_isolation": expected_diagnostic_binding,
+        "diagnostic_isolation_sha256": diagnostic_isolation_sha256,
         "allocation_records": allocation_records,
         "acceptance_logs": acceptance_logs,
         "slurm_logs": slurm_logs,
@@ -834,7 +1088,16 @@ def _run_entries(
         runs_root=runs_root,
         git_sha=str(campaign["git_sha"]),
         detector_sha256=str(campaign["detector_sha256"]),
+        repo=Path(str(context["repo"])),
+        candidate_floor=float(context["candidate_floor"]),
+        cohort=context["cohort"],  # type: ignore[arg-type]
+        cohort_sha256=str(context["cohort_sha256"]),
+        test_scene_ids=context["test_scene_ids"],  # type: ignore[arg-type]
     )
+    test_path = run_dir / TEST_RESULT_FILENAME
+    test_payload = _immutable_json(test_path, f"{exp_id} held-out result")
+    if test_payload != context["test_results"][exp_id]:  # type: ignore[index]
+        raise PackageError(f"{exp_id} held-out result changed after cohort validation")
     provenance_path = run_dir / "runtime_provenance.json"
     provenance = _json(provenance_path)
     validate_runtime_provenance(
@@ -855,14 +1118,21 @@ def _run_entries(
         source_validation_sha256=str(
             context["source_validation_sha256"]
         ),
+        evaluation_ground_truth_sha256=str(
+            context["evaluation_ground_truth_sha256"]
+        ),
+        training_cohort={
+            "path": str(context["cohort_path"]),
+            "sha256": str(context["cohort_sha256"]),
+        },
         cutover_ready_sha256=str(context["cutover_ready_sha256"]),
-        v100_core_archived_sha256=str(
-            context["v100_core_archived_sha256"]
+        v100_diagnostic_isolation_sha256=str(
+            context["diagnostic_isolation_sha256"]
         ),
         strict_fp32=context["strict_fp32"],  # type: ignore[arg-type]
         accepted_hardware_class=context["accepted_hardware_class"],  # type: ignore[arg-type]
     )
-    attempt_uuids = _validate_attempts(
+    _validate_attempts(
         provenance,
         exp_id=exp_id,
         allocation_records=context["allocation_records"],  # type: ignore[arg-type]
@@ -892,18 +1162,22 @@ def _run_entries(
     )
     if not str(provenance.get("completed_utc", "")).strip():
         raise PackageError(f"{exp_id} completion timestamp is absent")
+    try:
+        expected_runtime = finalized_cell_runtime(provenance, marker, exp_id)
+    except RuntimeError as exc:
+        raise PackageError(f"{exp_id} finalized runtime is invalid: {exc}") from exc
     cell_runtime = _mapping(campaign.get("cell_runtime"), "campaign cell_runtime")
-    expected_runtime = {
-        "elapsed_hours": elapsed,
-        "attempts": len(attempt_uuids),
-        "epochs_run": marker.get("epochs_run"),
-        "test_f1": marker.get("test_f1"),
-    }
     if cell_runtime.get(exp_id) != expected_runtime:
         raise PackageError(f"{exp_id} campaign cell-runtime summary mismatch")
+    cell_phase_runtime = _mapping(
+        campaign.get("cell_phase_runtime"), "campaign cell_phase_runtime"
+    )
+    if cell_phase_runtime.get(exp_id) != provenance.get("phase_runtime"):
+        raise PackageError(f"{exp_id} campaign phase-runtime summary mismatch")
 
     allowlist = {
         "final_metrics.json": run_dir / "final_metrics.json",
+        TEST_RESULT_FILENAME: test_path,
         "config.yaml": run_dir / "config.yaml",
         "metrics/metrics.csv": run_dir / "metrics" / "metrics.csv",
         "runtime_provenance.json": provenance_path,
@@ -916,7 +1190,7 @@ def _run_entries(
         if not source.is_file() or source.is_symlink():
             raise PackageError(f"required {exp_id} result artifact is absent: {source}")
         entries.extend(
-            _source_entries(
+            _result_source_entries(
                 source, PurePosixPath(f"results/core/{exp_id}/{relative}")
             )
         )
@@ -961,6 +1235,16 @@ def _same_number(raw: object, expected: object, description: str) -> None:
         raise PackageError(f"{description} differs from final_metrics.json")
 
 
+def _grid_count(raw: object, description: str, *, positive: bool) -> int:
+    value = str(raw).strip()
+    if not re.fullmatch(r"0|[1-9][0-9]*", value):
+        raise PackageError(f"{description} is not a canonical nonnegative integer")
+    result = int(value)
+    if positive and result == 0:
+        raise PackageError(f"{description} must be positive")
+    return result
+
+
 def _validate_grid(
     *,
     repo: Path,
@@ -982,6 +1266,22 @@ def _validate_grid(
     if fields != _GRID_FIELDS:
         raise PackageError(f"summary/grid.csv columns mismatch: {fields}")
     expected_order, metadata = _grid_expectations(repo, cells)
+    try:
+        expected_fraction_counts = training_fraction_counts(
+            repo=repo,
+            fractions=tuple(
+                sorted(
+                    {
+                        float(item["label_frac"])
+                        for item in metadata.values()
+                    }
+                )
+            ),
+        )
+    except (KeyError, OSError, TypeError, ValueError) as exc:
+        raise PackageError(
+            "could not independently derive frozen TRAIN fraction counts"
+        ) from exc
     actual_order = [str(row.get("exp_id", "")) for row in rows]
     if (
         len(rows) != 32
@@ -989,6 +1289,8 @@ def _validate_grid(
         or actual_order != expected_order
     ):
         raise PackageError("summary/grid.csv IDs/order are not the exact 32-cell grid")
+    fraction_counts: dict[float, tuple[int, int, int, int]] = {}
+    monotonicity_points: dict[str, list[tuple[float, float]]] = {}
     for row in rows:
         exp_id = row["exp_id"]
         expected = metadata[exp_id]
@@ -1009,17 +1311,60 @@ def _validate_grid(
         _same_number(row["seed"], expected["seed"], f"{exp_id} seed")
         _same_number(row["test_f1"], marker.get("test_f1"), f"{exp_id} test_f1")
         _same_number(row["dev_f1"], marker.get("best_dev_f1"), f"{exp_id} dev_f1")
-        last_dev = _mapping(marker.get("last_dev"), f"{exp_id} last_dev")
+        best_dev = _mapping(marker.get("best_dev"), f"{exp_id} best_dev")
         _same_number(
             row["dev_threshold"],
-            last_dev.get("threshold"),
+            best_dev.get("threshold"),
             f"{exp_id} dev_threshold",
         )
         _same_number(
             row["epochs_run"], marker.get("epochs_run"), f"{exp_id} epochs_run"
         )
-        if row["monotonicity_ok"].lower() != "true":
+        counts = tuple(
+            _grid_count(
+                row[field],
+                f"{exp_id} {field}",
+                positive=field in {"train_scene_count", "train_vessel_count"},
+            )
+            for field in _GRID_COUNT_FIELDS
+        )
+        fraction = float(expected["label_frac"])
+        wanted_counts = tuple(
+            int(expected_fraction_counts[fraction][field])
+            for field in _GRID_COUNT_FIELDS
+        )
+        if counts != wanted_counts:
+            raise PackageError(
+                f"summary/grid.csv frozen TRAIN counts mismatch for {exp_id}"
+            )
+        if counts[2] > counts[1] or counts[3] > counts[1]:
+            raise PackageError(
+                f"summary/grid.csv TRAIN subset counts are impossible for {exp_id}"
+            )
+        previous_counts = fraction_counts.setdefault(fraction, counts)
+        if previous_counts != counts:
+            raise PackageError(
+                f"summary/grid.csv training counts differ across arms for fraction {fraction}"
+            )
+        test_f1 = _finite(row["test_f1"], f"{exp_id} test_f1")
+        monotonicity_points.setdefault(str(expected["init"]), []).append(
+            (fraction, test_f1)
+        )
+        if row["monotonicity_ok"].strip().casefold() != "true":
             raise PackageError(f"summary/grid.csv monotonicity STOP for {exp_id}")
+
+    for init_name, points in monotonicity_points.items():
+        ordered = sorted(points)
+        if any(
+            current < previous - _MONOTONICITY_TOLERANCE
+            for (_fraction, previous), (_next_fraction, current) in zip(
+                ordered, ordered[1:]
+            )
+        ):
+            raise PackageError(
+                "summary/grid.csv independently recomputed monotonicity STOP "
+                f"for {init_name}"
+            )
 
     grid_sha256 = sha256_file(grid)
     events = campaign.get("events")
@@ -1097,6 +1442,16 @@ def _provenance_entries(
             PurePosixPath("results/provenance/SOURCE_VALIDATED.json"),
         ),
         (
+            context["evaluation_ground_truth_path"],  # type: ignore[arg-type]
+            PurePosixPath(
+                "results/provenance/EVAL_GROUND_TRUTH_VALIDATED.json"
+            ),
+        ),
+        (
+            context["cohort_path"],  # type: ignore[arg-type]
+            PurePosixPath("results/provenance/TRAINING_COHORT.json"),
+        ),
+        (
             context["host_test_receipt_path"],  # type: ignore[arg-type]
             PurePosixPath("results/provenance/HOST_HANDOFF_TESTS.json"),
         ),
@@ -1111,13 +1466,9 @@ def _provenance_entries(
             PurePosixPath("results/provenance/PYTEST_ACCEPTANCE.json"),
         ),
         (
-            context["archived_receipt_path"],  # type: ignore[arg-type]
-            PurePosixPath("results/provenance/V100_CORE_ARCHIVED.json"),
-        ),
-        (
-            context["archive_manifest_path"],  # type: ignore[arg-type]
+            context["diagnostic_isolation_path"],  # type: ignore[arg-type]
             PurePosixPath(
-                "results/provenance/V100_CORE_ARCHIVE_MANIFEST.json"
+                "results/provenance/V100_DIAGNOSTIC_ISOLATION.json"
             ),
         ),
         (
@@ -1157,7 +1508,7 @@ def _provenance_entries(
         if name in seen:
             raise PackageError(f"duplicate campaign provenance member: {name}")
         seen.add(name)
-        entries.extend(_source_entries(source, archive_path))
+        entries.extend(_result_source_entries(source, archive_path))
     return entries
 
 
@@ -1166,7 +1517,7 @@ def build_results_package(
     repo: Path,
     runs_root: Path,
     campaign_manifest: Path,
-    output: Path,
+    output_dir: Path,
     max_part_bytes: int,
 ) -> Path:
     """Require 32 scored H100 cells, then publish a provenance-bound package."""
@@ -1177,15 +1528,20 @@ def build_results_package(
     repo = repo.resolve()
     runs_root = _require_no_symlink_components(runs_root, leaf="directory")
     campaign_manifest = original_campaign_manifest.resolve()
-    output = output.resolve()
+    original_output_dir = output_dir.absolute()
+    if original_output_dir.is_symlink():
+        raise PackageError("result package output parent may not be a symlink")
+    output_dir = original_output_dir.resolve()
     if campaign_manifest != runs_root / ".h100/campaign_manifest.json":
         raise PackageError("campaign manifest must be runs/.h100/campaign_manifest.json")
-    if _inside_repository_worktrees(output, repo):
-        raise PackageError("result package output must be outside the repository")
-    if output.exists():
-        raise PackageError(f"result package destination already exists: {output}")
-    if max_part_bytes <= 0:
-        raise PackageError("max_part_bytes must be positive")
+    if _inside_repository_worktrees(output_dir, repo):
+        raise PackageError("result package output parent must be outside the repository")
+    if (
+        not isinstance(max_part_bytes, int)
+        or isinstance(max_part_bytes, bool)
+        or max_part_bytes <= 0
+    ):
+        raise PackageError("max_part_bytes must be a positive integer")
     if not campaign_manifest.is_file():
         raise PackageError(f"campaign manifest is absent: {campaign_manifest}")
     branch = _git_value(repo, "branch", "--show-current")
@@ -1202,6 +1558,7 @@ def build_results_package(
     run_entries: dict[str, list[tuple[Path, PurePosixPath]]] = {}
     markers: dict[str, dict[str, object]] = {}
     runtime_provenance_sha256: dict[str, str] = {}
+    test_metrics_sha256: dict[str, str] = {}
     for cell in cells:
         entries, marker, _provenance = _run_entries(
             runs_root, cell, campaign, context
@@ -1210,6 +1567,9 @@ def build_results_package(
         markers[cell.exp_id] = marker
         runtime_provenance_sha256[cell.exp_id] = sha256_file(
             runs_root / cell.exp_id / "runtime_provenance.json"
+        )
+        test_metrics_sha256[cell.exp_id] = sha256_file(
+            runs_root / cell.exp_id / TEST_RESULT_FILENAME
         )
     grid = _validate_grid(
         repo=repo,
@@ -1225,14 +1585,10 @@ def build_results_package(
     )
 
     git_sha = str(campaign["git_sha"])
-    result_identity, result_identity_sha256 = _result_identity(campaign)
-    package_id = _result_package_id(campaign)
-    if output.name != package_id:
-        raise PackageError(f"result output directory must be named {package_id}")
-
-    output.parent.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_dir = _require_no_symlink_components(output_dir, leaf="directory")
     staging = Path(
-        tempfile.mkdtemp(prefix=f".{output.name}.building-", dir=output.parent)
+        tempfile.mkdtemp(prefix=".xview3-h100-results.building-", dir=output_dir)
     )
     artifacts: list[dict[str, object]] = []
     try:
@@ -1265,6 +1621,18 @@ def build_results_package(
         )
         artifacts.append(provenance_artifact)
 
+        result_identity, result_identity_sha256 = _result_identity(
+            campaign,
+            artifacts=artifacts,
+            max_part_bytes=max_part_bytes,
+        )
+        package_id = (
+            f"xview3-h100-results-{git_sha}-{result_identity_sha256}"
+        )
+        output = output_dir / package_id
+        if output.exists() or output.is_symlink():
+            raise PackageError(f"result package destination already exists: {output}")
+
         created = str(campaign.get("updated_utc") or "")
         if not created:
             created = datetime.fromtimestamp(0, tz=timezone.utc).isoformat()
@@ -1294,16 +1662,23 @@ def build_results_package(
                 "allocation_hardware_class": context[
                     "allocation_hardware_class"
                 ],
-                "operator_cutover": context["operator_cutover"],
+                "v100_diagnostic_isolation": context[
+                    "diagnostic_isolation"
+                ],
                 "source_validation_sha256": context[
                     "source_validation_sha256"
                 ],
+                "evaluation_ground_truth_sha256": context[
+                    "evaluation_ground_truth_sha256"
+                ],
+                "training_cohort_sha256": context["cohort_sha256"],
                 "acceptance_test_suite_sha256": context[
                     "test_suite_sha256"
                 ],
                 "campaign_manifest_sha256": sha256_file(campaign_manifest),
                 "summary_grid_sha256": sha256_file(grid),
                 "runtime_provenance_sha256": runtime_provenance_sha256,
+                "test_metrics_sha256": test_metrics_sha256,
                 "campaign_provenance_member_sha256": provenance_artifact[
                     "member_sha256"
                 ],
@@ -1322,7 +1697,10 @@ def build_results_package(
                     "environment/wheelhouse",
                     "secrets",
                     "V100 core diagnostic payloads",
-                    "R2/R3 reference artifacts",
+                    (
+                        "standalone R2/R3 reference artifacts; exact accepted "
+                        "metrics/provenance remain embedded in CUTOVER_READY.json"
+                    ),
                     "superseded runs",
                 ],
             },

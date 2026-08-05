@@ -35,6 +35,19 @@ from .runtime_amendment import (
 )
 
 
+def _assignments(values: list[str], label: str) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for value in values:
+        key, separator, assigned = value.partition("=")
+        if not separator or not key or not assigned or key in result:
+            raise PackageError(
+                f"{label} must be repeated as unique non-empty KEY=VALUE entries"
+            )
+        result[key] = assigned
+    return result
+
+
+
 def _client(repo: Path) -> tuple[object, str]:
     return client_from_environment(repo.resolve())
 
@@ -101,7 +114,7 @@ def _build_parser() -> argparse.ArgumentParser:
     extract.add_argument("--destination", type=Path, required=True)
 
     build_runtime = commands.add_parser(
-        "build-runtime", help="build the code-only native-venv amendment"
+        "build-runtime", help="build the native-venv code + TRAIN/DEV8 amendment"
     )
     build_runtime.add_argument("--repo", type=Path, required=True)
     build_runtime.add_argument("--base-package-root", type=Path, required=True)
@@ -109,20 +122,22 @@ def _build_parser() -> argparse.ArgumentParser:
     build_runtime.add_argument("--max-part-bytes", type=int)
 
     verify_runtime = commands.add_parser(
-        "verify-runtime", help="verify the 7d base and 7e runtime amendment"
+        "verify-runtime",
+        help="source/setup only: fully verify Sprint 7d + schema-2 Sprint 7f",
     )
     verify_runtime.add_argument("--base-package-root", type=Path, required=True)
     verify_runtime.add_argument("--package-root", type=Path, required=True)
 
     extract_runtime = commands.add_parser(
-        "extract-runtime", help="verify and extract the native runtime bundle"
+        "extract-runtime",
+        help="source/setup only: full-base verify and extract Sprint 7f",
     )
     extract_runtime.add_argument("--base-package-root", type=Path, required=True)
     extract_runtime.add_argument("--package-root", type=Path, required=True)
     extract_runtime.add_argument("--destination", type=Path, required=True)
 
     upload_runtime = commands.add_parser(
-        "upload-runtime", help="verified Box upload of the runtime amendment"
+        "upload-runtime", help="source-side verified Box upload of Sprint 7f"
     )
     upload_runtime.add_argument("--repo", type=Path, required=True)
     upload_runtime.add_argument("--base-package-root", type=Path, required=True)
@@ -130,7 +145,8 @@ def _build_parser() -> argparse.ArgumentParser:
     upload_runtime.add_argument("--receipt", type=Path, required=True)
 
     download_runtime = commands.add_parser(
-        "download-runtime", help="verified Box download of the runtime amendment"
+        "download-runtime",
+        help="source/setup only: full-base-verified Sprint 7f download",
     )
     download_runtime.add_argument("--repo", type=Path, required=True)
     download_runtime.add_argument("--base-package-root", type=Path, required=True)
@@ -139,6 +155,65 @@ def _build_parser() -> argparse.ArgumentParser:
     download_runtime.add_argument("--expected-manifest-sha256", required=True)
     download_runtime.add_argument("--expected-sha256sums-sha256", required=True)
     download_runtime.add_argument("--expected-package-id", required=True)
+    bootstrap = commands.add_parser(
+        "build-runtime-bootstrap",
+        help="generate the mandatory hash-pinned Judy runtime puller",
+    )
+    bootstrap.add_argument("--repo", type=Path, required=True)
+    bootstrap.add_argument("--base-package-root", type=Path, required=True)
+    bootstrap.add_argument("--runtime-package-root", type=Path, required=True)
+    bootstrap.add_argument("--output", type=Path, required=True)
+
+
+    build_control = commands.add_parser(
+        "build-control", help="build a small direction-specific control package"
+    )
+    build_control.add_argument("--repo", type=Path, required=True)
+    build_control.add_argument("--kind", required=True)
+    build_control.add_argument(
+        "--source",
+        action="append",
+        required=True,
+        help="repeat as exact-package-path=/absolute/source.json",
+    )
+    build_control.add_argument(
+        "--binding", action="append", required=True, help="repeat as KEY=VALUE"
+    )
+    build_control.add_argument("--output-dir", type=Path, required=True)
+
+    verify_control = commands.add_parser(
+        "verify-control", help="verify a received control package"
+    )
+    verify_control.add_argument("--package-root", type=Path, required=True)
+    verify_control.add_argument("--expected-kind", required=True)
+    verify_control.add_argument(
+        "--expected-binding", action="append", default=[], help="repeat as KEY=VALUE"
+    )
+
+    upload_control = commands.add_parser(
+        "upload-control", help="verified Box upload of a control package"
+    )
+    upload_control.add_argument("--repo", type=Path, required=True)
+    upload_control.add_argument("--package-root", type=Path, required=True)
+    upload_control.add_argument("--expected-kind", required=True)
+    upload_control.add_argument(
+        "--expected-binding", action="append", default=[], help="repeat as KEY=VALUE"
+    )
+    upload_control.add_argument("--receipt", type=Path, required=True)
+
+    download_control = commands.add_parser(
+        "download-control", help="verified Box download of a control package"
+    )
+    download_control.add_argument("--repo", type=Path, required=True)
+    download_control.add_argument("--package-root", type=Path, required=True)
+    download_control.add_argument("--expected-kind", required=True)
+    download_control.add_argument(
+        "--expected-binding", action="append", default=[], help="repeat as KEY=VALUE"
+    )
+    download_control.add_argument("--expected-ready-sha256", required=True)
+    download_control.add_argument("--expected-manifest-sha256", required=True)
+    download_control.add_argument("--expected-sha256sums-sha256", required=True)
+    download_control.add_argument("--expected-package-id", required=True)
 
     results = commands.add_parser(
         "build-results", help="package all 32 completed H100 cells for return"
@@ -146,7 +221,12 @@ def _build_parser() -> argparse.ArgumentParser:
     results.add_argument("--repo", type=Path, required=True)
     results.add_argument("--runs-root", type=Path, required=True)
     results.add_argument("--campaign-manifest", type=Path, required=True)
-    results.add_argument("--output", type=Path, required=True)
+    results.add_argument(
+        "--output-dir",
+        type=Path,
+        required=True,
+        help="parent; builder creates the complete content-addressed package name",
+    )
     results.add_argument("--max-part-bytes", type=int, required=True)
     return parser
 
@@ -319,28 +399,127 @@ def main(argv: list[str] | None = None) -> int:
                 verifier=verifier,
             )
             _print({"package_root": str(downloaded)})
-        elif args.command == "build-results":
-            # Keep preflight/upload/download importable in the minimal transfer
-            # environment without importing the training/runtime dependency graph.
-            from .results import build_results_package
+        elif args.command == "build-runtime-bootstrap":
+            from .runtime_bootstrap import generate_runtime_bootstrap
 
-            client, folder_id = _client(args.repo)
-            result = preflight_box(client, folder_id, minimum_free_bytes=0)
-            if args.max_part_bytes > result.maximum_file_bytes:
-                raise PackageError(
-                    "--max-part-bytes exceeds the current Box maximum file size"
-                )
-            package = build_results_package(
-                repo=args.repo,
-                runs_root=args.runs_root,
-                campaign_manifest=args.campaign_manifest,
+            result = generate_runtime_bootstrap(
+                repo_root=args.repo,
+                base_package_root=args.base_package_root,
+                runtime_package_root=args.runtime_package_root,
                 output=args.output,
-                max_part_bytes=args.max_part_bytes,
+            )
+            _print(result)
+        elif args.command == "build-control":
+            # Lazy import keeps Box-only bootstrap environments independent
+            # from the training dependency graph.
+            from .control import build_control_package, control_package_identity
+
+            sources = {
+                key: Path(value).absolute()
+                for key, value in _assignments(args.source, "--source").items()
+            }
+            bindings = _assignments(args.binding, "--binding")
+            package = build_control_package(
+                kind=args.kind,
+                repo_root=args.repo,
+                source_files=sources,
+                bindings=bindings,
+                output_dir=args.output_dir,
             )
             _print(
                 {
                     "package_root": str(package),
-                    "box_preflight": result.as_dict(),
+                    **control_package_identity(
+                        package,
+                        expected_kind=args.kind,
+                        expected_bindings=bindings,
+                    ),
+                }
+            )
+        elif args.command == "verify-control":
+            from .control import control_package_identity
+
+            bindings = (
+                _assignments(args.expected_binding, "--expected-binding")
+                if args.expected_binding
+                else None
+            )
+            _print(
+                {
+                    "status": "verified",
+                    **control_package_identity(
+                        args.package_root,
+                        expected_kind=args.expected_kind,
+                        expected_bindings=bindings,
+                    ),
+                }
+            )
+        elif args.command == "upload-control":
+            from .control import prepare_control_verifier
+
+            bindings = (
+                _assignments(args.expected_binding, "--expected-binding")
+                if args.expected_binding
+                else None
+            )
+            client, folder_id = _client(args.repo)
+            result = upload_package_with_verifier(
+                client,
+                folder_id,
+                args.package_root,
+                repo_root=args.repo,
+                receipt_path=args.receipt,
+                verifier=prepare_control_verifier(args.expected_kind, bindings),
+                minimum_free_bytes=0,
+            )
+            _print(result)
+        elif args.command == "download-control":
+            from .control import prepare_control_verifier
+
+            bindings = (
+                _assignments(args.expected_binding, "--expected-binding")
+                if args.expected_binding
+                else None
+            )
+            client, folder_id = _client(args.repo)
+            downloaded = download_package_with_verifier(
+                client,
+                folder_id,
+                args.package_root,
+                repo_root=args.repo,
+                expected_ready_sha256=args.expected_ready_sha256,
+                expected_manifest_sha256=args.expected_manifest_sha256,
+                expected_sha256sums_sha256=args.expected_sha256sums_sha256,
+                expected_package_id=args.expected_package_id,
+                verifier=prepare_control_verifier(args.expected_kind, bindings),
+            )
+            _print({"package_root": str(downloaded)})
+        elif args.command == "build-results":
+            # Build in the sealed H100 venv. Box preflight/upload run separately
+            # in the transfer venv, which intentionally has a different graph.
+            from .results import build_results_package
+
+            package = build_results_package(
+                repo=args.repo,
+                runs_root=args.runs_root,
+                campaign_manifest=args.campaign_manifest,
+                output_dir=args.output_dir,
+                max_part_bytes=args.max_part_bytes,
+            )
+            manifest = json.loads(
+                (package / "manifest.json").read_text(encoding="utf-8")
+            )
+            _print(
+                {
+                    "package_root": str(package),
+                    "package_id": manifest["package_id"],
+                    "result_identity_sha256": manifest["source"][
+                        "result_identity_sha256"
+                    ],
+                    "ready_sha256": _hash_file(package / "READY.json"),
+                    "manifest_sha256": _hash_file(package / "manifest.json"),
+                    "sha256sums_sha256": _hash_file(package / "SHA256SUMS"),
+                    "part_bytes": args.max_part_bytes,
                 }
             )
         else:  # pragma: no cover - argparse makes this unreachable
