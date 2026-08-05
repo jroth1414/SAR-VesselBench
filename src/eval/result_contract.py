@@ -35,6 +35,7 @@ BEST_DEV_FIELDS = frozenset(
         "n_candidates",
     }
 )
+BEST_CHECKPOINT_FIELDS = frozenset({"relative_path", "sha256", "epoch"})
 RECIPE_FIELDS = (
     "exp_id",
     "git_sha",
@@ -44,6 +45,19 @@ RECIPE_FIELDS = (
     "gradient_accumulation",
     "effective_batch",
 )
+COMPLETION_FIELDS = frozenset(
+    {
+        "result_schema",
+        *RECIPE_FIELDS,
+        "epochs_run",
+        "best_dev_f1",
+        "best_dev",
+        "best_checkpoint",
+        "last_dev",
+        "train_loss",
+    }
+)
+H100_RUNTIME_CONTRACT_FIELD = "h100_runtime_contract"
 _HEX_40 = re.compile(r"[0-9a-f]{40}")
 _HEX_64 = re.compile(r"[0-9a-f]{64}")
 
@@ -99,10 +113,14 @@ def validate_dev_result(
         raise ResultContractError("candidate_floor must be within [0, 1]")
     if not isinstance(result, Mapping):
         raise ResultContractError(f"{description} is missing")
-    missing = BEST_DEV_FIELDS - set(result)
-    if missing:
+    observed_fields = set(result)
+    if observed_fields != BEST_DEV_FIELDS:
+        missing = BEST_DEV_FIELDS - observed_fields
+        unexpected = observed_fields - BEST_DEV_FIELDS
         raise ResultContractError(
-            f"{description} is incomplete; missing: {', '.join(sorted(missing))}"
+            f"{description} keys do not match the exact contract; "
+            f"missing: {', '.join(sorted(map(str, missing))) or '<none>'}; "
+            f"unexpected: {', '.join(sorted(map(str, unexpected))) or '<none>'}"
         )
 
     epoch = _nonnegative_int(result["epoch"], field=f"{description}.epoch")
@@ -325,6 +343,19 @@ def validate_completion_payload(
         raise ResultContractError("completion marker root must be a mapping")
     if payload.get("result_schema") != RESULT_SCHEMA:
         raise ResultContractError(f"completion marker requires result_schema == {RESULT_SCHEMA}")
+    observed_fields = set(payload)
+    fields_with_h100_runtime = COMPLETION_FIELDS | {H100_RUNTIME_CONTRACT_FIELD}
+    if (
+        observed_fields != COMPLETION_FIELDS
+        and observed_fields != fields_with_h100_runtime
+    ):
+        missing = COMPLETION_FIELDS - observed_fields
+        unexpected = observed_fields - fields_with_h100_runtime
+        raise ResultContractError(
+            "completion marker keys do not match the exact contract; "
+            f"missing: {', '.join(sorted(map(str, missing))) or '<none>'}; "
+            f"unexpected: {', '.join(sorted(map(str, unexpected))) or '<none>'}"
+        )
     root = Path(run_dir)
     _validate_recipe(payload, run_dir=root, expected_recipe=expected_recipe)
     best_dev = validate_dev_result(
@@ -337,6 +368,15 @@ def validate_completion_payload(
     best_checkpoint = payload.get("best_checkpoint")
     if not isinstance(best_checkpoint, Mapping):
         raise ResultContractError("best_checkpoint is missing")
+    observed_checkpoint_fields = set(best_checkpoint)
+    if observed_checkpoint_fields != BEST_CHECKPOINT_FIELDS:
+        missing = BEST_CHECKPOINT_FIELDS - observed_checkpoint_fields
+        unexpected = observed_checkpoint_fields - BEST_CHECKPOINT_FIELDS
+        raise ResultContractError(
+            "best_checkpoint keys do not match the exact contract; "
+            f"missing: {', '.join(sorted(map(str, missing))) or '<none>'}; "
+            f"unexpected: {', '.join(sorted(map(str, unexpected))) or '<none>'}"
+        )
     marker_epoch = _nonnegative_int(
         best_checkpoint.get("epoch"), field="best_checkpoint.epoch"
     )

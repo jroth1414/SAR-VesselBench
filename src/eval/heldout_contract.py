@@ -74,6 +74,19 @@ def _expected_recipe(cell: object, git_sha: str, detector_sha256: str) -> dict[s
     }
 
 
+def _require_sealed_checkpoint(checkpoint: Path, exp_id: str) -> None:
+    try:
+        mode = checkpoint.stat().st_mode
+    except OSError as exc:
+        raise HeldoutContractError(
+            f"{exp_id}: selected best checkpoint cannot be inspected"
+        ) from exc
+    if mode & 0o222:
+        raise HeldoutContractError(
+            f"{exp_id}: selected best checkpoint must be non-writable"
+        )
+
+
 def create_training_cohort(
     *,
     cells: Sequence[object],
@@ -95,6 +108,7 @@ def create_training_cohort(
         raise HeldoutContractError(f"cohort must use the canonical path: {expected_output}")
 
     records: list[dict[str, object]] = []
+    selected_checkpoints: list[tuple[str, Path]] = []
     for cell in cells:
         exp_id = str(getattr(cell, "exp_id"))
         marker = runs_root / exp_id / "final_metrics.json"
@@ -118,6 +132,7 @@ def create_training_cohort(
                 f"{exp_id}: held-out result exists before cohort freeze"
             )
         binding = payload["best_checkpoint"]
+        selected_checkpoints.append((exp_id, checkpoint))
         records.append(
             {
                 "exp_id": exp_id,
@@ -134,6 +149,15 @@ def create_training_cohort(
                 "recipe": _expected_recipe(cell, git_sha, detector_sha256),
             }
         )
+    for exp_id, checkpoint in selected_checkpoints:
+        try:
+            checkpoint.chmod(0o444)
+        except OSError as exc:
+            raise HeldoutContractError(
+                f"{exp_id}: could not seal selected best checkpoint"
+            ) from exc
+        _require_sealed_checkpoint(checkpoint, exp_id)
+
     payload = {
         "cohort_schema": COHORT_SCHEMA,
         "status": "training-cohort-frozen",
@@ -217,6 +241,7 @@ def validate_training_cohort(
             )
         except ResultContractError as exc:
             raise HeldoutContractError(f"{exp_id}: training marker no longer validates: {exc}") from exc
+        _require_sealed_checkpoint(checkpoint, exp_id)
         expected_checkpoint = {
             "relative_path": checkpoint.relative_to(runs_root).as_posix(),
             "sha256": training["best_checkpoint"]["sha256"],
@@ -333,6 +358,7 @@ def validate_training_cohort_cell(
         raise HeldoutContractError(
             f"{exp_id}: training marker no longer validates: {exc}"
         ) from exc
+    _require_sealed_checkpoint(checkpoint, exp_id)
     expected_checkpoint = {
         "relative_path": checkpoint.relative_to(runs_root).as_posix(),
         "sha256": training["best_checkpoint"]["sha256"],

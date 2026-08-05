@@ -23,8 +23,14 @@ from src.eval.heldout_contract import (
     build_test_result,
     cohort_record,
     validate_test_result,
+    validate_training_cohort,
     validate_training_cohort_cell,
     write_test_result,
+)
+from src.eval.result_contract import (
+    ResultContractError,
+    read_lightning_checkpoint_epoch,
+    sha256_file,
 )
 
 
@@ -70,6 +76,49 @@ def _per_scene_payload(result: object) -> dict[str, object]:
     }
 
 
+def validate_checkpoint_load_boundary(
+    checkpoint: Path, binding: Mapping[str, object]
+) -> None:
+    """Revalidate the exact selected checkpoint at a consumption boundary."""
+
+    if set(binding) != {"relative_path", "sha256", "epoch"}:
+        raise HeldoutContractError("selected checkpoint binding is invalid")
+    try:
+        observed_sha256 = sha256_file(checkpoint)
+        observed_epoch = read_lightning_checkpoint_epoch(checkpoint)
+    except ResultContractError as exc:
+        raise HeldoutContractError(
+            "selected checkpoint is absent, unsafe, or unreadable"
+        ) from exc
+    if (
+        observed_sha256 != binding.get("sha256")
+        or observed_epoch != binding.get("epoch")
+    ):
+        raise HeldoutContractError(
+            "selected checkpoint SHA-256/epoch drifted before TEST consumption"
+        )
+
+
+def load_score_labels(
+    *,
+    checkpoint: Path,
+    checkpoint_binding: Mapping[str, object],
+    labels_path: Path,
+    splits_path: Path,
+) -> object:
+    """Open score-view labels only after the selected checkpoint revalidates."""
+
+    validate_checkpoint_load_boundary(checkpoint, checkpoint_binding)
+    from scripts.h100.data_staging import score_labels_summary
+
+    score_labels_summary(labels_path, splits_path=splits_path, production=True)
+    import pandas as pd
+
+    labels = pd.read_csv(labels_path)
+    labels["scene_id"] = labels["scene_id"].astype(str)
+    return labels
+
+
 def score_run(
     run_dir: Path,
     *,
@@ -113,6 +162,9 @@ def score_run(
     raw_root = Path(str(paths["raw_xview3"]))
     stats = json.loads(Path(str(paths["stats"])).read_text())
 
+    # The label gate also checked this binding. Recheck at the last possible
+    # point before deserialization to close mutation races during label loading.
+    validate_checkpoint_load_boundary(checkpoint, checkpoint_binding)
     module = HeatmapLitModule.load_from_checkpoint(str(checkpoint), map_location=device)
     module.eval()
     try:
@@ -169,7 +221,6 @@ def score_run(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    import pandas as pd
     import yaml
 
     parser = argparse.ArgumentParser(description=__doc__)
@@ -204,11 +255,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not requested:
         raise HeldoutContractError("at least one cohort cell must be requested")
 
-    # The controller has already validated and frozen all 32 bytes. Recheck the
-    # immutable cohort identity plus each requested marker/checkpoint before any
-    # split, label, stats, or TEST raster is opened. This stays O(requested).
-    cohort: dict[str, object] | None = None
-    cohort_sha256: str | None = None
+    # Never trust only the selected cell or an asserted cohort digest here. A
+    # standalone/compatibility invocation must revalidate all 32 immutable
+    # marker/checkpoint bindings before any split, label, stats, or TEST raster
+    # is opened, just as the production controller does at the phase barrier.
+    cohort, cohort_sha256 = validate_training_cohort(
+        path=cohort_path,
+        cells=cells,
+        runs_root=runs_root,
+        git_sha=git_sha,
+        detector_sha256=detector_sha256,
+        candidate_floor=float(det_cfg["decode"]["candidate_floor"]),
+    )
+    if cohort_sha256 != args.cohort_sha256:
+        raise HeldoutContractError(
+            "training cohort SHA-256 differs from the supplied binding"
+        )
+    # Recheck requested cells against the same cohort immediately before the
+    # label gate too; this catches a selected-byte race after the all-cell scan.
     for cell in cells:
         if cell.exp_id not in requested:
             continue
@@ -224,25 +288,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 exp_id=cell.exp_id,
             )
         )
-        if cohort is None:
-            cohort, cohort_sha256 = validated, validated_sha256
-        elif cohort != validated or cohort_sha256 != validated_sha256:
+        if cohort != validated or cohort_sha256 != validated_sha256:
             raise HeldoutContractError("training cohort changed during validation")
-    assert cohort is not None and cohort_sha256 is not None
     splits_path = repo / str(data_cfg["paths"]["splits"])
     splits = json.loads(splits_path.read_text())["splits"]
     test_scene_ids = tuple(sorted(map(str, splits["test"])))
     if len(test_scene_ids) != 16:
         raise HeldoutContractError("frozen test partition must contain exactly 16 scenes")
     labels_path = repo / str(data_cfg["paths"]["raw_xview3"]) / "labels" / "train.csv"
-    from src.eval.ground_truth_audit import audit_ground_truth_dataset
-
-    audit_ground_truth_dataset(
-        train_csv=labels_path,
-        splits_json=splits_path,
-    )
-    labels = pd.read_csv(labels_path)
-    labels["scene_id"] = labels["scene_id"].astype(str)
     absolute_data_cfg = {
         **data_cfg,
         "paths": {
@@ -256,6 +309,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     for cell in cells:
         if cell.exp_id not in requested:
             continue
+        record = cohort_record(cohort, cell.exp_id)
+        checkpoint_binding = record.get("best_checkpoint")
+        if not isinstance(checkpoint_binding, Mapping):
+            raise HeldoutContractError(
+                f"{cell.exp_id}: cohort checkpoint binding is absent"
+            )
+        checkpoint = runs_root / str(checkpoint_binding.get("relative_path", ""))
+        labels = load_score_labels(
+            checkpoint=checkpoint,
+            checkpoint_binding=checkpoint_binding,
+            labels_path=labels_path,
+            splits_path=splits_path,
+        )
         log(f"{cell.exp_id}: scoring frozen TEST with cohort-bound best-dev threshold")
         payload = score_run(
             runs_root / cell.exp_id,

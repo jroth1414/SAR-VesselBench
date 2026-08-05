@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 from types import SimpleNamespace
 
@@ -164,6 +165,72 @@ def _write_training_matrix(runs):
     return cells, cohort_path, sha256_file(cohort_path)
 
 
+def test_training_cohort_seals_and_requires_best_checkpoint_read_only(tmp_path):
+    runs = tmp_path / "runs"
+    cells, cohort_path, _cohort_sha256 = _write_training_matrix(runs)
+    checkpoint = runs / cells[0].exp_id / "checkpoints/best.ckpt"
+    assert checkpoint.stat().st_mode & 0o222 == 0
+
+    checkpoint.chmod(0o644)
+    with pytest.raises(HeldoutContractError, match="must be non-writable"):
+        validate_training_cohort(
+            path=cohort_path,
+            cells=cells,
+            runs_root=runs,
+            git_sha="a" * 40,
+            detector_sha256="b" * 64,
+            candidate_floor=0.05,
+        )
+
+
+def test_final_eval_checkpoint_revalidation_checks_hash_and_epoch(tmp_path):
+    runs = tmp_path / "runs"
+    cells, cohort_path, _cohort_sha256 = _write_training_matrix(runs)
+    cohort = json.loads(cohort_path.read_text(encoding="utf-8"))
+    cell = cells[0]
+    record = heldout_contract.cohort_record(cohort, cell.exp_id)
+    checkpoint = runs / cell.exp_id / "checkpoints/best.ckpt"
+    assert final_eval._validated_final_checkpoint(
+        record=record,
+        runs_root=runs,
+        exp_id=cell.exp_id,
+    ) == checkpoint
+
+    checkpoint.chmod(0o644)
+    checkpoint.write_bytes(checkpoint.read_bytes() + b"tamper")
+    checkpoint.chmod(0o444)
+    with pytest.raises(HeldoutContractError, match="SHA-256 drifted"):
+        final_eval._validated_final_checkpoint(
+            record=record,
+            runs_root=runs,
+            exp_id=cell.exp_id,
+        )
+
+    checkpoint.chmod(0o644)
+    torch.save({"epoch": 4, "callbacks": {}}, checkpoint)
+    checkpoint.chmod(0o444)
+    rebound = json.loads(json.dumps(record))
+    rebound["best_checkpoint"]["sha256"] = sha256_file(checkpoint)
+    with pytest.raises(HeldoutContractError, match="epoch differs"):
+        final_eval._validated_final_checkpoint(
+            record=rebound,
+            runs_root=runs,
+            exp_id=cell.exp_id,
+        )
+
+
+def test_final_eval_revalidates_checkpoints_before_lock_and_model_load():
+    source = inspect.getsource(final_eval.main)
+    preflight = source.index("selected_records: dict")
+    lock = source.index("_write_once_lock(")
+    label_read = source.index("labels = pd.read_csv(")
+    immediate = source.rindex("checkpoint = _validated_final_checkpoint(")
+    model_load = source.index("module = HeatmapLitModule.load_from_checkpoint(")
+    assert preflight < lock < label_read
+    assert immediate < model_load
+    assert "pd.read_csv" not in source[immediate:model_load]
+
+
 def test_per_cell_cohort_validation_hashes_only_requested_checkpoint(
     tmp_path,
     monkeypatch,
@@ -195,6 +262,7 @@ def test_per_cell_cohort_validation_hashes_only_requested_checkpoint(
     assert calls == [runs / requested.exp_id / "final_metrics.json"]
 
     unrelated = runs / cells[8].exp_id / "checkpoints/best.ckpt"
+    unrelated.chmod(0o644)
     unrelated.write_bytes(b"tampered-unrelated-checkpoint")
     validate_training_cohort_cell(
         path=cohort_path,
@@ -217,6 +285,7 @@ def test_per_cell_cohort_validation_hashes_only_requested_checkpoint(
         )
 
     selected = runs / requested.exp_id / "checkpoints/best.ckpt"
+    selected.chmod(0o644)
     selected.write_bytes(b"tampered-selected-checkpoint")
     with pytest.raises(HeldoutContractError, match="no longer validates"):
         validate_training_cohort_cell(
@@ -367,12 +436,21 @@ def test_test_scorer_does_not_open_labels_before_training_barrier(
     monkeypatch.setattr(score_test_cohort, "_git_sha", lambda _repo: "a" * 40)
     monkeypatch.setattr(
         score_test_cohort,
+        "validate_training_cohort",
+        lambda **kwargs: (_ for _ in ()).throw(
+            HeldoutContractError("unrelated cell drift before barrier")
+        ),
+    )
+    monkeypatch.setattr(
+        score_test_cohort,
         "validate_training_cohort_cell",
-        lambda **kwargs: (_ for _ in ()).throw(HeldoutContractError("barrier")),
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("narrow validation ran before the full barrier")
+        ),
     )
     label_reads = []
     monkeypatch.setattr(pd, "read_csv", lambda path: label_reads.append(path))
-    with pytest.raises(HeldoutContractError, match="barrier"):
+    with pytest.raises(HeldoutContractError, match="unrelated cell drift"):
         score_test_cohort.main(
             [
                 "--repo",
@@ -383,6 +461,8 @@ def test_test_scorer_does_not_open_labels_before_training_barrier(
                 COHORT_SHA256,
                 "--device",
                 "cpu",
+                "--only",
+                cells[0].exp_id,
             ]
         )
     assert label_reads == []
@@ -425,7 +505,7 @@ def test_final_eval_does_not_lock_or_open_validation_before_all_test_results(
     assert not (runs / "final_eval.lock").exists()
 
 
-def _grid_fixture():
+def _grid_fixture(runs):
     arms = {
         f"arm-{index}": {
             "short": f"arm{index}",
@@ -437,6 +517,7 @@ def _grid_fixture():
     cells = []
     rows = []
     test_results = {}
+    cohort_records = []
     for index, (init_name, arm) in enumerate(arms.items()):
         for fraction_index, fraction in enumerate((0.1, 0.25, 0.5, 1.0)):
             cell = SimpleNamespace(
@@ -471,7 +552,34 @@ def _grid_fixture():
                     "monotonicity_ok": True,
                 }
             )
-    return arms, cells, rows, test_results
+            run = runs / cell.exp_id
+            run.mkdir(parents=True)
+            best_dev = {"f1": 0.5, "threshold": 0.4}
+            marker = run / "final_metrics.json"
+            marker.write_text(
+                json.dumps(
+                    {
+                        "exp_id": cell.exp_id,
+                        "epochs_run": 4,
+                        "best_dev": best_dev,
+                    },
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            marker.chmod(0o444)
+            cohort_records.append(
+                {
+                    "exp_id": cell.exp_id,
+                    "completion_marker": {
+                        "relative_path": f"{cell.exp_id}/final_metrics.json",
+                        "sha256": sha256_file(marker),
+                    },
+                    "best_dev": best_dev,
+                }
+            )
+    return arms, cells, rows, test_results, {"cells": cohort_records}
 
 
 def _grid_fraction_counts(rows):
@@ -484,7 +592,8 @@ def _grid_fraction_counts(rows):
 
 
 def test_final_eval_grid_gate_recomputes_monotonicity(tmp_path):
-    arms, cells, rows, test_results = _grid_fixture()
+    runs = tmp_path / "runs"
+    arms, cells, rows, test_results, cohort = _grid_fixture(runs)
     grid = tmp_path / "grid.csv"
     pd.DataFrame(rows, columns=final_eval.GRID_COLUMNS).to_csv(grid, index=False)
     assert final_eval.validate_grid_gate(
@@ -492,6 +601,8 @@ def test_final_eval_grid_gate_recomputes_monotonicity(tmp_path):
         cells=cells,
         test_results=test_results,
         arms=arms,
+        cohort=cohort,
+        runs_root=runs,
         fraction_counts=_grid_fraction_counts(rows),
         git_sha="a" * 40,
         detector_sha256="b" * 64,
@@ -511,6 +622,66 @@ def test_final_eval_grid_gate_recomputes_monotonicity(tmp_path):
             test_results=test_results,
             arms=arms,
             fraction_counts=_grid_fraction_counts(rows),
+            cohort=cohort,
+            runs_root=runs,
+            git_sha="a" * 40,
+            detector_sha256="b" * 64,
+            precision="32-true",
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "tampered"),
+    (("dev_f1", 0.51), ("dev_threshold", 0.41), ("epochs_run", 5)),
+)
+def test_final_eval_grid_gate_rejects_unbound_training_fields(
+    tmp_path, field, tampered
+):
+    runs = tmp_path / "runs"
+    arms, cells, rows, test_results, cohort = _grid_fixture(runs)
+    rows[0][field] = tampered
+    grid = tmp_path / "grid.csv"
+    pd.DataFrame(rows, columns=final_eval.GRID_COLUMNS).to_csv(grid, index=False)
+
+    with pytest.raises(HeldoutContractError, match="disagrees with the frozen cohort"):
+        final_eval.validate_grid_gate(
+            grid,
+            cells=cells,
+            test_results=test_results,
+            cohort=cohort,
+            runs_root=runs,
+            arms=arms,
+            fraction_counts=_grid_fraction_counts(rows),
+            git_sha="a" * 40,
+            detector_sha256="b" * 64,
+            precision="32-true",
+        )
+
+
+def test_final_eval_grid_gate_rehashes_cohort_bound_completion_marker(tmp_path):
+    runs = tmp_path / "runs"
+    arms, cells, rows, test_results, cohort = _grid_fixture(runs)
+    marker = runs / cells[0].exp_id / "final_metrics.json"
+    marker.chmod(0o644)
+    payload = json.loads(marker.read_text(encoding="utf-8"))
+    payload["epochs_run"] = 5
+    marker.write_text(
+        json.dumps(payload, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    marker.chmod(0o444)
+    grid = tmp_path / "grid.csv"
+    pd.DataFrame(rows, columns=final_eval.GRID_COLUMNS).to_csv(grid, index=False)
+
+    with pytest.raises(HeldoutContractError, match="completion marker drifted"):
+        final_eval.validate_grid_gate(
+            grid,
+            cells=cells,
+            test_results=test_results,
+            cohort=cohort,
+            runs_root=runs,
+            arms=arms,
+            fraction_counts=_grid_fraction_counts(rows),
             git_sha="a" * 40,
             detector_sha256="b" * 64,
             precision="32-true",
@@ -523,7 +694,7 @@ def test_final_eval_monotonicity_stop_precedes_final_resource_access(
     repo = tmp_path / "repo"
     runs = tmp_path / "runs"
     _write_configs(repo, include_splits=True)
-    arms, cells, rows, test_results = _grid_fixture()
+    arms, cells, rows, test_results, cohort = _grid_fixture(runs)
     (repo / "configs/arms.yaml").write_text(yaml.safe_dump({"arms": arms}))
     detector_sha256 = sha256_file(repo / "configs/detector.yaml")
     for row in rows:
@@ -542,7 +713,7 @@ def test_final_eval_monotonicity_stop_precedes_final_resource_access(
     monkeypatch.setattr(
         final_eval,
         "validate_training_cohort",
-        lambda **kwargs: ({"cells": []}, COHORT_SHA256),
+        lambda **kwargs: (cohort, COHORT_SHA256),
     )
     monkeypatch.setattr(
         final_eval,

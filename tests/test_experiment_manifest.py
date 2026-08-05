@@ -173,7 +173,7 @@ def test_runner_completion_markers_are_value_checked(tmp_path):
 
 
 
-def test_export_results_retains_runtime_provenance(tmp_path, monkeypatch):
+def test_export_results_retires_in_tree_experiment_export(tmp_path, monkeypatch):
     runs = tmp_path / "runs"
     out = tmp_path / "results"
     exp = "vitin1k-f10-s0"
@@ -184,9 +184,6 @@ def test_export_results_retains_runtime_provenance(tmp_path, monkeypatch):
 
     monkeypatch.setattr(export_results, "RUNS", runs)
     monkeypatch.setattr(export_results, "OUT", out)
-    monkeypatch.setattr(export_results, "current_exp_ids", lambda: {exp})
 
     assert export_results.main() == 0
-    assert (out / exp / "runtime_provenance.json").read_text() == (
-        run_dir / "runtime_provenance.json"
-    ).read_text()
+    assert not (out / exp).exists()

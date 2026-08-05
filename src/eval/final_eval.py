@@ -15,8 +15,8 @@ import json
 import math
 import os
 import subprocess
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Sequence
 
 from scripts.h100.contracts import load_cells
 from src.analysis.curves import (
@@ -33,7 +33,11 @@ from src.eval.heldout_contract import (
     validate_complete_test_cohort,
     validate_training_cohort,
 )
-from src.eval.result_contract import sha256_file
+from src.eval.result_contract import (
+    ResultContractError,
+    read_lightning_checkpoint_epoch,
+    sha256_file,
+)
 
 LOCKFILE = Path("runs/final_eval.lock")
 EVAL_FRACS = (0.1, 0.25, 1.0)
@@ -87,11 +91,156 @@ def _finite_grid_float(value: object, *, field: str) -> float:
     return result
 
 
+def _cohort_grid_training_values(
+    *,
+    cohort: Mapping[str, object],
+    runs_root: Path,
+    exp_id: str,
+) -> tuple[float, float, int]:
+    """Rebind grid training fields to the frozen marker bytes for one cell."""
+
+    record = cohort_record(cohort, exp_id)
+    marker_binding = record.get("completion_marker")
+    best_dev = record.get("best_dev")
+    expected_relative = f"{exp_id}/final_metrics.json"
+    if (
+        not isinstance(marker_binding, Mapping)
+        or set(marker_binding) != {"relative_path", "sha256"}
+        or marker_binding.get("relative_path") != expected_relative
+        or not isinstance(best_dev, Mapping)
+    ):
+        raise HeldoutContractError(
+            f"{exp_id}: frozen cohort training binding is invalid"
+        )
+
+    run_dir = runs_root.absolute() / exp_id
+    marker = run_dir / "final_metrics.json"
+    if run_dir.is_symlink() or marker.is_symlink() or not marker.is_file():
+        raise HeldoutContractError(
+            f"{exp_id}: cohort-bound completion marker path is unsafe"
+        )
+    try:
+        if marker.stat().st_mode & 0o222:
+            raise HeldoutContractError(
+                f"{exp_id}: cohort-bound completion marker is not immutable"
+            )
+        marker_bytes = marker.read_bytes()
+    except OSError as exc:
+        raise HeldoutContractError(
+            f"{exp_id}: could not read cohort-bound completion marker"
+        ) from exc
+    if hashlib.sha256(marker_bytes).hexdigest() != marker_binding.get("sha256"):
+        raise HeldoutContractError(
+            f"{exp_id}: cohort-bound completion marker drifted"
+        )
+    try:
+        marker_payload = json.loads(marker_bytes)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise HeldoutContractError(
+            f"{exp_id}: cohort-bound completion marker is invalid JSON"
+        ) from exc
+    if (
+        not isinstance(marker_payload, Mapping)
+        or marker_payload.get("exp_id") != exp_id
+        or marker_payload.get("best_dev") != best_dev
+    ):
+        raise HeldoutContractError(
+            f"{exp_id}: cohort and completion marker training bindings differ"
+        )
+    epochs_run = marker_payload.get("epochs_run")
+    if type(epochs_run) is not int or epochs_run <= 0:
+        raise HeldoutContractError(
+            f"{exp_id}: cohort-bound epochs_run must be a positive integer"
+        )
+    return (
+        _finite_grid_float(best_dev.get("f1"), field=f"{exp_id}.cohort_dev_f1"),
+        _finite_grid_float(
+            best_dev.get("threshold"), field=f"{exp_id}.cohort_dev_threshold"
+        ),
+        epochs_run,
+    )
+
+
+def _validated_final_checkpoint(
+    *,
+    record: Mapping[str, object],
+    runs_root: Path,
+    exp_id: str,
+) -> Path:
+    """Rehash and epoch-check one sealed cohort checkpoint immediately."""
+
+    if record.get("exp_id") != exp_id:
+        raise HeldoutContractError(f"{exp_id}: cohort checkpoint record is misbound")
+    binding = record.get("best_checkpoint")
+    if not isinstance(binding, Mapping) or set(binding) != {
+        "relative_path",
+        "sha256",
+        "epoch",
+    }:
+        raise HeldoutContractError(f"{exp_id}: cohort checkpoint binding is invalid")
+    relative_value = binding.get("relative_path")
+    if not isinstance(relative_value, str) or not relative_value:
+        raise HeldoutContractError(f"{exp_id}: cohort checkpoint path is invalid")
+    relative = Path(relative_value)
+    if (
+        relative.is_absolute()
+        or relative.as_posix() != relative_value
+        or not relative.parts
+        or relative.parts[0] != exp_id
+        or any(part in {"", ".", ".."} for part in relative.parts)
+    ):
+        raise HeldoutContractError(f"{exp_id}: cohort checkpoint path is unsafe")
+    root = runs_root.absolute()
+    run_dir = root / exp_id
+    checkpoint = root / relative
+    if root.is_symlink() or run_dir.is_symlink():
+        raise HeldoutContractError(f"{exp_id}: cohort checkpoint path is unsafe")
+    current = root
+    for part in relative.parts:
+        current = current / part
+        if current.is_symlink():
+            raise HeldoutContractError(
+                f"{exp_id}: cohort checkpoint path contains a symlink"
+            )
+    try:
+        resolved_run = run_dir.resolve(strict=True)
+        resolved_checkpoint = checkpoint.resolve(strict=True)
+        resolved_checkpoint.relative_to(resolved_run)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise HeldoutContractError(
+            f"{exp_id}: cohort checkpoint is absent or escapes its run directory"
+        ) from exc
+    if not checkpoint.is_file() or checkpoint.stat().st_size <= 0:
+        raise HeldoutContractError(f"{exp_id}: cohort checkpoint is absent or empty")
+    if checkpoint.stat().st_mode & 0o222:
+        raise HeldoutContractError(f"{exp_id}: cohort checkpoint is writable")
+    expected_epoch = binding.get("epoch")
+    if type(expected_epoch) is not int or expected_epoch < 0:
+        raise HeldoutContractError(f"{exp_id}: cohort checkpoint epoch is invalid")
+    try:
+        if sha256_file(checkpoint) != binding.get("sha256"):
+            raise HeldoutContractError(
+                f"{exp_id}: cohort checkpoint SHA-256 drifted"
+            )
+        actual_epoch = read_lightning_checkpoint_epoch(checkpoint)
+    except ResultContractError as exc:
+        raise HeldoutContractError(
+            f"{exp_id}: cohort checkpoint could not be revalidated"
+        ) from exc
+    if actual_epoch != expected_epoch:
+        raise HeldoutContractError(
+            f"{exp_id}: cohort checkpoint epoch differs from its binding"
+        )
+    return checkpoint
+
+
 def validate_grid_gate(
     path: Path,
     *,
     cells: Sequence[object],
     test_results: dict[str, dict],
+    cohort: Mapping[str, object],
+    runs_root: Path,
     arms: dict[str, dict],
     fraction_counts: dict[float, dict[str, int]],
     git_sha: str,
@@ -144,6 +293,11 @@ def validate_grid_gate(
                 test_results[exp_id]["metrics"]["f1"],
                 field=f"{exp_id}.bound_test_f1",
             )
+            bound_dev_f1, bound_dev_threshold, bound_epochs_run = (
+                _cohort_grid_training_values(
+                    cohort=cohort, runs_root=runs_root, exp_id=exp_id
+                )
+            )
         except (KeyError, TypeError, ValueError) as exc:
             raise HeldoutContractError(
                 f"grid.csv row for {exp_id} is malformed or unbound"
@@ -158,10 +312,19 @@ def validate_grid_gate(
             or row["detector_sha256"] != detector_sha256
             or row["git_sha"] != git_sha
             or not 0.0 <= dev_f1 <= 1.0
+            or not math.isclose(
+                dev_f1, bound_dev_f1, rel_tol=1e-12, abs_tol=1e-12
+            )
             or not 0.0 <= dev_threshold <= 1.0
+            or not math.isclose(
+                dev_threshold,
+                bound_dev_threshold,
+                rel_tol=1e-12,
+                abs_tol=1e-12,
+            )
             or not 0.0 <= test_f1 <= 1.0
             or not math.isclose(test_f1, bound_test_f1, rel_tol=1e-12, abs_tol=1e-12)
-            or epochs_run <= 0
+            or epochs_run != bound_epochs_run
             or counts != fraction_counts.get(float(cell.fraction))
             or counts["train_scene_count"] <= 0
             or counts["train_vessel_count"] <= 0
@@ -267,6 +430,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         grid_path,
         cells=cells,
         test_results=test_results,
+        cohort=cohort,
+        runs_root=runs_root,
         arms=arms,
         fraction_counts=fraction_counts,
         git_sha=git_sha,
@@ -277,6 +442,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     selected = [cell for cell in cells if float(cell.fraction) in EVAL_FRACS]
     if len(selected) != 24 or len({cell.exp_id for cell in selected}) != 24:
         raise HeldoutContractError("verified final evaluation requires exactly 24 cells")
+    selected_records: dict[str, Mapping[str, object]] = {}
+    for cell in selected:
+        record = cohort_record(cohort, cell.exp_id)
+        _validated_final_checkpoint(
+            record=record, runs_root=runs_root, exp_id=cell.exp_id
+        )
+        selected_records[cell.exp_id] = record
+
     eval_scenes = tuple(sorted(map(str, splits["eval_final"])))
     if len(eval_scenes) != 50 or len(set(eval_scenes)) != 50:
         raise HeldoutContractError("verified final split must contain exactly 50 scenes")
@@ -346,11 +519,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     rows = []
     for cell in selected:
         exp_id = cell.exp_id
-        record = cohort_record(cohort, exp_id)
+        record = selected_records[exp_id]
         threshold = float(record["best_dev"]["threshold"])
         checkpoint_binding = record["best_checkpoint"]
-        checkpoint = runs_root / str(checkpoint_binding["relative_path"])
         print(f"[final eval] {exp_id}")
+        checkpoint = _validated_final_checkpoint(
+            record=record, runs_root=runs_root, exp_id=exp_id
+        )
         module = HeatmapLitModule.load_from_checkpoint(
             str(checkpoint), map_location=args.device
         ).eval()

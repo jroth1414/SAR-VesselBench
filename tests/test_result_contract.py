@@ -129,10 +129,40 @@ def test_completion_requires_exact_schema2(tmp_path, schema):
         )
 
 
+def test_completion_allows_h100_runtime_contract_extension(tmp_path):
+    run_dir, checkpoint, payload = valid_marker(tmp_path)
+    payload["h100_runtime_contract"] = {"runtime_schema": 1}
+
+    selected = validate_completion_payload(
+        payload,
+        run_dir=run_dir,
+        candidate_floor=CANDIDATE_FLOOR,
+    )
+
+    assert selected == checkpoint
+
+
+@pytest.mark.parametrize(
+    "extra_field",
+    ["test", "heldout", "legacy", "arbitrary_extra"],
+)
+def test_completion_rejects_noncontract_top_level_fields(tmp_path, extra_field):
+    run_dir, _checkpoint, payload = valid_marker(tmp_path)
+    payload[extra_field] = {}
+    with pytest.raises(
+        ResultContractError, match=rf"unexpected:.*{extra_field}"
+    ):
+        validate_completion_payload(
+            payload,
+            run_dir=run_dir,
+            candidate_floor=CANDIDATE_FLOOR,
+        )
+
+
 def test_completion_requires_last_dev_and_exact_best_scalar(tmp_path):
     run_dir, _checkpoint, payload = valid_marker(tmp_path)
     payload.pop("last_dev")
-    with pytest.raises(ResultContractError, match="last_dev is missing"):
+    with pytest.raises(ResultContractError, match="missing: last_dev"):
         validate_completion_payload(
             payload, run_dir=run_dir, candidate_floor=CANDIDATE_FLOOR
         )
@@ -143,6 +173,20 @@ def test_completion_requires_last_dev_and_exact_best_scalar(tmp_path):
         validate_completion_payload(
             payload,
             run_dir=tmp_path / "other" / "vitin1k-f10-s0",
+            candidate_floor=CANDIDATE_FLOOR,
+        )
+
+
+@pytest.mark.parametrize("field", ["best_dev", "last_dev", "best_checkpoint"])
+def test_completion_rejects_extra_nested_contract_fields(tmp_path, field):
+    run_dir, _checkpoint, payload = valid_marker(tmp_path)
+    payload[field]["unexpected_metric"] = 0
+    with pytest.raises(
+        ResultContractError, match=rf"{field} keys.*unexpected"
+    ):
+        validate_completion_payload(
+            payload,
+            run_dir=run_dir,
             candidate_floor=CANDIDATE_FLOOR,
         )
 
