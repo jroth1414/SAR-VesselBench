@@ -348,7 +348,7 @@ def test_submit_snapshots_sanitized_site_and_batches_reject_tampering(tmp_path: 
         prepare_runtime_paths=True,
         site_overrides={
             "BOX_JWT_CONFIG": "/secret/jwt.json",
-            "BOX_FOLDER_ID": "secret-folder-404384490657",
+            "BOX_FOLDER_ID": "secret-folder-fixture",
         },
         extra_env={
             "PATH": f"{fake_bin}:{os.environ['PATH']}",
@@ -371,7 +371,7 @@ def test_submit_snapshots_sanitized_site_and_batches_reject_tampering(tmp_path: 
     assert "H100_REFERENCES_PACKAGE_" not in snapshot_text
     assert "H100_DIAGNOSTIC_ISOLATION_PACKAGE_" not in snapshot_text
     assert "H100_V100_CONTROL_PLANE=box-transfer-v1" in snapshot_text
-    assert "secret-folder-404384490657" not in snapshot_text
+    assert "secret-folder-fixture" not in snapshot_text
 
     assert "H100_BASE_PYTHON_LIB_DIR=" in snapshot_text
     assert "/inherited/loader/path" not in snapshot_text

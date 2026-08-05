@@ -1,7 +1,10 @@
 # Sprint 7f — Evaluation Contract Correction and Judy H100 Relaunch
 
-Status: implementation handoff; human approval required before stopping V100,
-changing the reportable evaluation path, or launching a replacement grid.
+Status: owner-approved implementation amendment (2026-08-04). The owner
+explicitly selected continued V100 execution for diagnostic value; the V100
+controller and children must not be stopped, signaled, or otherwise mutated by
+this amendment. Reportable H100 launch remains gated on every corrected source,
+runtime, transfer, and acceptance check below.
 
 Owner intent assumed by this plan:
 
@@ -216,7 +219,7 @@ a finished run.
 
 Update `scripts/score_test_split.py` and `src/eval/final_eval.py` to:
 
-1. Require `result_schema >= 2`.
+1. Require `result_schema == 2` exactly.
 2. Load `best_dev.threshold`, never `last_dev.threshold`.
 3. Verify the actual `best.ckpt` SHA-256 against the completion marker before
    inference.
@@ -319,26 +322,39 @@ All of the following must remain byte-identical:
 The full CPU suite and four guard tests must pass. On a GPU node, rerun all six
 value-sensitive checkpoint-load tests and finite strict-FP32 ViT/CNN probes.
 
-## 6. V100 disposition
+## 6. V100 disposition (owner decision, 2026-08-04)
 
-This plan does not itself authorize stopping the live controller. Obtain an
-explicit owner decision.
+The owner elected to let the V100 campaign continue for diagnostic value.
+Therefore:
 
-Scientifically clean recommendation:
+1. Do not stop, signal, pause, reconfigure, or otherwise mutate the live V100
+   controller or any of its children.
+2. Classify every existing and subsequently produced V100 core artifact as
+   `non-reportable-diagnostic`; the superseded evaluation contract affected
+   model selection and early stopping even though gradients used the intended
+   FP32 recipe.
+3. Preserve all artifacts, logs, completion markers, controller records, and
+   OOM-recovery evidence in place while the campaign runs.
+4. Before H100 campaign launch, require an external human-authored immutable
+   diagnostic-isolation attestation. It binds the V100 and H100 namespaces and
+   confirms that V100 marker existence can never suppress, resume, or satisfy
+   a corrected H100 cell.
+5. Transfer that attestation to Judy through the content-addressed Box control
+   plane; Judy must verify its manifest, hashes, and canonical receipt.
+6. Never merge V100 and corrected H100 core cells in one curve, table, resume
+   decision, or reportable completion namespace.
+7. Preserve the original acceptance-time throughput comparison. At cutover,
+   if the current remaining V100 wall time is positive, require the conservative
+   H100 projection to be strictly smaller and record
+   `continues-running-non-reportable-diagnostic`. If the diagnostic has already
+   finished, permit exactly zero remaining hours only with the explicit
+   `complete-non-reportable-diagnostic` status. Completion never makes the V100
+   outputs reportable and never removes the scientifically mandatory uniform
+   H100 rerun.
 
-1. Prevent new V100 cells from launching after the current process reaches a
-   safe checkpoint boundary.
-2. Interrupt active children gracefully; do not kill CUDA processes abruptly.
-3. Preserve all existing artifacts, logs, completion markers, controller
-   records, and OOM recovery evidence.
-4. Archive them under a clearly named non-reportable diagnostic namespace.
-5. Record that gradients used the intended FP32 recipe but model selection and
-   early stopping used the superseded evaluation contract.
-6. Never merge V100 and corrected H100 core cells into one curve.
-
-If the owner elects to let the V100 queue drain for diagnostic value, label all
-subsequent products identically and do not let their existence suppress H100
-cells in the corrected campaign.
+Stopping or archiving V100 later is optional operational work and is not a
+precondition for H100 launch. This amendment contains no process-control action
+against the live V100 campaign.
 
 ## 7. Corrected Judy H100 campaign
 
@@ -362,10 +378,38 @@ After code and source acceptance pass:
 8. Launch all 32 core cells uniformly from scratch with the unchanged owner-
    approved H100 recipe: `32-true`, TF32 disabled, micro/effective batch 16,
    accumulation 1, seed 0, one process per GPU, no DDP.
-9. Record best checkpoint SHA and checkpoint-bound dev threshold in campaign
-   provenance for every completed cell.
-10. Fail-stop the queue on the first invalid completion marker, non-finite
+9. Complete and validate the training phase for all 32 cells before freezing a
+   single immutable `TRAINING_COHORT.json`. No held-out test raster, label, or
+   metric may be read before this all-cell barrier.
+10. After freezing the cohort, return exit 75 without scoring. The host requeues
+    the job; only that fresh allocation may validate the immutable cohort and
+    stage the score-only TEST view.
+11. Score the frozen cohort in a separate phase and write immutable
+    `test_metrics.json` artifacts; never append held-out fields to the training
+    completion marker.
+12. Record best checkpoint SHA and checkpoint-bound dev threshold in campaign
+    provenance for every completed cell.
+13. Fail-stop the queue on the first invalid completion marker, non-finite
     value, hash mismatch, or callback-state mismatch.
+
+The compute allocation uses a physical allowlisted data view beneath
+`$SLURM_TMPDIR`, not a full base extraction. Acceptance receives 111 TRAIN chip
+directories, the fixed sorted eight DEV raster directories, six weight
+directories, the offline wheelhouse, and a source-built TRAIN+DEV8 CSV (13,911
+rows). Training allocations receive the same scientific inputs without
+re-extracting the already installed wheelhouse. Neither view contains a TEST
+chip, TEST raster, or TEST label row. After the cohort barrier, the new
+allocation receives 16 TEST raster directories, no chips, six weight
+directories, and an audited TRAIN+TEST CSV (15,079 rows). The full combined
+label archive is opened and filtered only after the cohort validates.
+
+This is allocation-view isolation, not a claim of host-global ACL isolation.
+Judy's immutable Sprint-7d package already exists as plaintext under the same
+Unix identity, so a malicious same-UID process could bypass the canonical
+launcher and inspect it. The enforced contract prevents accidental or
+study-code access by making held-out bytes absent from the canonical pre-cohort
+view and by requiring every production launch to validate that view before any
+label/raster access.
 
 Monotonicity is an acceptance diagnostic, not a training objective. Do not
 alter results or tune a cell to make the curve monotone.
@@ -374,16 +418,24 @@ alter results or tune a cell to make the curve monotone.
 
 After all corrected core cells complete:
 
-1. Freeze each `best_dev.threshold` with its verified `best.ckpt` SHA.
-2. Run P5.4 once over the 16 frozen test scenes.
-3. Append aggregate test F1/P/R, dark recall, and near-shore F1 with support
-   counts and provenance.
-4. Build the complete 32-row `grid.csv`; because every test score is present,
+1. Validate all 32 exact-schema training completion markers, then atomically
+   create one immutable `TRAINING_COHORT.json` binding every run ID, code SHA,
+   detector/recipe provenance, best checkpoint SHA/epoch, and best-dev
+   threshold. The cohort must not be incrementally extended or replaced.
+2. Only after that cohort exists, run P5.4 once over the 16 frozen test scenes
+   for every cohort member.
+3. Write aggregate test F1/P/R, dark recall, and near-shore F1 with support
+   counts and provenance to a separate immutable `test_metrics.json` beside
+   each run. Never mutate `final_metrics.json` after cohort freeze.
+4. Require exact test support (1,165 vessel positives, zero dark-vessel
+   positives, two near-shore vessel positives, and all 16 frozen scene IDs) in
+   every test result.
+5. Build the complete 32-row `grid.csv`; because every test score is present,
    the curve must use test F1 rather than dev F1.
-5. Apply the predeclared 0.02 monotonicity diagnostic.
-6. If any arm fails, STOP for human interpretation. Do not rerun a favored
+6. Apply the predeclared 0.02 monotonicity diagnostic.
+7. If any arm fails, STOP for human interpretation. Do not rerun a favored
    fraction, change a threshold, add a seed, or inspect verified-final data.
-7. Only after Phase 5 acceptance and explicit owner confirmation run the
+8. Only after Phase 5 acceptance and explicit owner confirmation run the
    once-only verified final evaluation.
 
 ## 9. Documentation updates
@@ -410,6 +462,10 @@ overwriting the large base data payload.
 Required contents:
 
 - Git bundle containing `sprint-7f-eval-contract` and its history;
+- one deterministic source-built TRAIN+fixed-DEV8 label CSV (13,911 rows,
+  exactly 111 TRAIN plus eight sorted DEV scenes) and no TEST/eval-final row;
+- source GT audit metadata binding the immutable combined-label member without
+  requiring Judy to open it before cohort freeze;
 - bootstrap/pull script pinned to the exact bundle SHA and branch;
 - amendment manifest with code SHA, bundle SHA-256, base payload identity,
   unchanged environment-lock identity, and expected Judy venv receipt;
@@ -427,8 +483,20 @@ Transfer requirements:
 - On Judy, download to `.partial`, verify, rename atomically, and clone into a
   new SHA-addressed bootstrap directory.
 - Preserve the existing base-extracted payload and read-only H100 venv when
-  their receipts match; the amendment is code/runtime metadata only.
+  their receipts match; the amendment contains code/control metadata plus only
+  the narrowly derived TRAIN+DEV8 label artifact above.
 - Run package verification before changing any Judy launch pointer.
+
+Dynamic cross-site evidence uses the same verified, content-addressed package
+protocol with narrow allowlists and separate Box child folders:
+
+1. finalized R2/R3 reference receipts travel V100 to Judy;
+2. Judy's immutable `CUTOVER_READY.json` travels Judy to the V100 operator;
+3. the owner-approved `V100_DIAGNOSTIC_ISOLATION.json` travels V100 to Judy; and
+4. Judy verifies all three canonical receipts before campaign launch.
+
+These control packages contain JSON evidence only. They never contain V100
+checkpoints, runs, credentials, or a command capable of stopping the campaign.
 
 ## 11. Definition of done
 
@@ -443,9 +511,14 @@ The amendment is ready for reportable H100 training only when all are true:
   hash and epoch.
 - Test/final paths refuse last-dev thresholds and legacy unbound artifacts.
 - Full CPU and H100 GPU acceptance suites pass.
-- Existing V100 artifacts are explicitly classified as diagnostic.
+- Existing and future V100 core artifacts are explicitly classified as
+  diagnostic, the live campaign remains untouched, and Judy has verified the
+  external diagnostic-isolation attestation.
 - The corrected H100 namespace is empty and all 32 cells are scheduled from
   scratch under one uniform recipe.
+- All 32 training markers are validated and frozen into one immutable cohort
+  before any held-out test access; held-out outputs are separate immutable
+  `test_metrics.json` artifacts.
 - The Box amendment has a verified round trip and Judy reports the expected
   code, package, venv, and data hashes.
 - No test result has influenced training or threshold selection.
@@ -461,4 +534,3 @@ The amendment is ready for reportable H100 training only when all are true:
   superseded evaluation contract.
 - Existing V100 checkpoints remain recoverable diagnostic artifacts but can
   never satisfy corrected H100 completion markers.
-

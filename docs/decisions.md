@@ -409,8 +409,8 @@ identically to every arm. This committed log lives here; `runs/` is gitignored a
   FP16, TF32, reduced batches, shortened schedules, and per-arm exceptions
   remain out of scope.
 - **Fail-closed evidence:** source, Slurm smoke, H100 acceptance, aggregate
-  tests, cutover, campaign, per-cell, external V100 archive, and reverse-result
-  receipts move to native schema 2 and separately bind the Sprint-7e source,
+  tests, cutover, campaign, per-cell, external V100 diagnostic isolation, and
+  reverse-result receipts move to native schema 2 and separately bind the Sprint-7e source,
   Sprint-7d base payload, Sprint-7e runtime amendment, venv tree/build/base
   Python, strict backend, and hardware. Legacy schema-1 SIF evidence cannot
   satisfy these gates. The Slurm smoke must prove external batch-shell to
@@ -421,12 +421,12 @@ identically to every arm. This committed log lives here; `runs/` is gitignored a
   provenance, but it cannot qualify or launch the Judy 3.11.13 lane. A new
   content-addressed amendment from the current branch tip requires a separate,
   initially empty Box folder; the 294 GB Sprint-7d base is reused unchanged.
-- **Status:** this amendment authorizes replacement packaging and validation.
-  It does not claim Judy built the 3.11.13 venv, any H100 gate passed, V100 was
-  stopped, cutover occurred, or H100 training started. V100 continues until all
-  acceptance, throughput, R2/R3, and human operator gates pass.
+- **Status (superseded operational wording):** this amendment authorized
+  replacement packaging and validation. Sprint 7f below supersedes any implied
+  V100 fallback/stop requirement: V100 remains untouched only as a
+  non-reportable diagnostic and cannot satisfy the corrected H100 campaign.
 
-## Judy/V100 separate-filesystem control plane (human clarification, 2026-08-04)
+## Judy/V100 separate-filesystem control plane (historical Sprint 7e clarification, superseded below)
 
 - **Topology:** Judy and the live V100 host have completely separate storage.
   No V100 runs path is or will be mounted on Judy. A dummy Judy directory is
@@ -440,11 +440,12 @@ identically to every arm. This committed log lives here; `runs/` is gitignored a
 - **Control plane:** every Judy submission requires the exact
   `H100_V100_CONTROL_PLANE=box-transfer-v1` literal in its immutable
   compute-site snapshot. Smoke and H100 acceptance consume Judy-local inputs
-  only. Final R2/R3 metrics/provenance cross Box to Judy for
-  `cutover-check`; `CUTOVER_READY.json` crosses Box to the V100 operator
-  before stop/archive; the archive manifest crosses back to Judy before the
-  external operator attestation and campaign gate are validated. Campaign
-  execution has no mounted V100/reference path dependency.
+  only. The corrected reference campaign manifest plus final R2/R3
+  metrics/provenance cross Box to Judy for `cutover-check`;
+  `CUTOVER_READY.json` crosses Box to the V100 operator; and the human-authored
+  diagnostic-isolation attestation crosses back to Judy before the campaign
+  gate is validated. No stop/archive receipt is required. Campaign execution
+  has no mounted V100/reference path dependency.
 - **Write isolation:** before its first persistent write or Slurm submission,
   Judy canonicalizes `H100_RUNS_ROOT` and `H100_JOB_LOG_DIR` and rejects
   equality or ancestor overlap with each other or the immutable repo,
@@ -463,10 +464,102 @@ identically to every arm. This committed log lives here; `runs/` is gitignored a
   The receipt is not source-SHA-bound, so it remains valid for this control-only
   amendment while `locks/env-v100node.txt`, wheelhouse, base extraction, base
   Python/runtime, final path, and tree remain exact.
-- **Status:** no GPU or Slurm gate has run. V100 continues; no cutover or H100
-  training is authorized until the replacement amendment is transferred and
-  every original acceptance gate passes.
-  The replacement amendment qualifies only smoke and H100 acceptance. The
-  content-addressed Box protocol and exact source-hash receipts for dynamic
-  cutover evidence remain NOT STARTED, so `cutover-check` and `campaign` are
-  still a mandatory STOP even after those target gates pass.
+- **Historical status:** this was the Sprint-7e gap before Sprint 7f. No GPU or
+  Slurm gate had run. The Sprint-7f decision and implementation below replace
+  the code-only amendment and supply the content-addressed dynamic control
+  protocol; all target acceptance and transfer gates still remain pending.
+
+## Evaluation-contract correction and concurrent V100 diagnostic (human decision, 2026-08-04)
+
+- **Approval and supersession:** the owner approved Sprint 7f on
+  `sprint-7f-eval-contract`, stacked on accepted Sprint-7e commit
+  `26bece168cd3b9b262ffec5939b836df21b352cd`. This decision supersedes only
+  prior instructions to stop/archive V100 as an H100 launch precondition and
+  the defective evaluation-caller/provenance behavior. The frozen detector,
+  scorer, splits, stats, LS historical split, precision, batch, architecture,
+  optimizer/schedule, seed, and verified-final lock remain unchanged.
+- **Ground-truth defect and remedy:** the scorer caller admitted every
+  HIGH/MEDIUM row as a positive, including non-vessels. The centralized
+  converter now includes only explicitly true HIGH/MEDIUM vessels, excludes
+  HIGH/MEDIUM non-vessels as background, retains LOW rows as ignores, preserves
+  source/shore fields, and rejects ambiguous booleans. The frozen scorer SHA-256
+  remains
+  `85dec7ab083b531547fe81fea5aa02e4d828457ff157619afae29981cf49cd32`;
+  this is an input-contract correction, not a scorer change.
+- **Measured source evidence:** using only
+  `data/raw/xview3/labels/train.csv` (SHA-256
+  `42871b3ddf12d2a732d11d07897c21efc6c688c5d1a6c59a90839a5539e15415`)
+  and the frozen split, the eight training-time dev scenes contain
+  517 vessel HIGH/MEDIUM positives, 107 excluded non-vessel HIGH/MEDIUM rows,
+  and 118 LOW ignores; full dev contains 1,479/804/441; test contains
+  1,165/420/325. The 16 test scenes contain zero dark-vessel positives and only
+  two valid near-shore vessel positives. No `validation.csv` or eval-final
+  label was read for this audit.
+- **Scientific consequence:** the faulty dev target set drove threshold,
+  checkpoint selection, and early stopping. Historical checkpoints cannot
+  reconstruct the correct best epoch uniformly, so every existing and future
+  V100 core result is a non-reportable diagnostic. Corrected rescoring of
+  selected V100 best/last checkpoints is permitted only in the gitignored
+  diagnostic namespace and cannot repair reportability.
+- **Owner-selected V100 disposition:** let the live V100 campaign continue for
+  diagnostic value. Sprint 7f must not stop, signal, pause, reconfigure, or
+  otherwise mutate its controller or children. Its markers cannot suppress,
+  resume, or satisfy corrected H100 cells. A human-authored immutable
+  `V100_DIAGNOSTIC_ISOLATION.json` binds separate namespaces and returns to
+  Judy through Box before H100 launch. Later stop/archive work is optional and
+  not a launch prerequisite.
+- **Throughput cutover if the diagnostic finishes first:** preserve the
+  original acceptance-time comparison, which requires a positive remaining
+  V100 forecast and a strictly earlier conservative H100 finish. At the later
+  `cutover-check`, positive remaining V100 time still requires H100 to be
+  strictly earlier and binds
+  `continues-running-non-reportable-diagnostic`. If the V100 work instead
+  finishes naturally before cutover, exactly zero remaining hours are accepted
+  only with explicit `complete-non-reportable-diagnostic` status. The
+  diagnostic remains non-reportable and the corrected uniform H100 rerun
+  remains scientifically mandatory in either case.
+- **Checkpoint-bound completion:** reportable core training uses exact
+  `result_schema == 2`. `best_dev` records the full operating point and is
+  bound to the actual best checkpoint's safe relative path, SHA-256, and
+  Lightning epoch. `last_dev` remains diagnostic only. Missing, legacy,
+  non-finite, hash-drifted, or epoch-mismatched markers fail closed and are
+  written atomically.
+- **Held-out isolation:** all 32 corrected training markers must validate
+  before one immutable `TRAINING_COHORT.json` is created. Canonical acceptance
+  and training views contain only 111 TRAIN chips, fixed DEV8 rasters, six
+  weights, and a source-built 13,911-row TRAIN+DEV8 CSV; acceptance alone also
+  stages the offline wheelhouse. They contain no TEST chip, raster, or label
+  row. Cohort freeze returns exit 75, and only a fresh allocation may validate
+  the all-32 cohort before staging 16 TEST rasters, no chips, six weights, and
+  an audited 15,079-row TRAIN+TEST CSV. That scoring phase writes separate
+  immutable `test_metrics.json` files
+  with the exact 16-scene/support contract and never mutates
+  `final_metrics.json`. Final evaluation remains locked until Phase 5 and a
+  separate explicit owner confirmation.
+- **References:** R2 retains only its exact pinned best-weight payload
+  (SHA-256
+  `15520cb6cff9d4b01ed5c4a7e039fab763e8e5b0ca5b8e6bffd591ef0d7b8064`)
+  and is rescored under the corrected shared converter; R3 requires a full
+  corrected-contract rerun. Both emit schema-2 provenance and retain their
+  independent precision recipes.
+- **Box/Judy control:** Sprint 7f is a new content-addressed runtime amendment
+  reusing the verified Sprint-7d payload and sealed Judy venv. Besides its Git
+  bundle/control metadata, its sole data artifact is the deterministic
+  source-audited TRAIN+DEV8 CSV needed to keep TEST rows out of the pre-cohort
+  view. Compute-time source validation hashes only pinned package controls and
+  the base Git bundle; the phase stager hashes each selected archive, avoiding
+  any pre-cohort read of TEST or combined-label archive bytes.
+  Separately allowlisted JSON-only packages transfer corrected references
+  V100→Judy, `CUTOVER_READY.json` Judy→V100, and diagnostic isolation
+  V100→Judy. Every package uses manifest + `SHA256SUMS` + READY-last,
+  verified download/rename semantics, and a distinct Box child folder. None
+  contains a credential, run tree, checkpoint, or process-control command.
+- **Isolation boundary:** this is a fail-closed canonical allocation-view
+  contract, not host-global ACL isolation. The immutable Sprint-7d plaintext
+  package is already accessible to the Judy Unix identity, so same-UID code
+  outside the approved launcher is outside the guarantee. Production study
+  code receives only the phase view and validates it before semantic access.
+- **Status discipline:** source implementation and local tests do not claim a
+  Judy transfer, H100 acceptance, Slurm smoke, reference completion, cohort
+  freeze, held-out access, or H100 launch. The live V100 diagnostic continues
+  independently while those gates remain pending.
