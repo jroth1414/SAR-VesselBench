@@ -195,22 +195,39 @@ def _safe_checkpoint_path(run_dir: str | Path, checkpoint: str | Path) -> tuple[
     """Resolve a checkpoint while rejecting escapes and symlinks below run_dir."""
 
     root = _absolute_lexical(Path(run_dir))
+    try:
+        resolved_root = root.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise ResultContractError(
+            f"best checkpoint run directory is absent or unsafe: {root}"
+        ) from exc
     supplied = Path(checkpoint)
     candidate = _absolute_lexical(supplied if supplied.is_absolute() else root / supplied)
     try:
         relative = candidate.relative_to(root)
-    except ValueError as exc:
-        raise ResultContractError("best checkpoint must be inside its run directory") from exc
+        component_root = root
+    except ValueError:
+        # Lightning canonicalizes ModelCheckpoint.dirpath with realpath.  The
+        # Judy checkout deliberately exposes the persistent run namespace via
+        # repo/runs -> H100_RUNS_ROOT, so best_model_path is canonical even
+        # though run_dir is lexical.  Accept only that exact canonical root;
+        # arbitrary aliases that merely resolve into it remain forbidden.
+        try:
+            relative = candidate.relative_to(resolved_root)
+            component_root = resolved_root
+        except ValueError as exc:
+            raise ResultContractError(
+                "best checkpoint must be inside its run directory"
+            ) from exc
     if not relative.parts or any(part in {"", ".", ".."} for part in relative.parts):
         raise ResultContractError("best checkpoint relative path is unsafe")
 
-    current = root
+    current = component_root
     for part in relative.parts:
         current = current / part
         if current.is_symlink():
             raise ResultContractError(f"best checkpoint path contains a symlink: {current}")
     try:
-        resolved_root = root.resolve(strict=True)
         resolved = candidate.resolve(strict=True)
         resolved.relative_to(resolved_root)
     except (OSError, RuntimeError, ValueError) as exc:

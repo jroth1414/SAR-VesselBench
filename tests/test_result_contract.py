@@ -273,6 +273,57 @@ def test_marker_rejects_symlinked_checkpoint(tmp_path):
         )
 
 
+def test_symlinked_runs_root_accepts_canonical_checkpoint_and_rejects_escapes(
+    tmp_path,
+):
+    persistent_runs = tmp_path / "persistent-runs"
+    persistent_runs.mkdir()
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    (checkout / "runs").symlink_to(persistent_runs, target_is_directory=True)
+    run_dir = checkout / "runs" / "vitin1k-f10-s0"
+    checkpoint = persistent_runs / run_dir.name / "checkpoints" / "best.ckpt"
+    checkpoint.parent.mkdir(parents=True)
+    torch.save({"epoch": 3, "callbacks": {}}, checkpoint)
+    best_dev = dev_result()
+
+    binding = create_best_checkpoint_binding(
+        run_dir=run_dir,
+        checkpoint_path=checkpoint,
+        best_dev=best_dev,
+        candidate_floor=CANDIDATE_FLOOR,
+    )
+
+    assert binding == {
+        "relative_path": "checkpoints/best.ckpt",
+        "sha256": sha256_file(checkpoint),
+        "epoch": 3,
+    }
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    outside_checkpoint = outside / "best.ckpt"
+    torch.save({"epoch": 3, "callbacks": {}}, outside_checkpoint)
+    with pytest.raises(ResultContractError, match="inside its run directory"):
+        create_best_checkpoint_binding(
+            run_dir=run_dir,
+            checkpoint_path=outside_checkpoint,
+            best_dev=best_dev,
+            candidate_floor=CANDIDATE_FLOOR,
+        )
+
+    (run_dir / "linked-checkpoints").symlink_to(
+        outside, target_is_directory=True
+    )
+    with pytest.raises(ResultContractError, match="contains a symlink"):
+        create_best_checkpoint_binding(
+            run_dir=run_dir,
+            checkpoint_path=run_dir / "linked-checkpoints" / "best.ckpt",
+            best_dev=best_dev,
+            candidate_floor=CANDIDATE_FLOOR,
+        )
+
+
 class _Module:
     device = "cpu"
 
