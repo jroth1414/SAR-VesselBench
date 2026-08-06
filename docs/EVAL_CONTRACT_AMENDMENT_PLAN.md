@@ -9,6 +9,14 @@ comparison, corrected R2/R3, `CUTOVER_READY.json`, and diagnostic isolation are
 deferred but remain mandatory before Phase-5 completion, reverse export,
 analysis, or final reporting.
 
+Operational status on 2026-08-06: runtime commit `331983ff` passed Judy smoke
+job 542421. Acceptance job 542437 failed before data staging or any
+numerical/model gate because Torch-dependent tests were assigned to the
+minimal Box-transfer Python. It published no `H100_READY.json` and started no
+training. The corrected exact host slice is only
+`tests/test_h100_submit_isolation.py`; the sealed H100 venv runs every other
+test. A fresh runtime package, namespace, smoke, and acceptance are required.
+
 Owner intent assumed by this plan:
 
 - Correct the vessel/non-vessel ground-truth contract without modifying the

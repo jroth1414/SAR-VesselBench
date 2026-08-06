@@ -2118,7 +2118,7 @@ def _write_result_fixture(
         "source_validation_sha256": source_validation_sha256,
         "coverage": {
             "host": HOST_TESTS,
-            "venv": "all pytest collection except the two host-only files",
+            "venv": "all pytest collection except the exact host-only slice",
             "aggregate": "entire repository pytest suite",
         },
         "host_handoff": {

@@ -710,3 +710,27 @@ start; all scientific and deferred-reporting controls remain in force.
   detector, scorer, split, statistics, label contract, model, optimizer,
   schedule, seed, precision, batch, checkpoint rule, held-out barrier, or
   32-cell grid.
+
+## Judy host-test environment partition correction (operational correction, 2026-08-06)
+
+- **Observed evidence:** runtime commit `331983ff` passed full
+  external-signal/requeue/resume smoke as Judy job 542421. Acceptance job
+  542437 then failed before data staging and before every numerical, model,
+  checkpoint, inference, or throughput gate. It published no
+  `H100_READY.json` and started no H100 training.
+- **Root cause:** the acceptance host-test slice ran
+  `tests/test_h100_handoff.py` and `tests/test_experiment_manifest.py`
+  under the intentionally minimal Box-transfer Python, but both tests use
+  `torch`. Adding Torch to the transfer environment would violate the
+  isolated transfer/runtime design.
+- **Correction:** the exact transfer-Python slice is only
+  `tests/test_h100_submit_isolation.py`. The sealed H100 venv runs the full
+  remaining suite, including the handoff and experiment-manifest tests. The
+  receipt schema and fail-closed aggregate-suite validation remain unchanged.
+- **Relaunch rule:** preserve jobs 542421/542437 and the `331983ff` namespace
+  as diagnostic evidence. Build and transfer a fresh content-addressed runtime
+  amendment, use fresh runs/log namespaces, and rerun smoke plus acceptance
+  before campaign submission.
+- **Scientific scope:** this correction changes no frozen detector, scorer,
+  split, statistics, label, precision, batch, model, optimizer, schedule,
+  seed, checkpoint, held-out, or 32-cell campaign contract.

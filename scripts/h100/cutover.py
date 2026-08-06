@@ -855,7 +855,7 @@ def validate_h100_ready(
         or test_suite.get("coverage")
         != {
             "host": HOST_TESTS,
-            "venv": "all pytest collection except the two host-only files",
+            "venv": "all pytest collection except the exact host-only slice",
             "aggregate": "entire repository pytest suite",
         }
     ):

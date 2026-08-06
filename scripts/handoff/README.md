@@ -415,20 +415,21 @@ clean environment. They never activate the venv and never execute a container.
 
 The complete test collection is partitioned between two exact environments:
 
-- The host transfer Python runs
-  `tests/test_h100_handoff.py tests/test_experiment_manifest.py`, which require
-  host `git`/`zstd`, and writes a source-receipt-bound host-test receipt.
-- The sealed venv runs the entire remaining pytest collection with those two
-  files ignored.
+- The host transfer Python runs only
+  `tests/test_h100_submit_isolation.py`, which validates the dependency-light
+  submission boundary and writes a source-receipt-bound host-test receipt.
+- The sealed venv runs the entire remaining pytest collection with that one
+  file ignored. This includes `tests/test_h100_handoff.py` and
+  `tests/test_experiment_manifest.py`, both of which use `torch` and therefore
+  must not run in the minimal Box transfer environment.
 
 The underlying commands are:
 
 ```bash
 /path/to/transfer-python -m pytest -q \
-  tests/test_h100_handoff.py tests/test_experiment_manifest.py
+  tests/test_h100_submit_isolation.py
 /persistent/venvs/xview3-h100-fp32/bin/python -m pytest -q \
-  --ignore=tests/test_h100_handoff.py \
-  --ignore=tests/test_experiment_manifest.py
+  --ignore=tests/test_h100_submit_isolation.py
 ```
 
 The Slurm pack records the first command through
@@ -441,8 +442,9 @@ strict IEEE FP32 backend assertions in child processes, all six value-sensitive
 checkpoint loads, finite ViT/CNN train and full-scene inference probes, the
 deterministic evaluation-GT count receipt, and the 200-step throughput gate.
 V100 remains running unchanged throughout. H100 launch additionally requires
-Slurm signal/requeue/resume smoke, corrected R2/R3 packages, CUTOVER_READY, and
-the external diagnostic-isolation package.
+Slurm signal/requeue/resume smoke. Corrected R2/R3, CUTOVER_READY, and the
+external diagnostic-isolation package remain deferred barriers before Phase 5
+completion, reverse export, analysis, and reporting.
 
 See `slurm/h100/README.md` and the ignored `slurm/h100/site.env` interface for
 the full target commands and receipt fields.

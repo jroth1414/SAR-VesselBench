@@ -604,7 +604,7 @@ def add_acceptance_receipts(root: Path, ready: dict) -> None:
         "source_validation_sha256": source_sha,
         "coverage": {
             "host": host_test_gate.HOST_TESTS,
-            "venv": "all pytest collection except the two host-only files",
+            "venv": "all pytest collection except the exact host-only slice",
             "aggregate": "entire repository pytest suite",
         },
         "host_handoff": {
@@ -2554,9 +2554,13 @@ def test_host_gates_precede_native_pythonpath_and_campaign_uses_h100_ready_only(
     native_path = job.index('"PYTHONPATH=$repo/scripts/h100:$repo"')
     assert source_gate < host_gate < native_path
     assert 'PYTHONPATH="$repo" "$H100_TRANSFER_PYTHON"' in job
-    assert "tests/test_h100_handoff.py" in host_test_gate.HOST_TESTS
-    assert "tests/test_experiment_manifest.py" in host_test_gate.HOST_TESTS
-    assert "tests/test_h100_submit_isolation.py" in host_test_gate.HOST_TESTS
+    assert host_test_gate.HOST_TESTS == [
+        "tests/test_h100_submit_isolation.py"
+    ]
+    for relative in (
+        "tests/test_h100_handoff.py", "tests/test_experiment_manifest.py"
+    ):
+        assert "import torch" in (REPO / relative).read_text()
     assert "H100_READY.json" in job
     for forbidden in (
         "V100_DIAGNOSTIC_ISOLATION.json",

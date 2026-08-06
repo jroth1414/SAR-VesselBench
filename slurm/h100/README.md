@@ -7,6 +7,14 @@ pauses, reconfigures, or otherwise mutates the live V100 campaign. Its outputs
 remain non-reportable diagnostics and can never suppress, resume, or satisfy
 an H100 cell.
 
+Current Judy status (2026-08-06): smoke job 542421 passed the full external
+signal/requeue/resume contract. Acceptance job 542437 failed before data
+staging or numerical/model gates because the minimal transfer-Python slice
+included Torch-dependent tests. No `H100_READY.json` or training was
+produced. The transfer environment now runs only
+`tests/test_h100_submit_isolation.py`; the sealed H100 venv runs all
+remaining tests. Use a fresh runtime package and namespace for the next smoke.
+
 ## 1. Prepare the two-layer Box handoff outside allocations
 
 Keep the completed Sprint 7d data/wheelhouse payload immutable. The smaller

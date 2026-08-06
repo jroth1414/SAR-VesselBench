@@ -1,4 +1,4 @@
-"""Run the git/zstd-dependent handoff tests with the host transfer Python."""
+"""Run dependency-light submission-isolation tests with the transfer Python."""
 
 from __future__ import annotations
 
@@ -14,9 +14,7 @@ from scripts.h100.contracts import atomic_write_json, sha256_file
 from scripts.h100.source_validation import HEX64
 
 HOST_TESTS = [
-    "tests/test_h100_handoff.py",
     "tests/test_h100_submit_isolation.py",
-    "tests/test_experiment_manifest.py",
 ]
 HOST_COMMAND = ["-m", "pytest", "-q", *HOST_TESTS]
 RECEIPT_KEYS = {

@@ -430,7 +430,7 @@ def run_acceptance(args: argparse.Namespace) -> dict:
         "source_validation_sha256": args.source_validation_sha256,
         "coverage": {
             "host": HOST_TESTS,
-            "venv": "all pytest collection except the two host-only files",
+            "venv": "all pytest collection except the exact host-only slice",
             "aggregate": "entire repository pytest suite",
         },
         "host_handoff": {
