@@ -2191,7 +2191,13 @@ def test_allocation_scratch_contract_is_private_guarded_and_portable():
         assert "\"$(stat -c '%a' \"$allocation_scratch\")\" != \"700\"" in source
         assert "\"$(stat -c '%u' \"$allocation_scratch\")\" != \"$(id -u)\"" in source
         assert 'trap cleanup_allocation_scratch EXIT' in source
+        guard_call = 'echo "refusing unsafe allocation-scratch cleanup:'
+        chmod_call = '-exec chmod u+rwx -- {} +'
+        delete_call = 'find "$allocation_scratch" -xdev -depth -mindepth 1 -delete'
+        assert guard_call in source
+        assert chmod_call in source
         assert 'find "$allocation_scratch" -xdev -depth -mindepth 1 -delete' in source
+        assert source.index(guard_call) < source.index(chmod_call) < source.index(delete_call)
         assert 'rmdir -- "$allocation_scratch"' in source
         assert 'allocation scratch destination must start absent' in source
         assert source.index("\ncreate_allocation_scratch\n") < source.index(

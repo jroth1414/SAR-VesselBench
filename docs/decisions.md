@@ -734,3 +734,37 @@ start; all scientific and deferred-reporting controls remain in force.
 - **Scientific scope:** this correction changes no frozen detector, scorer,
   split, statistics, label, precision, batch, model, optimizer, schedule,
   seed, checkpoint, held-out, or 32-cell campaign contract.
+
+## Judy Git-mode portability and sealed-scratch cleanup (operational correction, 2026-08-06)
+
+- **Observed evidence:** content-addressed runtime `b49db0ca` passed the full
+  external-signal/requeue/resume smoke as Judy job 542536. Acceptance job
+  542596 then verified and staged every authorized archive, passed the exact
+  transfer-Python host slice, and ran the remaining sealed-venv suite with
+  406 passes and one failure. It published no `H100_READY.json`; no H100
+  numerical, checkpoint, model, throughput, or training process started.
+- **Root cause:** Git records whether a file is executable, not its complete
+  POSIX permission mask. Judy's site umask materialized the tracked
+  `slurm/h100/shims/scontrol` executable as `0770`; the test incorrectly
+  required exactly `0755`, although the same-owner mode is executable inside
+  the canonical mode-`0700` allocation scratch. The subsequent EXIT cleanup
+  exposed a separate operational defect: acceptance tests intentionally create
+  sealed `0555` fixture venv directories that plain `find -delete` cannot
+  traverse for removal.
+- **Correction:** validate that the shim is a regular non-symlink with owner
+  execute permission, matching Git's portable executable-bit contract. After
+  the existing exact allocation path, canonical resolution, non-symlink, and
+  owner checks pass, restore owner read/write/traverse permission on directories
+  below that allocation root before the existing depth-first deletion. Apply
+  the cleanup symmetrically to smoke and campaign paths and assert its ordering
+  in tests.
+- **Relaunch rule:** preserve job 542596 and its partial namespace as
+  diagnostic evidence. Build and transfer a new content-addressed runtime into
+  a fresh namespace, rerun full smoke, and require a fresh successful
+  acceptance before campaign submission. The verified Sprint-7d base payload,
+  source-built training view, wheelhouse, and compute-built sealed venv remain
+  reusable.
+- **Scientific scope:** this correction changes no frozen detector, scorer,
+  split, statistics, labels, evaluation contract, model, optimizer, schedule,
+  seed, strict-FP32 setting, batch, checkpoint rule, held-out barrier, or
+  32-cell campaign grid.

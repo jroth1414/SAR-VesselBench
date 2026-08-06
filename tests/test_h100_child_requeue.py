@@ -46,7 +46,12 @@ def test_lightning_scontrol_call_is_deferred_to_checkpoint_barrier(
     real_call_marker = tmp_path / "real-scontrol-called"
     _fake_real_scontrol(fake_bin)
 
-    assert stat.S_IMODE(SHIM.stat().st_mode) == 0o755
+    shim_stat = SHIM.stat()
+    assert stat.S_ISREG(shim_stat.st_mode)
+    assert not SHIM.is_symlink()
+    # Git records only the executable bit. The checkout umask may therefore
+    # materialize this tracked executable as 0755, 0750, 0770, and so on.
+    assert stat.S_IMODE(shim_stat.st_mode) & stat.S_IXUSR
     completed = subprocess.run(
         ["scontrol", "requeue", "4242"],
         env=_child_environment(request_dir, fake_bin, real_call_marker),

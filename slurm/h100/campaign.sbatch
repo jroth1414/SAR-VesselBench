@@ -136,6 +136,11 @@ remove_allocation_scratch() {
     echo "refusing unsafe allocation-scratch cleanup: $allocation_scratch" >&2
     return 1
   fi
+  # Acceptance tests deliberately create sealed 0555 fixture venvs. Restore
+  # owner traversal only after the exact canonical-path/owner guard above so
+  # the allocation-local tree remains removable on success and failure.
+  find "$allocation_scratch" -xdev -type d \
+    -exec chmod u+rwx -- {} + || return 1
   find "$allocation_scratch" -xdev -depth -mindepth 1 -delete || return 1
   rmdir -- "$allocation_scratch" || return 1
   allocation_scratch=""

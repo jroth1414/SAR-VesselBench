@@ -135,6 +135,10 @@ remove_allocation_scratch() {
     echo "refusing unsafe allocation-scratch cleanup: $allocation_scratch" >&2
     return 1
   fi
+  # Keep smoke cleanup symmetric with campaign cleanup. Only directories below
+  # the exact canonical, same-owner allocation root are made traversable.
+  find "$allocation_scratch" -xdev -type d \
+    -exec chmod u+rwx -- {} + || return 1
   find "$allocation_scratch" -xdev -depth -mindepth 1 -delete || return 1
   rmdir -- "$allocation_scratch" || return 1
   allocation_scratch=""
