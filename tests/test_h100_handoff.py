@@ -1634,6 +1634,7 @@ def _write_result_fixture(
     from scripts.h100.build_venv import RECEIPT_KIND
     from scripts.h100.campaign import hardware_class
     from scripts.h100.contracts import (
+        EXTERNAL_CONTROLS_POLICY,
         frozen_hashes,
         sha256_file,
     )
@@ -2155,7 +2156,6 @@ def _write_result_fixture(
         "expected_wall_hours_ideal": 1.0,
         "ceiling_wall_hours_ideal": 1.25,
         "conservative_h100_wall_hours": 2.0,
-        "remaining_v100_wall_hours": 3.0,
         "staging_seconds": 360.0,
         "staging_hours_per_allocation": 0.1,
         "allocation_wall_hours": 36.5,
@@ -2173,6 +2173,7 @@ def _write_result_fixture(
     ready = {
         "schema": 2,
         "status": "ready",
+        "external_controls_policy": EXTERNAL_CONTROLS_POLICY,
         "acceptance_uuid": acceptance_uuid,
         "created_utc": "2026-07-27T00:00:00+00:00",
         "source": {
@@ -2215,6 +2216,7 @@ def _write_result_fixture(
         "projection": projection,
     }
     _write(meta / "H100_READY.json", json.dumps(ready))
+    h100_ready_sha256 = sha256_file(meta / "H100_READY.json")
     _write(meta / "throughput_projection.json", json.dumps(projection))
     reference_campaign_manifest = {
         "schema": 1,
@@ -2254,7 +2256,6 @@ def _write_result_fixture(
         },
         "cutover_forecast": {
             "conservative_h100_wall_hours": 2.0,
-            "acceptance_remaining_v100_wall_hours": 3.0,
             "current_remaining_v100_wall_hours": 3.0,
             "v100_diagnostic_status": "continues-running-non-reportable-diagnostic",
             "h100_scientifically_mandatory": True,
@@ -2548,8 +2549,8 @@ def _write_result_fixture(
             "acceptance_uuid": acceptance_uuid,
             "source_validation_sha256": source_validation_sha256,
             "evaluation_ground_truth_sha256": evaluation_ground_truth_sha256,
-            "cutover_ready_sha256": cutover_sha256,
-            "v100_diagnostic_isolation_sha256": diagnostic_isolation_sha256,
+            "h100_ready_sha256": h100_ready_sha256,
+            "external_controls_policy": EXTERNAL_CONTROLS_POLICY,
             "strict_fp32": strict_fp32,
             "accepted_hardware_class": accepted_class,
             "slurm_job_id": "9001",
@@ -2654,8 +2655,8 @@ def _write_result_fixture(
         "acceptance_uuid": acceptance_uuid,
         "source_validation_sha256": source_validation_sha256,
         "evaluation_ground_truth_sha256": evaluation_ground_truth_sha256,
-        "cutover_ready_sha256": cutover_sha256,
-        "v100_diagnostic_isolation_sha256": diagnostic_isolation_sha256,
+        "h100_ready_sha256": h100_ready_sha256,
+        "external_controls_policy": EXTERNAL_CONTROLS_POLICY,
         "hardware": allocation_one,
         "accepted_hardware_class": accepted_class,
         "allocation_hardware_class": allocation_class,
@@ -2667,11 +2668,6 @@ def _write_result_fixture(
             "frozen_sha256": ready["source"]["frozen_sha256"],
             "slurm_smoke": ready["slurm_smoke"],
             "scratch_free_bytes": ready["scratch_free_bytes"],
-        },
-        "v100_diagnostic_isolation": {
-            "path": str(diagnostic_isolation_path),
-            "sha256": diagnostic_isolation_sha256,
-            "receipt": diagnostic_isolation,
         },
         "source_validation": {
             "path": str(source_validation_path),
@@ -2814,6 +2810,49 @@ def test_reverse_campaign_job_and_hardware_require_same_allocation(
         )
 
 
+def test_reverse_results_requires_exact_deferred_reference_pair(
+    tmp_path, monkeypatch
+):
+    options, _ = _fixture_source(tmp_path)
+    repo = options.repo_root
+    runs = tmp_path / "runs"
+    campaign_path = runs / ".h100/campaign_manifest.json"
+    _write_result_fixture(repo, runs, campaign_path, monkeypatch)
+
+    cutover_path = runs / ".h100/CUTOVER_READY.json"
+    cutover = json.loads(cutover_path.read_text())
+    cutover["references"].pop("r3")
+    cutover_path.write_text(json.dumps(cutover), encoding="utf-8")
+    with pytest.raises(PackageError, match="bind exactly R2 and R3"):
+        build_results_package(
+            repo=repo,
+            runs_root=runs,
+            campaign_manifest=campaign_path,
+            output_dir=tmp_path / "out",
+            max_part_bytes=1024,
+        )
+
+
+def test_reverse_results_requires_deferred_diagnostic_isolation(
+    tmp_path, monkeypatch
+):
+    options, _ = _fixture_source(tmp_path)
+    repo = options.repo_root
+    runs = tmp_path / "runs"
+    campaign_path = runs / ".h100/campaign_manifest.json"
+    _write_result_fixture(repo, runs, campaign_path, monkeypatch)
+
+    (runs / ".h100/V100_DIAGNOSTIC_ISOLATION.json").unlink()
+    with pytest.raises(PackageError, match="invalid required result JSON"):
+        build_results_package(
+            repo=repo,
+            runs_root=runs,
+            campaign_manifest=campaign_path,
+            output_dir=tmp_path / "out",
+            max_part_bytes=1024,
+        )
+
+
 def test_reverse_results_rejects_attestation_core_identity_not_bound_by_cutover(
     tmp_path, monkeypatch
 ):
@@ -2830,16 +2869,6 @@ def test_reverse_results_rejects_attestation_core_identity_not_bound_by_cutover(
     attestation_path.chmod(0o644)
     attestation_path.write_text(json.dumps(attestation), encoding="utf-8")
     attestation_path.chmod(0o444)
-    attestation_sha256 = hashlib.sha256(attestation_path.read_bytes()).hexdigest()
-
-    campaign = json.loads(campaign_path.read_text())
-    campaign["v100_diagnostic_isolation_sha256"] = attestation_sha256
-    campaign["v100_diagnostic_isolation"] = {
-        "path": str(attestation_path),
-        "sha256": attestation_sha256,
-        "receipt": attestation,
-    }
-    campaign_path.write_text(json.dumps(campaign), encoding="utf-8")
 
     with pytest.raises(
         PackageError,
@@ -2865,6 +2894,9 @@ def test_reverse_results_requires_and_packages_exact_32_cells(
         repo, runs, campaign, monkeypatch
     )
     campaign_payload = json.loads(campaign.read_text())
+    assert "cutover_ready_sha256" not in campaign_payload
+    assert "v100_diagnostic_isolation_sha256" not in campaign_payload
+    assert "v100_diagnostic_isolation" not in campaign_payload
     built = build_results_package(
         repo=repo,
         runs_root=runs,
@@ -2894,6 +2926,10 @@ def test_reverse_results_requires_and_packages_exact_32_cells(
         "runtime_amendment"
     ]
     assert identity["acceptance_uuid"] == campaign_payload["acceptance"]["uuid"]
+    assert identity["h100_ready_sha256"] == campaign_payload["h100_ready_sha256"]
+    assert identity["external_controls_policy"] == campaign_payload[
+        "external_controls_policy"
+    ]
     assert identity["strict_fp32"] == campaign_payload["strict_fp32"]
     assert identity["accepted_hardware_class"] == campaign_payload[
         "accepted_hardware_class"
@@ -2905,7 +2941,10 @@ def test_reverse_results_requires_and_packages_exact_32_cells(
         "evaluation_ground_truth"
     ]
     assert identity["training_cohort"] == campaign_payload["training_cohort"]
-    assert identity["v100_diagnostic_isolation"] == campaign_payload[
+    assert identity["cutover_ready_sha256"] == manifest["source"][
+        "cutover_ready_sha256"
+    ]
+    assert identity["v100_diagnostic_isolation"] == manifest["source"][
         "v100_diagnostic_isolation"
     ]
     provenance_artifact = next(
@@ -2949,6 +2988,15 @@ def test_reverse_results_requires_and_packages_exact_32_cells(
         for artifact in manifest["artifacts"]
     )
     original_manifest = json.loads(json.dumps(manifest))
+
+    tampered = json.loads(json.dumps(original_manifest))
+    tampered["source"]["h100_ready_sha256"] = "0" * 64
+    _rewrite_package_controls(built, tampered)
+    with pytest.raises(
+        PackageError,
+        match="H100/deferred external-control identity is inconsistent",
+    ):
+        verify_package(built)
 
     tampered = json.loads(json.dumps(original_manifest))
     tampered["source"]["campaign_provenance_member_sha256"][

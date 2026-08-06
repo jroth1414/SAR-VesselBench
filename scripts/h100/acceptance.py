@@ -1,4 +1,4 @@
-"""Run source, strict-FP32 H100, and 200-step cutover acceptance gates."""
+"""Run source, strict-FP32 H100, and 200-step acceptance gates."""
 
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ from pathlib import Path
 import yaml
 
 from scripts.h100.contracts import (
+    EXTERNAL_CONTROLS_POLICY,
     EXPECTED_PRECISION,
     FROZEN_PATHS,
     MIN_SCRATCH_BYTES,
@@ -78,9 +79,7 @@ def validate_scratch_free_before_extraction(value: int) -> int:
     return value
 
 
-def validate_fresh_acceptance_state(
-    *, ready: Path, runs_root: Path, remaining_v100_wall_hours: float
-) -> None:
+def validate_fresh_acceptance_state(*, ready: Path, runs_root: Path) -> None:
     if ready.exists():
         raise RuntimeError("H100_READY.json already exists; acceptance must be fresh")
     audit_path = runs_root / ".h100/EVAL_GROUND_TRUTH_VALIDATED.json"
@@ -88,11 +87,6 @@ def validate_fresh_acceptance_state(
         raise RuntimeError(
             "evaluation-ground-truth receipt already exists; acceptance must be fresh"
         )
-    if (
-        not math.isfinite(remaining_v100_wall_hours)
-        or remaining_v100_wall_hours <= 0
-    ):
-        raise RuntimeError("remaining V100 wall hours must be finite and positive")
     occupied = [exp_id for exp_id in PROBE_IDS if (runs_root / exp_id).exists()]
     if occupied:
         raise RuntimeError(
@@ -281,7 +275,6 @@ def run_acceptance(args: argparse.Namespace) -> dict:
     validate_fresh_acceptance_state(
         ready=ready,
         runs_root=runs_root,
-        remaining_v100_wall_hours=args.remaining_v100_wall_hours,
     )
 
     free_bytes = validate_scratch_free_before_extraction(
@@ -586,22 +579,12 @@ def run_acceptance(args: argparse.Namespace) -> dict:
         training_wall_hours=training_wall_hours,
         staging_seconds=args.staging_seconds,
     )
-    conservative_h100_wall_hours = float(
-        wall_clock["conservative_h100_wall_hours"]
-    )
     projection.update(
         {
             "longest_f100_ceiling_hours": longest_cell_hours,
-            "remaining_v100_wall_hours": args.remaining_v100_wall_hours,
             **wall_clock,
         }
     )
-    if conservative_h100_wall_hours >= args.remaining_v100_wall_hours:
-        raise RuntimeError(
-            "H100 cutover rejected: conservative projection "
-            f"{conservative_h100_wall_hours:.2f}h does not beat remaining V100 "
-            f"{args.remaining_v100_wall_hours:.2f}h"
-        )
     atomic_write_json(meta_root / "throughput_projection.json", projection)
 
 
@@ -635,6 +618,7 @@ def run_acceptance(args: argparse.Namespace) -> dict:
     payload = {
         "schema": 2,
         "status": "ready",
+        "external_controls_policy": EXTERNAL_CONTROLS_POLICY,
         "acceptance_uuid": str(uuid.uuid4()),
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "host": socket.gethostname(),
@@ -738,7 +722,6 @@ def main() -> int:
     parser.add_argument("--runtime-amendment-ready-sha256", required=True)
     parser.add_argument("--runtime-amendment-sha256sums-sha256", required=True)
     parser.add_argument("--runtime-amendment-bundle-sha256", required=True)
-    parser.add_argument("--remaining-v100-wall-hours", type=float, required=True)
     parser.add_argument("--staging-seconds", type=float, required=True)
     args = parser.parse_args()
     if len(args.frozen_sha256) != len(FROZEN_PATHS):

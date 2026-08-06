@@ -40,10 +40,6 @@ fi
 readonly H100_MODE compute_site compute_site_sha256
 # shellcheck disable=SC1090
 source "$compute_site"
-if [[ "${H100_V100_CONTROL_PLANE:-}" != "box-transfer-v1" ]]; then
-  echo "compute-site V100 control plane must be box-transfer-v1" >&2
-  exit 2
-fi
 # Transfer credentials are never needed by a compute allocation.
 unset BOX_JWT_CONFIG BOX_FOLDER_ID
 if [[ "$H100_BASE_PYTHON_LIB_DIR" != /* ||
@@ -212,13 +208,6 @@ readonly scratch
 
 meta_root="$H100_RUNS_ROOT/.h100"
 source_validation="$meta_root/SOURCE_VALIDATED.json"
-if [[ "${H100_MODE:?H100_MODE missing}" == "campaign" ]]; then
-  # Submission persisted byte-identical external evidence at these stable
-  # paths. The allocation ignores external source paths from the verified
-  # compute-site snapshot.
-  H100_CUTOVER_READY="$meta_root/CUTOVER_READY.json"
-  H100_V100_DIAGNOSTIC_ISOLATION="$meta_root/V100_DIAGNOSTIC_ISOLATION.json"
-fi
 
 check_sha() {
   local expected="$1"
@@ -248,9 +237,7 @@ check_sha "$H100_RUNTIME_SHA256SUMS_SHA256" "$H100_RUNTIME_PACKAGE_ROOT/SHA256SU
 check_sha "$H100_VENV_BUILD_SHA256" "$H100_VENV_BUILD_JSON"
 check_sha "$H100_BASE_PYTHON_SHA256" "$H100_BASE_PYTHON"
 if [[ "${H100_MODE:?H100_MODE missing}" == "campaign" ]]; then
-  check_sha "$H100_CUTOVER_READY_SHA256" "$H100_CUTOVER_READY"
-  check_sha "$H100_V100_DIAGNOSTIC_ISOLATION_SHA256" \
-    "$H100_V100_DIAGNOSTIC_ISOLATION"
+  check_sha "$H100_READY_SHA256" "$meta_root/H100_READY.json"
 fi
 
 scratch_free="$(df -PB1 "$scratch" | awk 'NR==2 {print $4}')"
@@ -462,7 +449,6 @@ if [[ "${H100_MODE:?H100_MODE missing}" == "acceptance" ]]; then
       --runtime-amendment-ready-sha256 "$H100_RUNTIME_READY_SHA256" \
       --runtime-amendment-sha256sums-sha256 "$H100_RUNTIME_SHA256SUMS_SHA256" \
       --runtime-amendment-bundle-sha256 "$H100_RUNTIME_BUNDLE_SHA256" \
-      --remaining-v100-wall-hours "$H100_REMAINING_V100_WALL_HOURS" \
       --staging-seconds "$staging_seconds"
   )
   exit 0
@@ -496,15 +482,11 @@ cd "$repo"
     --venv-build-sha256 "$H100_VENV_BUILD_SHA256" \
     --hardware-json "$allocation_hardware" \
     --acceptance-json "$H100_RUNS_ROOT/.h100/H100_READY.json" \
+    --acceptance-sha256 "$H100_READY_SHA256" \
     --source-validation-json "$source_validation" \
     --source-validation-sha256 "$source_validation_sha256" \
     --data-view-root "$payload" \
     --data-view-receipt-sha256 "$data_view_receipt_sha256" \
-    --cutover-ready-json "$H100_CUTOVER_READY" \
-    --cutover-ready-sha256 "$H100_CUTOVER_READY_SHA256" \
-    --v100-diagnostic-isolation-json "$H100_V100_DIAGNOSTIC_ISOLATION" \
-    --v100-diagnostic-isolation-sha256 \
-      "$H100_V100_DIAGNOSTIC_ISOLATION_SHA256" \
     --workers-per-gpu 6 &
 controller_pid="$!"
 controller_rc=0

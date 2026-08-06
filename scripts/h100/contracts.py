@@ -33,6 +33,10 @@ V100_DIAGNOSTIC_COMPLETE = "complete-non-reportable-diagnostic"
 V100_DIAGNOSTIC_STATUSES = frozenset(
     {V100_DIAGNOSTIC_RUNNING, V100_DIAGNOSTIC_COMPLETE}
 )
+EXTERNAL_CONTROLS_POLICY = (
+    "owner-approved-h100-only-launch;"
+    "external-controls-required-before-phase5-completion-export-analysis-reporting"
+)
 
 FROZEN_PATHS = (
     "configs/detector.yaml",
@@ -58,6 +62,7 @@ def cutover_acceptance_bindings(ready: Mapping[str, object]) -> dict[str, object
         "test_suite",
         "projection",
         "slurm_smoke",
+        "external_controls_policy",
     )
     try:
         return {
@@ -80,7 +85,6 @@ def validate_bound_cutover_forecast(
     projection = acceptance.get("projection") if isinstance(acceptance, Mapping) else None
     numeric_keys = {
         "conservative_h100_wall_hours",
-        "acceptance_remaining_v100_wall_hours",
         "current_remaining_v100_wall_hours",
     }
     keys = {
@@ -97,29 +101,20 @@ def validate_bound_cutover_forecast(
     try:
         values = {key: float(forecast[key]) for key in numeric_keys}
         accepted_h100 = float(projection["conservative_h100_wall_hours"])
-        accepted_v100 = float(projection["remaining_v100_wall_hours"])
     except (KeyError, TypeError, ValueError) as exc:
         raise RuntimeError("CUTOVER_READY forecast values are invalid") from exc
     if any(not math.isfinite(value) for value in values.values()):
         raise RuntimeError("CUTOVER_READY forecast values must be finite")
     if (
         values["conservative_h100_wall_hours"] <= 0
-        or values["acceptance_remaining_v100_wall_hours"] <= 0
         or values["current_remaining_v100_wall_hours"] < 0
     ):
         raise RuntimeError(
-            "CUTOVER_READY H100/acceptance forecasts must be positive and "
-            "current V100 remaining hours must be nonnegative"
+            "CUTOVER_READY H100 forecast must be positive and current V100 "
+            "remaining hours must be nonnegative"
         )
-    if (
-        not math.isclose(values["conservative_h100_wall_hours"], accepted_h100)
-        or not math.isclose(
-            values["acceptance_remaining_v100_wall_hours"], accepted_v100
-        )
-    ):
+    if not math.isclose(values["conservative_h100_wall_hours"], accepted_h100):
         raise RuntimeError("CUTOVER_READY forecast differs from H100 acceptance")
-    if accepted_h100 >= accepted_v100:
-        raise RuntimeError("CUTOVER_READY does not preserve the acceptance comparison")
 
     status = forecast.get("v100_diagnostic_status")
     if status not in V100_DIAGNOSTIC_STATUSES:
@@ -128,8 +123,8 @@ def validate_bound_cutover_forecast(
         raise RuntimeError("CUTOVER_READY must keep the H100 rerun scientifically mandatory")
     current = values["current_remaining_v100_wall_hours"]
     if current > 0:
-        if status != V100_DIAGNOSTIC_RUNNING or accepted_h100 >= current:
-            raise RuntimeError("CUTOVER_READY no longer proves a current H100 advantage")
+        if status != V100_DIAGNOSTIC_RUNNING:
+            raise RuntimeError("positive V100 remaining hours require running status")
     elif status != V100_DIAGNOSTIC_COMPLETE:
         raise RuntimeError(
             "zero remaining V100 hours require an explicit complete "

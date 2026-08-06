@@ -1856,10 +1856,33 @@ def _validate_artifact_schema(
         )
 
     if manifest.get("package_type") == "h100-core-results":
+        # Keep the transfer CLI importable before its optional PyYAML
+        # dependency is loaded. The H100 contracts module imports yaml, so
+        # result-only policy validation must remain on this lazy code path.
+        from scripts.h100.contracts import EXTERNAL_CONTROLS_POLICY
+
         source = manifest.get("source")
         cells = manifest.get("cells")
         if not isinstance(source, Mapping) or not isinstance(cells, list):
             raise PackageError("result package source/cell schema is invalid")
+        result_identity = source.get("result_identity")
+        if not isinstance(result_identity, Mapping):
+            raise PackageError("result package identity is absent")
+        external_controls_policy = source.get("external_controls_policy")
+        if (
+            external_controls_policy != EXTERNAL_CONTROLS_POLICY
+            or result_identity.get("external_controls_policy")
+            != EXTERNAL_CONTROLS_POLICY
+            or result_identity.get("h100_ready_sha256")
+            != source.get("h100_ready_sha256")
+            or result_identity.get("cutover_ready_sha256")
+            != source.get("cutover_ready_sha256")
+            or result_identity.get("v100_diagnostic_isolation")
+            != source.get("v100_diagnostic_isolation")
+        ):
+            raise PackageError(
+                "result H100/deferred external-control identity is inconsistent"
+            )
         campaign_id = str(source.get("campaign_id", ""))
         provenance = observed[("campaign_provenance", campaign_id)]
         provenance_members = provenance.get("member_sha256")
@@ -1913,6 +1936,9 @@ def _validate_artifact_schema(
             "results/provenance/campaign_manifest.json": source.get(
                 "campaign_manifest_sha256"
             ),
+            "results/provenance/H100_READY.json": source.get(
+                "h100_ready_sha256"
+            ),
             "results/provenance/SOURCE_VALIDATED.json": source.get(
                 "source_validation_sha256"
             ),
@@ -1935,9 +1961,15 @@ def _validate_artifact_schema(
         diagnostic_receipt = diagnostic_isolation.get("receipt")
         if not isinstance(diagnostic_receipt, Mapping):
             raise PackageError("result diagnostic-isolation receipt is absent")
+        if diagnostic_receipt.get("cutover_ready_sha256") != source.get(
+            "cutover_ready_sha256"
+        ):
+            raise PackageError(
+                "result CUTOVER_READY/diagnostic-isolation binding mismatch"
+            )
         direct_provenance.update(
             {
-                "results/provenance/CUTOVER_READY.json": diagnostic_receipt.get(
+                "results/provenance/CUTOVER_READY.json": source.get(
                     "cutover_ready_sha256"
                 ),
                 "results/provenance/V100_DIAGNOSTIC_ISOLATION.json": (

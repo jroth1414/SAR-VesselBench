@@ -19,6 +19,7 @@ from scripts.h100.acceptance import (
 )
 from scripts.h100.build_venv import EXPECTED_PYTHON_VERSION
 from scripts.h100.contracts import (
+    EXTERNAL_CONTROLS_POLICY,
     FROZEN_PATHS,
     V100_DIAGNOSTIC_COMPLETE,
     V100_DIAGNOSTIC_RUNNING,
@@ -648,6 +649,8 @@ def validate_h100_ready(
     payload = json.loads(path.read_text())
     if payload.get("schema") != 2 or payload.get("status") != "ready":
         raise RuntimeError("H100 acceptance marker is not schema-2 ready")
+    if payload.get("external_controls_policy") != EXTERNAL_CONTROLS_POLICY:
+        raise RuntimeError("H100-ready external-controls policy is invalid")
     if payload.get("source", {}).get("git_sha") != expected_git_sha:
         raise RuntimeError("H100-ready git SHA mismatch")
     accepted_venv = payload.get("venv")
@@ -913,7 +916,6 @@ def validate_h100_ready(
         "expected_wall_hours_ideal",
         "ceiling_wall_hours_ideal",
         "conservative_h100_wall_hours",
-        "remaining_v100_wall_hours",
         "staging_seconds",
         "staging_hours_per_allocation",
         "allocation_wall_hours",
@@ -960,8 +962,6 @@ def validate_h100_ready(
         )
     ):
         raise RuntimeError("H100-ready staging/wall-clock projection is inconsistent")
-    if values["conservative_h100_wall_hours"] >= values["remaining_v100_wall_hours"]:
-        raise RuntimeError("H100-ready projection no longer proves a faster cutover")
     smoke = payload.get("slurm_smoke")
     if not isinstance(smoke, Mapping):
         raise RuntimeError("H100-ready Slurm smoke binding is absent")
@@ -978,7 +978,7 @@ def validate_current_v100_advantage(
     *,
     current_v100_diagnostic_status: str,
 ) -> dict[str, object]:
-    """Recheck cutover timing or bind a completed non-reportable diagnostic."""
+    """Bind the deferred non-reportable V100 diagnostic state for reporting."""
 
     projection = ready.get("projection")
     if not isinstance(projection, Mapping):
@@ -990,28 +990,16 @@ def validate_current_v100_advantage(
         projection.get("conservative_h100_wall_hours"),
         "conservative H100 wall hours",
     )
-    accepted_v100 = _finite(
-        projection.get("remaining_v100_wall_hours"),
-        "acceptance remaining V100 wall hours",
-    )
-    if current < 0 or conservative <= 0 or accepted_v100 <= 0:
+    if current < 0 or conservative <= 0:
         raise RuntimeError(
-            "H100/acceptance forecasts must be positive and current V100 "
-            "remaining hours must be nonnegative"
-        )
-    if conservative >= accepted_v100:
-        raise RuntimeError(
-            "H100 cutover rejected: the original acceptance comparison no "
-            "longer proves an H100 advantage"
+            "H100 forecast must be positive and current V100 remaining hours "
+            "must be nonnegative"
         )
     if current_v100_diagnostic_status not in V100_DIAGNOSTIC_STATUSES:
         raise RuntimeError("current V100 diagnostic status is invalid")
-    if current > 0 and (
-        current_v100_diagnostic_status != V100_DIAGNOSTIC_RUNNING
-        or conservative >= current
-    ):
+    if current > 0 and current_v100_diagnostic_status != V100_DIAGNOSTIC_RUNNING:
         raise RuntimeError(
-            "H100 cutover rejected: the current V100 forecast is no longer slower"
+            "positive V100 remaining hours require running diagnostic status"
         )
     if current == 0 and current_v100_diagnostic_status != V100_DIAGNOSTIC_COMPLETE:
         raise RuntimeError(
@@ -1020,7 +1008,6 @@ def validate_current_v100_advantage(
         )
     return {
         "conservative_h100_wall_hours": conservative,
-        "acceptance_remaining_v100_wall_hours": accepted_v100,
         "current_remaining_v100_wall_hours": current,
         "v100_diagnostic_status": current_v100_diagnostic_status,
         "h100_scientifically_mandatory": True,

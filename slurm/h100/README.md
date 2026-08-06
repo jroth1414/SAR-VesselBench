@@ -142,27 +142,25 @@ Leave `H100_RESERVATION` empty to submit without `--reservation`; set it only
 to an exact reservation the account can use. Reservation choice changes queue
 placement, not the recorded training recipe.
 
-Judy and the live V100 host have completely separate filesystems, so
-`H100_V100_CONTROL_PLANE` must be exactly `box-transfer-v1`; a dummy Judy path
-for the V100 runs tree is forbidden. Submission canonicalizes
+Judy and the live V100 host have completely separate filesystems; a dummy Judy
+path for the V100 runs tree is forbidden. Submission canonicalizes
 `H100_RUNS_ROOT` and `H100_JOB_LOG_DIR`, then rejects equality or ancestor
 overlap between them and the immutable repo, base/runtime packages,
 wheelhouse, sealed venv, and the control package used by the selected mode.
 
-Smoke and acceptance require no V100 or reference path. `cutover-check`
-requires the verified corrected-R2/R3 references package and all seven exact
-identity fields printed by `build-control`/`verify-control`: package root,
-package ID, producer Git SHA, identity SHA-256, manifest SHA-256, READY
-SHA-256, and SHA256SUMS SHA-256. `campaign` instead requires the same seven
-fields for the verified diagnostic-isolation package and the exact
-`CUTOVER_READY.json` SHA-256. Both control-package producer SHAs must equal the
-Sprint 7f H100 source SHA. See `scripts/handoff/README.md` for the exact
-control-package commands and closed binding sets.
+Smoke, acceptance, and campaign require no V100, reference, cutover, or
+diagnostic-isolation path. They bind the canonical H100 readiness receipt.
+The deferred `cutover-check` and reverse-export paths require the verified
+corrected-R2/R3 package and every exact identity field printed by
+`build-control`/`verify-control`; reverse export also requires the exact
+`CUTOVER_READY.json` and verified diagnostic-isolation package. Control-package
+producer SHAs must equal the Sprint 7f H100 source SHA. See
+`scripts/handoff/README.md` for the exact commands and closed binding sets.
 
 Submission uses exact `--export=NONE`. The mode and immutable site snapshot
 are positional batch arguments, not inherited environment variables.
 
-## 4. Slurm smoke, acceptance, and external control barrier
+## 4. Slurm smoke, acceptance, launch, and deferred external controls
 
 Run the lightweight one-GPU Slurm acceptance first:
 
@@ -197,7 +195,7 @@ Acceptance requires eight identical H100s at CC 9.0, at least 500 GB
 source/frozen/venv/dual-package hashes, the complete split test suite and six
 real checkpoint loads, strict IEEE FP32 in child processes, both model-family
 probes, the corrected evaluation-GT receipt, and a 200-step CNN projection
-that conservatively beats the recorded remaining V100 wall time. It writes
+with a finite positive conservative 32-cell wall-time estimate. It writes
 `runs/.h100/H100_READY.json` without touching V100.
 
 The readiness marker binds the exact acceptance
@@ -209,8 +207,19 @@ extraction. The marker carries the persistent wheelhouse extraction identity
 without its site path; the path-bearing copy remains in the verified
 `venv_build.json` for final result revalidation.
 
-Next, use the JSON-only control-package commands documented in
-`scripts/handoff/README.md`:
+Once the canonical `H100_READY.json` exists, launch the 32-cell campaign:
+
+```bash
+slurm/h100/submit.sh campaign
+```
+
+Campaign submission revalidates the canonical read-only H100 readiness marker
+and its SHA-256, removes transfer-package paths and Box variables from the
+compute snapshot, and submits the H100 job. It does not read V100, reference,
+cutover, or diagnostic-isolation state.
+
+Separately, before Phase 5 is declared complete and before reverse export,
+use the JSON-only control-package commands in `scripts/handoff/README.md`:
 
 1. On the V100 side, package the immutable `REFERENCE_CAMPAIGN.json` plus
    corrected R2/R3 `final_metrics.json` and `runtime_provenance.json` as kind
@@ -236,23 +245,20 @@ Next, use the JSON-only control-package commands documented in
    Judy, verify every out-of-band identity value, and fill the
    `H100_DIAGNOSTIC_ISOLATION_PACKAGE_*` fields plus the exact
    `H100_CUTOVER_READY_SHA256`.
+5. Validate and persist the complete deferred barrier without submitting a job:
+
+   ```bash
+   slurm/h100/submit.sh reporting-check
+   ```
+
+   Reverse export remains blocked until this succeeds against the exact H100
+   campaign identity and canonical receipts.
 
 Stopping or archiving V100 is optional after its diagnostic work; neither is
 a prerequisite for H100 launch. The attestation instead proves that the V100
 and H100 namespaces are physically disjoint, V100 outputs are non-reportable,
 and no V100 completion/checkpoint can suppress or resume H100 work.
 
-Launch only after that barrier is complete:
-
-```bash
-slurm/h100/submit.sh campaign
-```
-
-Campaign submission revalidates the exact diagnostic-isolation package,
-persists canonical read-only copies of `CUTOVER_READY.json` and
-`V100_DIAGNOSTIC_ISOLATION.json` beneath `runs/.h100`, removes transfer-package
-paths and Box variables from the compute snapshot, and then submits the
-32-cell H100 job.
 
 ## 5. Campaign, cohort barrier, preemption, and resume
 

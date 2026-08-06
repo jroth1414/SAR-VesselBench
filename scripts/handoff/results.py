@@ -26,6 +26,7 @@ from scripts.h100.campaign import (
 )
 from scripts.h100.contracts import (
     EFFECTIVE_BATCH,
+    EXTERNAL_CONTROLS_POLICY,
     EXPECTED_PRECISION,
     FROZEN_PATHS,
     GRADIENT_ACCUMULATION,
@@ -170,6 +171,8 @@ def _mapping(value: object, description: str) -> dict[str, object]:
 def _result_identity(
     campaign: Mapping[str, object],
     *,
+    diagnostic_isolation: Mapping[str, object],
+    cutover_ready_sha256: str,
     artifacts: Sequence[Mapping[str, object]],
     max_part_bytes: int,
 ) -> tuple[dict[str, object], str]:
@@ -204,9 +207,10 @@ def _result_identity(
         "accepted_hardware_class": campaign.get("accepted_hardware_class"),
         "allocation_hardware_class": campaign.get("allocation_hardware_class"),
         "allocation_gpu_uuids": allocation_gpu_uuids,
-        "v100_diagnostic_isolation": campaign.get(
-            "v100_diagnostic_isolation"
-        ),
+        "h100_ready_sha256": campaign.get("h100_ready_sha256"),
+        "external_controls_policy": campaign.get("external_controls_policy"),
+        "cutover_ready_sha256": cutover_ready_sha256,
+        "v100_diagnostic_isolation": dict(diagnostic_isolation),
         "cell_runtime": campaign.get("cell_runtime"),
         "precision": campaign.get("precision"),
         "micro_batch": campaign.get("micro_batch"),
@@ -672,6 +676,7 @@ def _validate_campaign(
         expected_smoke_receipt=smoke_receipt,
         expected_smoke_sha256=smoke_sha256,
     )
+    ready_sha256 = sha256_file(ready_path)
     source_validation_sha256 = sha256_file(source_validation_path)
     source_validation = validate_source_receipt(
         source_validation_path,
@@ -838,6 +843,8 @@ def _validate_campaign(
             "strict_fp32": strict_fp32,
             "accepted_hardware_class": accepted_hardware_class,
             "allocation_hardware_class": allocation_hardware_class,
+            "h100_ready_sha256": ready_sha256,
+            "external_controls_policy": EXTERNAL_CONTROLS_POLICY,
         },
         "campaign hardware/package",
     )
@@ -878,11 +885,10 @@ def _validate_campaign(
         {
             "acceptance_uuid": ready.get("acceptance_uuid"),
             "source_validation_sha256": source_validation_sha256,
-            "cutover_ready_sha256": cutover_sha256,
-            "v100_diagnostic_isolation_sha256": diagnostic_isolation_sha256,
-            "v100_diagnostic_isolation": expected_diagnostic_binding,
+            "h100_ready_sha256": ready_sha256,
+            "external_controls_policy": EXTERNAL_CONTROLS_POLICY,
         },
-        "campaign acceptance/cutover receipts",
+        "campaign H100 launch receipts",
     )
     try:
         expected_cutover_acceptance = cutover_acceptance_bindings(ready)
@@ -1001,8 +1007,9 @@ def _validate_campaign(
         "accepted_hardware_class": accepted_hardware_class,
         "allocation_hardware_class": allocation_hardware_class,
         "cutover_ready_sha256": cutover_sha256,
+        "h100_ready_sha256": ready_sha256,
+        "external_controls_policy": EXTERNAL_CONTROLS_POLICY,
         "diagnostic_isolation": expected_diagnostic_binding,
-        "diagnostic_isolation_sha256": diagnostic_isolation_sha256,
         "allocation_records": allocation_records,
         "acceptance_logs": acceptance_logs,
         "slurm_logs": slurm_logs,
@@ -1146,10 +1153,8 @@ def _run_entries(
             "path": str(context["cohort_path"]),
             "sha256": str(context["cohort_sha256"]),
         },
-        cutover_ready_sha256=str(context["cutover_ready_sha256"]),
-        v100_diagnostic_isolation_sha256=str(
-            context["diagnostic_isolation_sha256"]
-        ),
+        h100_ready_sha256=str(context["h100_ready_sha256"]),
+        external_controls_policy=str(context["external_controls_policy"]),
         strict_fp32=context["strict_fp32"],  # type: ignore[arg-type]
         accepted_hardware_class=context["accepted_hardware_class"],  # type: ignore[arg-type]
     )
@@ -1644,6 +1649,8 @@ def build_results_package(
 
         result_identity, result_identity_sha256 = _result_identity(
             campaign,
+            diagnostic_isolation=context["diagnostic_isolation"],
+            cutover_ready_sha256=str(context["cutover_ready_sha256"]),
             artifacts=artifacts,
             max_part_bytes=max_part_bytes,
         )
@@ -1676,6 +1683,10 @@ def build_results_package(
                 "acceptance_uuid": _mapping(
                     campaign["acceptance"], "campaign acceptance"
                 )["uuid"],
+                "h100_ready_sha256": context["h100_ready_sha256"],
+                "external_controls_policy": context[
+                    "external_controls_policy"
+                ],
                 "strict_fp32": context["strict_fp32"],
                 "accepted_hardware_class": context[
                     "accepted_hardware_class"
@@ -1686,6 +1697,7 @@ def build_results_package(
                 "v100_diagnostic_isolation": context[
                     "diagnostic_isolation"
                 ],
+                "cutover_ready_sha256": context["cutover_ready_sha256"],
                 "source_validation_sha256": context[
                     "source_validation_sha256"
                 ],

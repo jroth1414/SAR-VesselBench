@@ -1,10 +1,13 @@
 # Sprint 7f — Evaluation Contract Correction and Judy H100 Relaunch
 
-Status: owner-approved implementation amendment (2026-08-04). The owner
-explicitly selected continued V100 execution for diagnostic value; the V100
-controller and children must not be stopped, signaled, or otherwise mutated by
-this amendment. Reportable H100 launch remains gated on every corrected source,
-runtime, transfer, and acceptance check below.
+Status: owner-approved implementation amendments (2026-08-04 and 2026-08-06).
+The owner explicitly selected continued V100 execution for diagnostic value;
+the V100 controller and children must not be stopped, signaled, or otherwise
+mutated. H100 training launch remains gated on every Judy-local source,
+runtime, transfer, Slurm-smoke, and acceptance check below. The remaining-V100
+comparison, corrected R2/R3, `CUTOVER_READY.json`, and diagnostic isolation are
+deferred but remain mandatory before Phase-5 completion, reverse export,
+analysis, or final reporting.
 
 Owner intent assumed by this plan:
 
@@ -335,22 +338,22 @@ Therefore:
    FP32 recipe.
 3. Preserve all artifacts, logs, completion markers, controller records, and
    OOM-recovery evidence in place while the campaign runs.
-4. Before H100 campaign launch, require an external human-authored immutable
-   diagnostic-isolation attestation. It binds the V100 and H100 namespaces and
-   confirms that V100 marker existence can never suppress, resume, or satisfy
-   a corrected H100 cell.
-5. Transfer that attestation to Judy through the content-addressed Box control
-   plane; Judy must verify its manifest, hashes, and canonical receipt.
-6. Never merge V100 and corrected H100 core cells in one curve, table, resume
+4. Do not make H100 campaign launch depend on V100 state, corrected references,
+   `CUTOVER_READY.json`, or diagnostic isolation. Launch only after the complete
+   Judy-local smoke and acceptance gates pass, from canonical `H100_READY.json`.
+5. Before Phase 5 is declared complete, reverse export, analysis, or final
+   reporting, require an external human-authored immutable diagnostic-isolation
+   attestation. It binds the V100 and H100 namespaces and confirms that V100
+   markers can never suppress, resume, or satisfy a corrected H100 cell.
+6. Transfer and verify that attestation through the content-addressed Box
+   control plane together with the corrected R2/R3 and cutover receipts.
+7. Never merge V100 and corrected H100 core cells in one curve, table, resume
    decision, or reportable completion namespace.
-7. Preserve the original acceptance-time throughput comparison. At cutover,
-   if the current remaining V100 wall time is positive, require the conservative
-   H100 projection to be strictly smaller and record
-   `continues-running-non-reportable-diagnostic`. If the diagnostic has already
-   finished, permit exactly zero remaining hours only with the explicit
-   `complete-non-reportable-diagnostic` status. Completion never makes the V100
-   outputs reportable and never removes the scientifically mandatory uniform
-   H100 rerun.
+8. At deferred cutover/reporting, record the accepted H100 projection and the
+   current remaining V100 hours/status. This comparison is reporting context,
+   not a launch or speed-advantage criterion. Positive remaining time requires
+   `continues-running-non-reportable-diagnostic`; zero requires explicit
+   `complete-non-reportable-diagnostic`. Neither status makes V100 reportable.
 
 Stopping or archiving V100 later is optional operational work and is not a
 precondition for H100 launch. This amendment contains no process-control action
@@ -388,7 +391,9 @@ After code and source acceptance pass:
    data receipt, and frozen hashes.
 4. Require empty corrected-campaign canonical namespaces.
 5. Run the full suite, six checkpoint loads, both-family finite train/backward
-   probes, and full-scene inference.
+   probes, and full-scene inference. Complete the 200-step H100 throughput
+   probe and require a finite positive conservative 32-cell wall-time
+   projection under the actual eight-H100 allocation.
 6. Run one short corrected-dev diagnostic and confirm exactly 517 positive GTs
    are scored on the eight training-time dev scenes.
 7. Run Slurm interruption/requeue/resume smoke and prove best-dev callback state
@@ -531,14 +536,16 @@ protocol with narrow allowlists and separate Box child folders:
 1. finalized R2/R3 reference receipts travel V100 to Judy;
 2. Judy's immutable `CUTOVER_READY.json` travels Judy to the V100 operator;
 3. the owner-approved `V100_DIAGNOSTIC_ISOLATION.json` travels V100 to Judy; and
-4. Judy verifies all three canonical receipts before campaign launch.
+4. Judy verifies all three canonical receipts before Phase-5 completion and reverse export.
 
 These control packages contain JSON evidence only. They never contain V100
 checkpoints, runs, credentials, or a command capable of stopping the campaign.
 
 ## 11. Definition of done
 
-The amendment is ready for reportable H100 training only when all are true:
+H100 training may launch after the Judy-local gates in Section 7. The amendment
+and Phase 5 are complete—and their outputs eligible for reverse export,
+analysis, or reporting—only when all are true:
 
 - The frozen scorer and all frozen scientific artifacts retain their pinned
   hashes.

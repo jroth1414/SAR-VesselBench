@@ -483,8 +483,8 @@ def runtime_provenance(cell, *, finalized=False):
         "runtime_amendment": runtime_amendment(),
         "acceptance_uuid": "acceptance",
         "source_validation_sha256": "source-receipt",
-        "cutover_ready_sha256": "cutover-receipt",
-        "v100_diagnostic_isolation_sha256": "v100-receipt",
+        "h100_ready_sha256": "h100-ready-receipt",
+        "external_controls_policy": contracts.EXTERNAL_CONTROLS_POLICY,
         "strict_fp32": strict_backend(),
         "accepted_hardware_class": accepted_class,
         "precision": "32-true",
@@ -540,8 +540,8 @@ def existing_state_kwargs(runs):
         "acceptance_uuid": "acceptance",
         "source_validation_sha256": "source-receipt",
         "evaluation_ground_truth_sha256": "ground-truth-receipt",
-        "cutover_ready_sha256": "cutover-receipt",
-        "v100_diagnostic_isolation_sha256": "v100-receipt",
+        "h100_ready_sha256": "h100-ready-receipt",
+        "external_controls_policy": contracts.EXTERNAL_CONTROLS_POLICY,
         "strict_fp32": strict_backend(),
         "accepted_hardware_class": campaign.hardware_class(h100_hardware()),
         "cohort": None,
@@ -657,6 +657,7 @@ def ready_payload(smoke_path: Path, smoke_receipt: dict, bindings: dict) -> dict
         },
         "base_payload": dict(bindings["base_payload"]),
         "runtime_amendment": dict(bindings["runtime_amendment"]),
+        "external_controls_policy": contracts.EXTERNAL_CONTROLS_POLICY,
         "strict_fp32": strict_backend(),
         "hardware": h100_hardware(),
         "gates": {
@@ -672,7 +673,6 @@ def ready_payload(smoke_path: Path, smoke_receipt: dict, bindings: dict) -> dict
             "expected_wall_hours_ideal": 1.0,
             "ceiling_wall_hours_ideal": 1.5,
             "conservative_h100_wall_hours": 2.0,
-            "remaining_v100_wall_hours": 3.0,
             "staging_seconds": 360.0,
             "staging_hours_per_allocation": 0.1,
             "allocation_wall_hours": 36.5,
@@ -838,8 +838,8 @@ def _bare_preemption_controller(
     controller.acceptance_uuid = "acceptance"
     controller.source_validation_sha256 = "a" * 64
     controller.evaluation_ground_truth_sha256 = "d" * 64
-    controller.cutover_ready_sha256 = "b" * 64
-    controller.v100_diagnostic_isolation_sha256 = "c" * 64
+    controller.h100_ready_sha256 = "b" * 64
+    controller.external_controls_policy = contracts.EXTERNAL_CONTROLS_POLICY
     controller.strict_fp32 = {}
     controller.accepted_hardware_class = {}
     controller.running = {0: (process, cell, time.monotonic())}
@@ -1217,8 +1217,8 @@ def test_repeated_controller_crashes_close_open_attempts_before_last_ckpt_resume
     controller.acceptance_uuid = "acceptance"
     controller.source_validation_sha256 = "a" * 64
     controller.evaluation_ground_truth_sha256 = "d" * 64
-    controller.cutover_ready_sha256 = "b" * 64
-    controller.v100_diagnostic_isolation_sha256 = "c" * 64
+    controller.h100_ready_sha256 = "b" * 64
+    controller.external_controls_policy = contracts.EXTERNAL_CONTROLS_POLICY
     controller.strict_fp32 = strict_backend()
     controller.accepted_hardware_class = accepted_class
     controller.allocation_hardware_class = accepted_class
@@ -1684,6 +1684,43 @@ def test_completion_marker_is_recipe_and_hash_checked(tmp_path):
         contracts.validate_completion_marker(marker, cell=cell, git_sha="git", detector_sha256="detector")
 
 
+def test_runtime_provenance_rejects_external_controls_policy_tampering():
+    cell = contracts.load_cells(REPO)[0]
+    provenance = runtime_provenance(cell)
+    provenance.update(
+        {
+            "phase": "train",
+            "training_cohort": None,
+            "evaluation_ground_truth_sha256": "ground-truth-receipt",
+        }
+    )
+    provenance["attempts"][0]["phase"] = "train"
+    kwargs = {
+        "cell": cell,
+        "campaign_id": "campaign",
+        "git_sha": "git",
+        "detector_sha256": "detector",
+        "venv_sha256": VENV_SHA256,
+        "venv_build_sha256": VENV_BUILD_SHA256,
+        "base_python": base_python(),
+        "wheelhouse": wheelhouse(),
+        "base_payload": base_payload(),
+        "runtime_amendment": runtime_amendment(),
+        "acceptance_uuid": "acceptance",
+        "source_validation_sha256": "source-receipt",
+        "h100_ready_sha256": "h100-ready-receipt",
+        "external_controls_policy": contracts.EXTERNAL_CONTROLS_POLICY,
+        "strict_fp32": strict_backend(),
+        "accepted_hardware_class": campaign.hardware_class(h100_hardware()),
+        "evaluation_ground_truth_sha256": "ground-truth-receipt",
+    }
+    campaign.validate_runtime_provenance(provenance, **kwargs)
+
+    provenance["external_controls_policy"] = "external-controls-required-before-launch"
+    with pytest.raises(RuntimeError, match="recipe-mismatched runtime provenance"):
+        campaign.validate_runtime_provenance(provenance, **kwargs)
+
+
 def _write_valid_training_marker(runs, cell):
     import torch
 
@@ -1850,8 +1887,49 @@ def test_projection_and_scratch_gates_are_exact():
     assert staged["conservative_h100_wall_hours"] == 44.0
 
 
+def test_h100_only_acceptance_keeps_all_local_compute_gates():
+    acceptance_source = (REPO / "scripts/h100/acceptance.py").read_text()
+    job = SBATCH.read_text()
+
+    assert "remaining-v100" not in acceptance_source
+    assert "H100_REMAINING_V100" not in job
+    assert '"external_controls_policy": EXTERNAL_CONTROLS_POLICY' in acceptance_source
+
+    for gate in (
+        "validate_fresh_acceptance_state",
+        "validate_data_view",
+        "assert_empty_core_namespaces",
+        "verify_native_venv",
+        "venv_test_command",
+        "pytest-venv-remaining.log",
+        "scripts.h100.strict_fp32_probe",
+        '"--expected-gpus"',
+        '"8"',
+        '"vit_imagenet"',
+        '"cnn_imagenet"',
+        '"--micro-batch"',
+        '"16"',
+        '"--samples-per-epoch"',
+        '"3200"',
+        "validate_probe_marker",
+        "validate_acceptance_data_view_binding",
+        "throughput_projection.json",
+    ):
+        assert gate in acceptance_source
+
+    for gate in (
+        "500000000000",
+        "scripts.h100.build_venv",
+        "scripts.h100.source_validation",
+        "scripts.h100.data_staging",
+        'check_sha "$H100_BASE_PYTHON_SHA256"',
+        'check_sha "$H100_VENV_BUILD_SHA256"',
+    ):
+        assert gate in job
+
+
 def test_cutover_rechecks_current_v100_forecast():
-    ready = {"projection": {"conservative_h100_wall_hours": 20.0, "remaining_v100_wall_hours": 30.0}}
+    ready = {"projection": {"conservative_h100_wall_hours": 20.0}}
     forecast = cutover.validate_current_v100_advantage(
         ready,
         25.0,
@@ -1859,18 +1937,17 @@ def test_cutover_rechecks_current_v100_forecast():
     )
     assert forecast == {
         "conservative_h100_wall_hours": 20.0,
-        "acceptance_remaining_v100_wall_hours": 30.0,
         "current_remaining_v100_wall_hours": 25.0,
         "v100_diagnostic_status": contracts.V100_DIAGNOSTIC_RUNNING,
         "h100_scientifically_mandatory": True,
     }
-    with pytest.raises(RuntimeError, match="no longer slower"):
-        cutover.validate_current_v100_advantage(
-            ready,
-            19.0,
-            current_v100_diagnostic_status=contracts.V100_DIAGNOSTIC_RUNNING,
-        )
-    with pytest.raises(RuntimeError, match="no longer slower"):
+    faster_diagnostic = cutover.validate_current_v100_advantage(
+        ready,
+        19.0,
+        current_v100_diagnostic_status=contracts.V100_DIAGNOSTIC_RUNNING,
+    )
+    assert faster_diagnostic["current_remaining_v100_wall_hours"] == 19.0
+    with pytest.raises(RuntimeError, match="positive V100 remaining hours"):
         cutover.validate_current_v100_advantage(
             ready,
             25.0,
@@ -1882,7 +1959,6 @@ def test_cutover_allows_zero_only_for_completed_nonreportable_v100_diagnostic():
     ready = {
         "projection": {
             "conservative_h100_wall_hours": 20.0,
-            "remaining_v100_wall_hours": 30.0,
         }
     }
     forecast = cutover.validate_current_v100_advantage(
@@ -1908,19 +1984,19 @@ def test_cutover_allows_zero_only_for_completed_nonreportable_v100_diagnostic():
         )
 
 
-def test_cutover_preserves_original_acceptance_comparison():
+def test_deferred_reporting_does_not_reimpose_a_v100_speed_gate():
     ready = {
         "projection": {
             "conservative_h100_wall_hours": 30.0,
-            "remaining_v100_wall_hours": 20.0,
         }
     }
-    with pytest.raises(RuntimeError, match="original acceptance comparison"):
-        cutover.validate_current_v100_advantage(
-            ready,
-            40.0,
-            current_v100_diagnostic_status=contracts.V100_DIAGNOSTIC_RUNNING,
-        )
+    forecast = cutover.validate_current_v100_advantage(
+        ready,
+        20.0,
+        current_v100_diagnostic_status=contracts.V100_DIAGNOSTIC_RUNNING,
+    )
+    assert forecast["conservative_h100_wall_hours"] == 30.0
+    assert forecast["current_remaining_v100_wall_hours"] == 20.0
 
 
 def test_hpc_checkpoint_is_atomically_promoted(tmp_path):
@@ -2196,8 +2272,9 @@ def test_submit_and_site_interfaces_are_safe_and_untracked():
     assert "H100_V100_RUNS_ROOT" not in example
     assert "H100_V100_RUNS_ROOT" not in operational
     assert "H100_V100_CONTROL_PLANE=box-transfer-v1" in example
-    assert operational.count("box-transfer-v1") >= 3
-    assert "leaving the live V100 campaign untouched" in example
+    assert submit.count("box-transfer-v1") >= 2
+    assert "smoke, acceptance, and campaign launch do not consume it" in example
+    assert "DEFERRED REPORTING/EXPORT CONTROL" in example
     assert '"$mode" == "cutover-check"' in submit
     assert (REPO / "slurm/h100/.gitignore").read_text().strip() == "site.env"
     assert "refusing tracked site.env" in submit
@@ -2328,6 +2405,11 @@ def test_cutover_validates_schema2_native_ready_and_rejects_tampering(tmp_path):
     with pytest.raises(RuntimeError, match="wheelhouse/base-extraction schema"):
         validate(path_tamper)
 
+    policy_tamper = json.loads(json.dumps(ready))
+    policy_tamper["external_controls_policy"] = "controls-skipped"
+    with pytest.raises(RuntimeError, match="external-controls policy"):
+        validate(policy_tamper)
+
     evaluation_tamper = json.loads(json.dumps(ready))
     evaluation_tamper["evaluation_ground_truth"]["receipt"]["verified"] = False
     with pytest.raises(
@@ -2410,8 +2492,8 @@ def test_campaign_resume_bindings_are_hash_locked():
         "acceptance_uuid": "acceptance",
         "source_validation_sha256": "a" * 64,
         "evaluation_ground_truth_sha256": "d" * 64,
-        "cutover_ready_sha256": "b" * 64,
-        "v100_diagnostic_isolation_sha256": "c" * 64,
+        "h100_ready_sha256": "b" * 64,
+        "external_controls_policy": contracts.EXTERNAL_CONTROLS_POLICY,
     }
     campaign.validate_campaign_resume_bindings(dict(bindings), bindings)
     with pytest.raises(RuntimeError, match="source_validation_sha256"):
@@ -2441,10 +2523,8 @@ def test_sbatch_supplies_required_native_acceptance_and_campaign_arguments():
         "--venv-build-sha256",
         "--source-validation-json",
         "--source-validation-sha256",
-        "--cutover-ready-json",
-        "--cutover-ready-sha256",
-        "--v100-diagnostic-isolation-json",
-        "--v100-diagnostic-isolation-sha256",
+        "--acceptance-json",
+        "--acceptance-sha256",
     )
     acceptance_source = (REPO / "scripts/h100/acceptance.py").read_text()
     campaign_source = (REPO / "scripts/h100/campaign.py").read_text()
@@ -2467,7 +2547,7 @@ def test_source_validation_cli_verifies_both_package_roots_before_receipt():
     assert "verify_transfer_bindings(" in source
 
 
-def test_host_gates_precede_native_pythonpath_and_campaign_resets_canonical_paths():
+def test_host_gates_precede_native_pythonpath_and_campaign_uses_h100_ready_only():
     job = SBATCH.read_text()
     source_gate = job.index("scripts.h100.source_validation")
     host_gate = job.index("scripts.h100.host_test_gate")
@@ -2477,9 +2557,17 @@ def test_host_gates_precede_native_pythonpath_and_campaign_resets_canonical_path
     assert "tests/test_h100_handoff.py" in host_test_gate.HOST_TESTS
     assert "tests/test_experiment_manifest.py" in host_test_gate.HOST_TESTS
     assert "tests/test_h100_submit_isolation.py" in host_test_gate.HOST_TESTS
-    assert "V100_DIAGNOSTIC_ISOLATION.json" in job
-    assert "V100_CORE_ARCHIVED.json" not in job
-    assert "V100_CORE_ARCHIVE_MANIFEST.json" not in job
+    assert "H100_READY.json" in job
+    for forbidden in (
+        "V100_DIAGNOSTIC_ISOLATION.json",
+        "V100_CORE_ARCHIVED.json",
+        "V100_CORE_ARCHIVE_MANIFEST.json",
+        "CUTOVER_READY.json",
+        "H100_V100_",
+        "H100_REFERENCE",
+        "H100_REFERENCES_",
+    ):
+        assert forbidden not in job
 
 
 def test_submit_cutover_is_non_submitting_and_uses_transfer_python():
@@ -2527,7 +2615,7 @@ def test_submit_cutover_is_non_submitting_and_uses_transfer_python():
         "--expected-diagnostic-isolation-sha256sums-sha256",
     ):
         assert option in submit
-    assert "V100 remains untouched" in submit
+    assert "leave V100 running" in submit
     assert "--bound-archive-manifest" not in submit
 
 

@@ -24,6 +24,7 @@ import yaml
 from scripts.h100.build_venv import EXPECTED_PYTHON_VERSION
 from scripts.h100.contracts import (
     EFFECTIVE_BATCH,
+    EXTERNAL_CONTROLS_POLICY,
     EXPECTED_GPU_COUNT,
     EXPECTED_PRECISION,
     GRADIENT_ACCUMULATION,
@@ -31,10 +32,8 @@ from scripts.h100.contracts import (
     Cell,
     assert_empty_core_namespaces,
     atomic_write_json,
-    cutover_acceptance_bindings,
     load_cells,
     sha256_file,
-    validate_bound_cutover_forecast,
     validate_gpu_inventory,
 )
 from src.analysis.curves import (
@@ -44,7 +43,6 @@ from src.analysis.curves import (
 )
 from scripts.h100.lightning_contract import validate_trainer_contract_evidence
 from scripts.h100.precision import assert_sitecustomize_active
-from scripts.h100.operator_cutover import validate_diagnostic_isolation
 from scripts.h100.source_validation import validate_source_receipt
 from scripts.h100.data_staging import (
     TRAINING_LABELS_EXPOSED_PATH,
@@ -273,13 +271,15 @@ def validate_runtime_provenance(
     runtime_amendment: Mapping[str, str],
     acceptance_uuid: str,
     source_validation_sha256: str,
-    cutover_ready_sha256: str,
-    v100_diagnostic_isolation_sha256: str,
+    h100_ready_sha256: str,
+    external_controls_policy: str,
     strict_fp32: Mapping[str, str],
     accepted_hardware_class: Mapping[str, object],
     evaluation_ground_truth_sha256: str,
     training_cohort: Mapping[str, str] | None = None,
 ) -> None:
+    if external_controls_policy != EXTERNAL_CONTROLS_POLICY:
+        raise RuntimeError("runtime provenance external-controls policy is invalid")
     expected = {
         "schema": 2,
         "campaign_id": campaign_id,
@@ -294,8 +294,8 @@ def validate_runtime_provenance(
         "runtime_amendment": dict(runtime_amendment),
         "acceptance_uuid": acceptance_uuid,
         "source_validation_sha256": source_validation_sha256,
-        "cutover_ready_sha256": cutover_ready_sha256,
-        "v100_diagnostic_isolation_sha256": v100_diagnostic_isolation_sha256,
+        "h100_ready_sha256": h100_ready_sha256,
+        "external_controls_policy": external_controls_policy,
         "strict_fp32": dict(strict_fp32),
         "accepted_hardware_class": dict(accepted_hardware_class),
         "precision": EXPECTED_PRECISION,
@@ -705,8 +705,8 @@ def existing_cell_state(
     acceptance_uuid: str,
     source_validation_sha256: str,
     evaluation_ground_truth_sha256: str,
-    cutover_ready_sha256: str,
-    v100_diagnostic_isolation_sha256: str,
+    h100_ready_sha256: str,
+    external_controls_policy: str,
     strict_fp32: Mapping[str, str],
     accepted_hardware_class: Mapping[str, object],
     cohort: Mapping[str, object] | None,
@@ -747,8 +747,8 @@ def existing_cell_state(
         runtime_amendment=runtime_amendment,
         acceptance_uuid=acceptance_uuid,
         source_validation_sha256=source_validation_sha256,
-        cutover_ready_sha256=cutover_ready_sha256,
-        v100_diagnostic_isolation_sha256=v100_diagnostic_isolation_sha256,
+        h100_ready_sha256=h100_ready_sha256,
+        external_controls_policy=external_controls_policy,
         strict_fp32=strict_fp32,
         accepted_hardware_class=accepted_hardware_class,
         evaluation_ground_truth_sha256=evaluation_ground_truth_sha256,
@@ -883,8 +883,8 @@ def validate_failed_namespace(
     runtime_amendment: Mapping[str, str],
     acceptance_uuid: str,
     source_validation_sha256: str,
-    cutover_ready_sha256: str,
-    v100_diagnostic_isolation_sha256: str,
+    h100_ready_sha256: str,
+    external_controls_policy: str,
     strict_fp32: Mapping[str, str],
     accepted_hardware_class: Mapping[str, object],
     evaluation_ground_truth_sha256: str,
@@ -909,8 +909,8 @@ def validate_failed_namespace(
         runtime_amendment=runtime_amendment,
         acceptance_uuid=acceptance_uuid,
         source_validation_sha256=source_validation_sha256,
-        cutover_ready_sha256=cutover_ready_sha256,
-        v100_diagnostic_isolation_sha256=v100_diagnostic_isolation_sha256,
+        h100_ready_sha256=h100_ready_sha256,
+        external_controls_policy=external_controls_policy,
         strict_fp32=strict_fp32,
         accepted_hardware_class=accepted_hardware_class,
         evaluation_ground_truth_sha256=evaluation_ground_truth_sha256,
@@ -1151,9 +1151,26 @@ class Controller:
             or Path(sys.executable).resolve() != expected_python.resolve()
         ):
             raise RuntimeError("campaign is not running under the accepted native venv")
+        expected_acceptance = (self.runs_root / ".h100/H100_READY.json").absolute()
+        if (
+            args.acceptance_json.absolute() != expected_acceptance
+            or args.acceptance_json.is_symlink()
+            or not args.acceptance_json.is_file()
+        ):
+            raise RuntimeError(
+                f"controller H100_READY is not canonical: {expected_acceptance}"
+            )
+        self.h100_ready_sha256 = args.acceptance_sha256
+        if sha256_file(args.acceptance_json) != self.h100_ready_sha256:
+            raise RuntimeError("controller H100_READY SHA-256 mismatch")
         self.acceptance = json.loads(args.acceptance_json.read_text())
         if self.acceptance.get("schema") != 2 or self.acceptance.get("status") != "ready":
             raise RuntimeError("campaign requires a schema-2 ready H100 acceptance receipt")
+        self.external_controls_policy = str(
+            self.acceptance.get("external_controls_policy", "")
+        )
+        if self.external_controls_policy != EXTERNAL_CONTROLS_POLICY:
+            raise RuntimeError("campaign H100_READY external-controls policy is invalid")
         accepted_venv = self.acceptance.get("venv")
         if not isinstance(accepted_venv, Mapping) or (
             accepted_venv.get("path") != str(self.venv_root)
@@ -1311,101 +1328,16 @@ class Controller:
                 raise RuntimeError(
                     "campaign TEST label view differs from the accepted source audit"
                 )
-        canonical_paths = {
-            "source validation": (
-                args.source_validation_json.absolute(),
-                meta_root / "SOURCE_VALIDATED.json",
-            ),
-            "CUTOVER_READY": (
-                args.cutover_ready_json.absolute(),
-                meta_root / "CUTOVER_READY.json",
-            ),
-            "V100 diagnostic isolation": (
-                args.v100_diagnostic_isolation_json.absolute(),
-                meta_root / "V100_DIAGNOSTIC_ISOLATION.json",
-            ),
-        }
-        for label, (actual, expected) in canonical_paths.items():
-            if actual != expected or actual.is_symlink() or not actual.is_file():
-                raise RuntimeError(f"controller {label} is not canonical: {expected}")
-        self.cutover_ready_sha256 = args.cutover_ready_sha256
-        if sha256_file(args.cutover_ready_json) != self.cutover_ready_sha256:
-            raise RuntimeError("controller CUTOVER_READY SHA-256 mismatch")
-        self.cutover_ready = json.loads(args.cutover_ready_json.read_text())
-        if self.cutover_ready.get("status") != "cutover-ready":
-            raise RuntimeError("controller CUTOVER_READY status is invalid")
-        if self.cutover_ready.get("h100_ready") != self.acceptance:
-            raise RuntimeError("controller H100_READY differs from canonical CUTOVER_READY")
-        if self.cutover_ready.get("acceptance") != cutover_acceptance_bindings(
-            self.acceptance
-        ):
-            raise RuntimeError("controller cutover acceptance subset is inconsistent")
-        validate_bound_cutover_forecast(self.cutover_ready)
-        references = self.cutover_ready.get("references")
-        if not isinstance(references, Mapping) or set(references) != {"r2", "r3"}:
-            raise RuntimeError("CUTOVER_READY reference identities are absent")
-        reference_identities = []
-        for name in ("r2", "r3"):
-            record = references[name]
-            provenance = record.get("provenance") if isinstance(record, Mapping) else None
-            if not isinstance(provenance, Mapping):
-                raise RuntimeError(f"CUTOVER_READY {name} provenance is absent")
-            reference_identities.append(
-                (provenance.get("git_sha"), provenance.get("campaign_id"))
-            )
+        expected_source_validation = meta_root / "SOURCE_VALIDATED.json"
         if (
-            reference_identities[0] != reference_identities[1]
-            or not all(
-                isinstance(value, str) and bool(value)
-                for value in reference_identities[0]
+            args.source_validation_json.absolute() != expected_source_validation
+            or args.source_validation_json.is_symlink()
+            or not args.source_validation_json.is_file()
+        ):
+            raise RuntimeError(
+                "controller source validation is not canonical: "
+                f"{expected_source_validation}"
             )
-        ):
-            raise RuntimeError("CUTOVER_READY R2/R3 V100 identities disagree")
-        reference_git_sha, reference_campaign_id = map(
-            str, reference_identities[0]
-        )
-        reference_campaign_record = self.cutover_ready.get("reference_campaign")
-        reference_campaign_manifest = (
-            reference_campaign_record.get("manifest")
-            if isinstance(reference_campaign_record, Mapping)
-            else None
-        )
-        if (
-            not isinstance(reference_campaign_record, Mapping)
-            or set(reference_campaign_record) != {"manifest", "manifest_sha256"}
-            or not isinstance(reference_campaign_manifest, Mapping)
-            or reference_campaign_manifest.get("git_sha") != reference_git_sha
-            or reference_campaign_manifest.get("campaign_id")
-            != reference_campaign_id
-        ):
-            raise RuntimeError("CUTOVER_READY reference campaign binding is invalid")
-        v100_core_git_sha = str(
-            reference_campaign_manifest.get("core_git_sha", "")
-        )
-        v100_core_campaign_id = str(
-            reference_campaign_manifest.get("core_campaign_id", "")
-        )
-        if not v100_core_git_sha or not v100_core_campaign_id:
-            raise RuntimeError("CUTOVER_READY V100 core diagnostic identity is absent")
-        self.v100_diagnostic_isolation_sha256 = (
-            args.v100_diagnostic_isolation_sha256
-        )
-        diagnostic_validation = validate_diagnostic_isolation(
-            cutover_ready=args.cutover_ready_json,
-            cutover_ready_sha256=self.cutover_ready_sha256,
-            attestation=args.v100_diagnostic_isolation_json,
-            attestation_sha256=self.v100_diagnostic_isolation_sha256,
-            expected_h100_git_sha=self.git_sha,
-            expected_h100_campaign_id=self.args.campaign_id,
-            expected_h100_runs_root=str(self.runs_root),
-            expected_reference_git_sha=reference_git_sha,
-            expected_reference_campaign_id=reference_campaign_id,
-            expected_v100_core_git_sha=v100_core_git_sha,
-            expected_v100_core_campaign_id=v100_core_campaign_id,
-        )
-        self.v100_diagnostic_isolation = dict(
-            diagnostic_validation["attestation"]
-        )
         self.strict_fp32 = dict(self.acceptance.get("strict_fp32", {}))
         if set(self.strict_fp32.values()) != {"ieee"}:
             raise RuntimeError("campaign acceptance is not strict IEEE FP32")
@@ -1473,8 +1405,8 @@ class Controller:
             "acceptance_uuid": self.acceptance_uuid,
             "source_validation_sha256": self.source_validation_sha256,
             "evaluation_ground_truth_sha256": self.evaluation_ground_truth_sha256,
-            "cutover_ready_sha256": self.cutover_ready_sha256,
-            "v100_diagnostic_isolation_sha256": self.v100_diagnostic_isolation_sha256,
+            "h100_ready_sha256": self.h100_ready_sha256,
+            "external_controls_policy": self.external_controls_policy,
             "hardware": self.args.hardware,
             "accepted_hardware_class": self.accepted_hardware_class,
             "allocation_hardware_class": self.allocation_hardware_class,
@@ -1488,11 +1420,6 @@ class Controller:
                 ),
                 "slurm_smoke": self.acceptance.get("slurm_smoke"),
                 "scratch_free_bytes": self.acceptance.get("scratch_free_bytes"),
-            },
-            "v100_diagnostic_isolation": {
-                "path": str(self.args.v100_diagnostic_isolation_json.absolute()),
-                "sha256": self.v100_diagnostic_isolation_sha256,
-                "receipt": self.v100_diagnostic_isolation,
             },
             "source_validation": {
                 "path": str(self.args.source_validation_json.absolute()),
@@ -1594,8 +1521,8 @@ class Controller:
                 "acceptance_uuid": self.acceptance_uuid,
                 "source_validation_sha256": self.source_validation_sha256,
                 "evaluation_ground_truth_sha256": self.evaluation_ground_truth_sha256,
-                "cutover_ready_sha256": self.cutover_ready_sha256,
-                "v100_diagnostic_isolation_sha256": self.v100_diagnostic_isolation_sha256,
+                "h100_ready_sha256": self.h100_ready_sha256,
+                "external_controls_policy": self.external_controls_policy,
                 "strict_fp32": self.strict_fp32,
                 "accepted_hardware_class": self.accepted_hardware_class,
             }
@@ -1657,8 +1584,8 @@ class Controller:
                     runtime_amendment=self.runtime_amendment,
                     acceptance_uuid=self.acceptance_uuid,
                     source_validation_sha256=self.source_validation_sha256,
-                    cutover_ready_sha256=self.cutover_ready_sha256,
-                    v100_diagnostic_isolation_sha256=self.v100_diagnostic_isolation_sha256,
+                    h100_ready_sha256=self.h100_ready_sha256,
+                    external_controls_policy=self.external_controls_policy,
                     strict_fp32=self.strict_fp32,
                     accepted_hardware_class=self.accepted_hardware_class,
                     evaluation_ground_truth_sha256=self.evaluation_ground_truth_sha256,
@@ -1683,8 +1610,8 @@ class Controller:
                 acceptance_uuid=self.acceptance_uuid,
                 source_validation_sha256=self.source_validation_sha256,
                 evaluation_ground_truth_sha256=self.evaluation_ground_truth_sha256,
-                cutover_ready_sha256=self.cutover_ready_sha256,
-                v100_diagnostic_isolation_sha256=self.v100_diagnostic_isolation_sha256,
+                h100_ready_sha256=self.h100_ready_sha256,
+                external_controls_policy=self.external_controls_policy,
                 strict_fp32=self.strict_fp32,
                 accepted_hardware_class=self.accepted_hardware_class,
                 cohort=self.cohort,
@@ -1799,8 +1726,8 @@ class Controller:
             "acceptance_uuid": self.acceptance_uuid,
             "source_validation_sha256": self.source_validation_sha256,
             "evaluation_ground_truth_sha256": self.evaluation_ground_truth_sha256,
-            "cutover_ready_sha256": self.cutover_ready_sha256,
-            "v100_diagnostic_isolation_sha256": self.v100_diagnostic_isolation_sha256,
+            "h100_ready_sha256": self.h100_ready_sha256,
+            "external_controls_policy": self.external_controls_policy,
             "strict_fp32": self.strict_fp32,
             "accepted_hardware_class": self.accepted_hardware_class,
             "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
@@ -1950,8 +1877,8 @@ class Controller:
                         runtime_amendment=self.runtime_amendment,
                         acceptance_uuid=self.acceptance_uuid,
                         source_validation_sha256=self.source_validation_sha256,
-                        cutover_ready_sha256=self.cutover_ready_sha256,
-                        v100_diagnostic_isolation_sha256=self.v100_diagnostic_isolation_sha256,
+                        h100_ready_sha256=self.h100_ready_sha256,
+                        external_controls_policy=self.external_controls_policy,
                         strict_fp32=self.strict_fp32,
                         accepted_hardware_class=self.accepted_hardware_class,
                         evaluation_ground_truth_sha256=self.evaluation_ground_truth_sha256,
@@ -2372,10 +2299,7 @@ def main() -> int:
     parser.add_argument("--source-validation-sha256", required=True)
     parser.add_argument("--data-view-root", type=Path, required=True)
     parser.add_argument("--data-view-receipt-sha256", required=True)
-    parser.add_argument("--cutover-ready-json", type=Path, required=True)
-    parser.add_argument("--cutover-ready-sha256", required=True)
-    parser.add_argument("--v100-diagnostic-isolation-json", type=Path, required=True)
-    parser.add_argument("--v100-diagnostic-isolation-sha256", required=True)
+    parser.add_argument("--acceptance-sha256", required=True)
     parser.add_argument("--workers-per-gpu", type=int, default=6)
     parser.add_argument("--poll-seconds", type=float, default=10.0)
     parser.add_argument("--checkpoint-timeout", type=float, default=240.0)

@@ -566,14 +566,13 @@ def _diagnostic_fixture(
             "evaluation_ground_truth": {"sha256": "a" * 64},
             "base_payload": {"sha256sums_sha256": "b" * 64},
             "runtime_amendment": {"sha256sums_sha256": "c" * 64},
+            "external_controls_policy": contracts.EXTERNAL_CONTROLS_POLICY,
             "projection": {
                 "conservative_h100_wall_hours": 2.0,
-                "remaining_v100_wall_hours": 3.0,
             },
         },
         "cutover_forecast": {
             "conservative_h100_wall_hours": 2.0,
-            "acceptance_remaining_v100_wall_hours": 3.0,
             "current_remaining_v100_wall_hours": current_remaining_v100_wall_hours,
             "v100_diagnostic_status": v100_execution_status,
             "h100_scientifically_mandatory": True,

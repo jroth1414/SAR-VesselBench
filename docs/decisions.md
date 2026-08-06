@@ -336,6 +336,10 @@ identically to every arm. This committed log lives here; `runs/` is gitignored a
 
 ## H100 strict-IEEE-FP32 uniform-core cutover amendment (human decision, 2026-07-26)
 
+**Historical launch-order notice:** the 2026-08-06 owner decision below
+supersedes only this section's requirement that R2/R3 and the V100 speed
+comparison pass before H100 training starts; the remaining controls stand.
+
 - **Decision and scope:** retain the Sprint-7c full-fp32 numerical fix but move the canonical 32-cell core grid, all at once, to one uniformly recorded H100 hardware/environment class to reduce wall clock. This is an execution-hardware amendment, not approval for BF16, TF32, FP16, DDP, a smaller batch, a shorter schedule, or a per-arm exception. `configs/detector.yaml` remains frozen at its Sprint-7c pin.
 - **Branch/base:** the amendment lives on `sprint-7d-h100-fp32`, intentionally stacked on `sprint-7c-fp32-grid` commit `48e10534a8c7baf0662acd548f52928da69f23c8`; the integration target is `dev` and the merge order is Sprint 7c then Sprint 7d.
 - **Numeric recipe:** every H100 core train and dev/test/final model forward uses Lightning `32-true` with CUDA-matmul TF32 and cuDNN TF32 explicitly disabled, no autocast or GradScaler, micro-batch 16, accumulation 1, effective batch 16, one process/GPU, and no DDP. The float16 bounded-score heatmap canvas remains decode storage only.
@@ -471,6 +475,10 @@ identically to every arm. This committed log lives here; `runs/` is gitignored a
   protocol; all target acceptance and transfer gates still remain pending.
 
 ## Evaluation-contract correction and concurrent V100 diagnostic (human decision, 2026-08-04)
+
+**Historical launch-order notice:** the 2026-08-06 owner decision below
+supersedes only this section's prelaunch V100 timing, cutover, reference, and
+diagnostic-isolation clauses; they remain mandatory at the reporting barrier.
 
 - **Approval and supersession:** the owner approved Sprint 7f on
   `sprint-7f-eval-contract`, stacked on accepted Sprint-7e commit
@@ -671,3 +679,34 @@ identically to every arm. This committed log lives here; `runs/` is gitignored a
   split/stat, label rule, precision, batch, model, optimizer, schedule, seed,
   or campaign cell. Repackage Sprint 7f and rerun smoke before acceptance; the
   V100 campaign continues untouched as a non-reportable diagnostic.
+
+## H100-only launch and deferred external-control barrier (human decision, 2026-08-06)
+
+This decision supersedes only the earlier clauses that made V100 timing,
+references, cutover, or diagnostic isolation prerequisites for H100 training
+start; all scientific and deferred-reporting controls remain in force.
+
+- **Owner approval:** launch the corrected Judy campaign as soon as every
+  H100-local smoke and acceptance gate passes. The remaining-V100 comparison,
+  corrected R2/R3, `CUTOVER_READY.json`, and external diagnostic-isolation
+  evidence no longer gate H100 training start.
+- **H100 launch authority:** canonical immutable `H100_READY.json`, its exact
+  SHA-256, the accepted source/data/venv/hardware receipts, strict IEEE FP32,
+  full tests and six checkpoint loads, both-family finite probes, the 200-step
+  H100 projection, requeue/resume smoke, empty namespace, and clean exact code
+  SHA remain mandatory. No Judy-local gate is waived.
+- **Provenance:** campaign and per-cell records bind the canonical H100-ready
+  hash and the explicit owner-approved external-controls policy. They do not
+  read or embed mutable V100/reference/cutover state at launch.
+- **Deferred barrier:** corrected R2/R3, the current remaining-V100 status and
+  timing context, `CUTOVER_READY.json`, and `V100_DIAGNOSTIC_ISOLATION.json`
+  remain mandatory before Phase 5 may be declared complete, before reverse
+  Box result export, and before analysis or final reporting. Reverse export
+  validates these receipts independently and fails closed if any is absent.
+- **V100 disposition:** leave the V100 campaign entirely independent and
+  untouched. Its core outputs remain non-reportable diagnostics and can never
+  suppress, resume, satisfy, or enter an H100 cell or corrected curve.
+- **Scientific scope:** this scheduling/control amendment changes no frozen
+  detector, scorer, split, statistics, label contract, model, optimizer,
+  schedule, seed, precision, batch, checkpoint rule, held-out barrier, or
+  32-cell grid.

@@ -3,8 +3,9 @@ set -euo pipefail
 
 mode="${1:-}"
 if [[ "$mode" != "smoke" && "$mode" != "acceptance" && \
-      "$mode" != "cutover-check" && "$mode" != "campaign" ]]; then
-  echo "usage: $0 smoke|acceptance|cutover-check|campaign" >&2
+      "$mode" != "cutover-check" && "$mode" != "reporting-check" && \
+      "$mode" != "campaign" ]]; then
+  echo "usage: $0 smoke|acceptance|campaign|cutover-check|reporting-check" >&2
   exit 2
 fi
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -34,17 +35,17 @@ required=(
   H100_RUNTIME_MANIFEST_SHA256 H100_RUNTIME_READY_SHA256
   H100_RUNTIME_SHA256SUMS_SHA256 H100_VENV_ROOT H100_VENV_SHA256
   H100_VENV_BUILD_JSON H100_VENV_BUILD_SHA256 H100_RUNS_ROOT
-  H100_EXPECTED_GIT_SHA H100_JOB_LOG_DIR H100_V100_CONTROL_PLANE
+  H100_EXPECTED_GIT_SHA H100_JOB_LOG_DIR
   H100_PROJECT H100_PROJECT_ROOT H100_TRANSFER_PYTHON H100_ENV_LOCK_SHA256
   H100_BASE_PYTHON H100_BASE_PYTHON_LIB_DIR H100_BASE_PYTHON_SHA256
   H100_BASE_PYTHON_RUNTIME_SHA256
   H100_DETECTOR_SHA256 H100_SCORER_SHA256
   H100_SPLITS_SHA256 H100_STATS_SHA256 H100_LSSSDD_SHA256
 )
-if [[ "$mode" == "acceptance" || "$mode" == "cutover-check" ]]; then
+if [[ "$mode" == "cutover-check" ]]; then
   required+=(H100_REMAINING_V100_WALL_HOURS)
 fi
-if [[ "$mode" != "cutover-check" ]]; then
+if [[ "$mode" != "cutover-check" && "$mode" != "reporting-check" ]]; then
   # Slurm does not define SLURM_TMPDIR portably. The site must name the
   # filesystem under which each compute allocation creates its private,
   # reconstructible staging directory.
@@ -53,8 +54,12 @@ fi
 if [[ "$mode" == "cutover-check" ]]; then
   required+=(H100_CURRENT_V100_DIAGNOSTIC_STATUS)
 fi
-if [[ "$mode" == "cutover-check" || "$mode" == "campaign" ]]; then
+if [[ "$mode" == "campaign" ]]; then
+  required+=(H100_CAMPAIGN_ID)
+fi
+if [[ "$mode" == "cutover-check" || "$mode" == "reporting-check" ]]; then
   required+=(
+    H100_V100_CONTROL_PLANE
     H100_CAMPAIGN_ID H100_EXPECTED_REFERENCE_GIT_SHA
     H100_REFERENCE_CAMPAIGN_ID H100_V100_CORE_GIT_SHA
     H100_V100_CORE_CAMPAIGN_ID H100_CUTOVER_READY
@@ -68,7 +73,7 @@ if [[ "$mode" == "cutover-check" ]]; then
     H100_REFERENCES_SHA256SUMS_SHA256
   )
 fi
-if [[ "$mode" == "campaign" ]]; then
+if [[ "$mode" == "reporting-check" ]]; then
   required+=(
     H100_CUTOVER_READY_SHA256
     H100_DIAGNOSTIC_ISOLATION_PACKAGE_ROOT
@@ -86,7 +91,8 @@ for name in "${required[@]}"; do
     exit 2
   fi
 done
-if [[ "$H100_V100_CONTROL_PLANE" != "box-transfer-v1" ]]; then
+if [[ ( "$mode" == "cutover-check" || "$mode" == "reporting-check" ) &&
+      "$H100_V100_CONTROL_PLANE" != "box-transfer-v1" ]]; then
   echo "H100_V100_CONTROL_PLANE must be box-transfer-v1" >&2
   exit 2
 fi
@@ -95,13 +101,13 @@ if [[ "$H100_RUNTIME_GIT_SHA" != "$H100_EXPECTED_GIT_SHA" ]]; then
   exit 2
 fi
 git_names=(H100_BASE_GIT_SHA H100_RUNTIME_GIT_SHA H100_EXPECTED_GIT_SHA)
-if [[ "$mode" == "cutover-check" || "$mode" == "campaign" ]]; then
+if [[ "$mode" == "cutover-check" || "$mode" == "reporting-check" ]]; then
   git_names+=(H100_EXPECTED_REFERENCE_GIT_SHA H100_V100_CORE_GIT_SHA)
 fi
 if [[ "$mode" == "cutover-check" ]]; then
   git_names+=(H100_REFERENCES_PRODUCER_GIT_SHA)
 fi
-if [[ "$mode" == "campaign" ]]; then
+if [[ "$mode" == "reporting-check" ]]; then
   git_names+=(H100_DIAGNOSTIC_ISOLATION_PRODUCER_GIT_SHA)
 fi
 for name in "${git_names[@]}"; do
@@ -127,7 +133,7 @@ if [[ "$mode" == "cutover-check" ]]; then
     H100_REFERENCES_READY_SHA256 H100_REFERENCES_SHA256SUMS_SHA256
   )
 fi
-if [[ "$mode" == "campaign" ]]; then
+if [[ "$mode" == "reporting-check" ]]; then
   hash_names+=(
     H100_CUTOVER_READY_SHA256 H100_DIAGNOSTIC_ISOLATION_IDENTITY_SHA256
     H100_DIAGNOSTIC_ISOLATION_MANIFEST_SHA256
@@ -180,7 +186,7 @@ h100_job_log_root="$(canonical_write_root H100_JOB_LOG_DIR)"
 assert_disjoint_from_protected_root \
   H100_JOB_LOG_DIR "$h100_job_log_root" "H100 runs root" "$h100_runs_root"
 h100_scratch_root=""
-if [[ "$mode" != "cutover-check" ]]; then
+if [[ "$mode" != "cutover-check" && "$mode" != "reporting-check" ]]; then
   h100_scratch_root="$(canonical_write_root H100_SCRATCH_ROOT)"
   assert_disjoint_from_protected_root \
     H100_SCRATCH_ROOT "$h100_scratch_root" \
@@ -203,7 +209,7 @@ do
     H100_RUNS_ROOT "$h100_runs_root" "$protected_name" "$protected_root"
   assert_disjoint_from_protected_root \
     H100_JOB_LOG_DIR "$h100_job_log_root" "$protected_name" "$protected_root"
-  if [[ "$mode" != "cutover-check" ]]; then
+  if [[ "$mode" != "cutover-check" && "$mode" != "reporting-check" ]]; then
     assert_disjoint_from_protected_root \
       H100_SCRATCH_ROOT "$h100_scratch_root" "$protected_name" "$protected_root"
   fi
@@ -221,7 +227,7 @@ if [[ "$mode" == "cutover-check" ]]; then
   assert_disjoint_from_protected_root \
     H100_JOB_LOG_DIR "$h100_job_log_root" "reference control package" "$control_package_root"
   H100_REFERENCES_PACKAGE_ROOT="$control_package_root"
-elif [[ "$mode" == "campaign" ]]; then
+elif [[ "$mode" == "reporting-check" ]]; then
   control_package_root="$(canonical_write_root H100_DIAGNOSTIC_ISOLATION_PACKAGE_ROOT)"
   if [[ ! -d "$control_package_root" ]]; then
     echo "H100_DIAGNOSTIC_ISOLATION_PACKAGE_ROOT must resolve to a verified control package: $control_package_root" >&2
@@ -231,15 +237,12 @@ elif [[ "$mode" == "campaign" ]]; then
     H100_RUNS_ROOT "$h100_runs_root" "diagnostic-isolation control package" "$control_package_root"
   assert_disjoint_from_protected_root \
     H100_JOB_LOG_DIR "$h100_job_log_root" "diagnostic-isolation control package" "$control_package_root"
-  assert_disjoint_from_protected_root \
-    H100_SCRATCH_ROOT "$h100_scratch_root" \
-    "diagnostic-isolation control package" "$control_package_root"
   H100_DIAGNOSTIC_ISOLATION_PACKAGE_ROOT="$control_package_root"
 fi
 H100_RUNS_ROOT="$h100_runs_root"
 H100_JOB_LOG_DIR="$h100_job_log_root"
 readonly H100_RUNS_ROOT H100_JOB_LOG_DIR
-if [[ "$mode" != "cutover-check" ]]; then
+if [[ "$mode" != "cutover-check" && "$mode" != "reporting-check" ]]; then
   H100_SCRATCH_ROOT="$h100_scratch_root"
   readonly H100_SCRATCH_ROOT
 fi
@@ -279,7 +282,7 @@ if [[ "$(realpath -m "$H100_BASE_PACKAGE_ROOT")" == "$(realpath -m "$H100_RUNTIM
   echo "base payload and runtime amendment roots must be distinct" >&2
   exit 2
 fi
-if [[ "$mode" == "cutover-check" || "$mode" == "campaign" ]]; then
+if [[ "$mode" == "cutover-check" || "$mode" == "reporting-check" ]]; then
   expected_cutover="$H100_RUNS_ROOT/.h100/CUTOVER_READY.json"
   if [[ "$(realpath -m "$H100_CUTOVER_READY")" != "$(realpath -m "$expected_cutover")" ]]; then
     echo "H100_CUTOVER_READY must be $expected_cutover" >&2
@@ -337,7 +340,7 @@ if [[ "$mode" == "cutover-check" ]]; then
   exit 0
 fi
 
-if [[ "$mode" == "campaign" ]]; then
+if [[ "$mode" == "reporting-check" ]]; then
   PYTHONNOUSERSITE=1 PYTHONPATH="$repo" "$H100_TRANSFER_PYTHON" -m scripts.h100.operator_cutover \
     --cutover-ready "$H100_CUTOVER_READY" \
     --cutover-ready-sha256 "$H100_CUTOVER_READY_SHA256" \
@@ -358,10 +361,19 @@ if [[ "$mode" == "campaign" ]]; then
     --expected-reference-campaign-id "$H100_REFERENCE_CAMPAIGN_ID" \
     --expected-v100-core-git-sha "$H100_V100_CORE_GIT_SHA" \
     --expected-v100-core-campaign-id "$H100_V100_CORE_CAMPAIGN_ID"
-  H100_V100_DIAGNOSTIC_ISOLATION="$H100_RUNS_ROOT/.h100/V100_DIAGNOSTIC_ISOLATION.json"
-  H100_V100_DIAGNOSTIC_ISOLATION_SHA256="$(sha256sum "$H100_V100_DIAGNOSTIC_ISOLATION" | awk '{print $1}')"
-  export H100_V100_DIAGNOSTIC_ISOLATION H100_V100_DIAGNOSTIC_ISOLATION_SHA256
-  echo "Canonical diagnostic-isolation evidence persisted; V100 remains untouched." >&2
+  echo "Canonical reporting controls persisted; no Slurm job was submitted." >&2
+  exit 0
+fi
+
+if [[ "$mode" == "campaign" ]]; then
+  h100_ready="$H100_RUNS_ROOT/.h100/H100_READY.json"
+  if [[ -L "$h100_ready" || ! -f "$h100_ready" ||
+        "$(stat -c '%a' "$h100_ready")" != "444" ]]; then
+    echo "campaign requires canonical read-only H100_READY: $h100_ready" >&2
+    exit 2
+  fi
+  H100_READY_SHA256="$(sha256sum "$h100_ready" | awk '{print $1}')"
+  export H100_READY_SHA256
 fi
 
 batch_script="$script_dir/campaign.sbatch"
@@ -374,8 +386,7 @@ fi
 # Persist a content-addressed, read-only allowlist of compute inputs. The
 # original untracked site.env can be edited after submission without changing
 # queued or requeued allocations, and transfer credentials never enter this
-# snapshot. Campaign mode runs this after canonical operator evidence paths
-# have replaced their mutable source paths above.
+# snapshot. Campaign mode adds only the immutable H100_READY digest.
 snapshot_names=()
 for name in "${required[@]}"; do
   # The compute allocation consumes only the canonical attestation and hash,
@@ -386,10 +397,7 @@ for name in "${required[@]}"; do
   snapshot_names+=("$name")
 done
 if [[ "$mode" == "campaign" ]]; then
-  snapshot_names+=(
-    H100_V100_DIAGNOSTIC_ISOLATION
-    H100_V100_DIAGNOSTIC_ISOLATION_SHA256
-  )
+  snapshot_names+=(H100_READY_SHA256)
 fi
 for optional_name in H100_REAL_SCONTROL; do
   if [[ -n "${!optional_name:-}" ]]; then

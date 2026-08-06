@@ -39,10 +39,6 @@ fi
 readonly H100_MODE compute_site compute_site_sha256
 # shellcheck disable=SC1090
 source "$compute_site"
-if [[ "${H100_V100_CONTROL_PLANE:-}" != "box-transfer-v1" ]]; then
-  echo "compute-site V100 control plane must be box-transfer-v1" >&2
-  exit 2
-fi
 # Transfer credentials are never needed by a compute allocation.
 unset BOX_JWT_CONFIG BOX_FOLDER_ID
 if [[ "$H100_BASE_PYTHON_LIB_DIR" != /* ||

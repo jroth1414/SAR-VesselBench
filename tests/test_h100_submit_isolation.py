@@ -16,6 +16,31 @@ CAMPAIGN_SBATCH = REPO / "slurm/h100/campaign.sbatch"
 SMOKE_SBATCH = REPO / "slurm/h100/smoke.sbatch"
 GIT_SHA = "1" * 40
 SHA256 = "2" * 64
+EXTERNAL_CONTROL_FIELDS = (
+    "H100_V100_CONTROL_PLANE",
+    "H100_REMAINING_V100_WALL_HOURS",
+    "H100_CURRENT_V100_DIAGNOSTIC_STATUS",
+    "H100_EXPECTED_REFERENCE_GIT_SHA",
+    "H100_REFERENCE_CAMPAIGN_ID",
+    "H100_V100_CORE_GIT_SHA",
+    "H100_V100_CORE_CAMPAIGN_ID",
+    "H100_CUTOVER_READY",
+    "H100_CUTOVER_READY_SHA256",
+    "H100_REFERENCES_PACKAGE_ROOT",
+    "H100_REFERENCES_PACKAGE_ID",
+    "H100_REFERENCES_PRODUCER_GIT_SHA",
+    "H100_REFERENCES_IDENTITY_SHA256",
+    "H100_REFERENCES_MANIFEST_SHA256",
+    "H100_REFERENCES_READY_SHA256",
+    "H100_REFERENCES_SHA256SUMS_SHA256",
+    "H100_DIAGNOSTIC_ISOLATION_PACKAGE_ROOT",
+    "H100_DIAGNOSTIC_ISOLATION_PACKAGE_ID",
+    "H100_DIAGNOSTIC_ISOLATION_PRODUCER_GIT_SHA",
+    "H100_DIAGNOSTIC_ISOLATION_IDENTITY_SHA256",
+    "H100_DIAGNOSTIC_ISOLATION_MANIFEST_SHA256",
+    "H100_DIAGNOSTIC_ISOLATION_READY_SHA256",
+    "H100_DIAGNOSTIC_ISOLATION_SHA256SUMS_SHA256",
+)
 
 
 def _site_values(
@@ -133,6 +158,11 @@ def _run_submit(
         venv_python.write_text("#!/bin/sh\nexit 0\n")
         venv_python.chmod(0o755)
         Path(values["H100_VENV_BUILD_JSON"]).write_text("{}\n")
+        if mode == "campaign":
+            h100_ready = h100_runs / ".h100/H100_READY.json"
+            h100_ready.parent.mkdir(parents=True, exist_ok=True)
+            h100_ready.write_text("{}\n")
+            h100_ready.chmod(0o444)
     site_env = tmp_path / f"site-{mode}.env"
     site_env.write_text(
         "".join(f"{name}={shlex.quote(value)}\n" for name, value in values.items())
@@ -153,6 +183,7 @@ def _run_submit(
 def _capture_sbatch_args(
     tmp_path: Path,
     *,
+    mode: str = "smoke",
     site_overrides: dict[str, str] | None = None,
 ) -> tuple[Path, list[str]]:
     fake_bin = tmp_path / "fake-bin"
@@ -167,7 +198,7 @@ def _capture_sbatch_args(
     h100_runs = tmp_path / "h100-runs"
     result = _run_submit(
         tmp_path,
-        mode="smoke",
+        mode=mode,
         h100_runs=h100_runs,
         prepare_runtime_paths=True,
         site_overrides=site_overrides,
@@ -373,19 +404,6 @@ def test_submit_rejects_scratch_overlap_with_immutable_input_before_any_write(
     assert not job_logs.exists()
 
 
-def test_submit_requires_box_control_plane_before_write(tmp_path: Path):
-    h100_runs = tmp_path / "h100-runs"
-    result = _run_submit(
-        tmp_path,
-        mode="smoke",
-        h100_runs=h100_runs,
-        site_overrides={"H100_V100_CONTROL_PLANE": "shared-filesystem"},
-    )
-    assert result.returncode == 2
-    assert "H100_V100_CONTROL_PLANE must be box-transfer-v1" in result.stderr
-    assert not h100_runs.exists()
-
-
 def test_submit_write_root_guard_precedes_every_persistent_write():
     source = SUBMIT.read_text()
     guard = source.index('H100_JOB_LOG_DIR "$h100_job_log_root" "H100 runs root"')
@@ -419,8 +437,8 @@ def test_submit_rejects_unbound_python_library_path_before_write(tmp_path: Path)
     ("mode", "missing_name"),
     (
         ("cutover-check", "H100_REFERENCES_PACKAGE_ROOT"),
-        ("cutover-check", "H100_CAMPAIGN_ID"),
-        ("campaign", "H100_DIAGNOSTIC_ISOLATION_PACKAGE_ROOT"),
+        ("reporting-check", "H100_CAMPAIGN_ID"),
+        ("reporting-check", "H100_DIAGNOSTIC_ISOLATION_PACKAGE_ROOT"),
     ),
 )
 def test_dynamic_control_modes_require_content_addressed_package_before_any_write(
@@ -441,25 +459,22 @@ def test_dynamic_control_modes_require_content_addressed_package_before_any_writ
     assert not job_logs.exists()
 
 
-@pytest.mark.parametrize("mode", ["smoke", "acceptance"])
-def test_pre_cutover_modes_do_not_require_v100_paths(
+@pytest.mark.parametrize("mode", ["smoke", "acceptance", "campaign"])
+def test_h100_compute_modes_do_not_require_external_control_fields(
     tmp_path: Path, mode: str
 ):
-    fake_bin = tmp_path / f"fake-bin-{mode}"
-    fake_bin.mkdir()
-    fake_sbatch = fake_bin / "sbatch"
-    fake_sbatch.write_text("#!/bin/sh\nexit 0\n")
-    fake_sbatch.chmod(0o755)
-    h100_runs = tmp_path / f"h100-runs-{mode}"
-    result = _run_submit(
+    _runs, submitted_args = _capture_sbatch_args(
         tmp_path,
         mode=mode,
-        h100_runs=h100_runs,
-        prepare_runtime_paths=True,
-        extra_env={"PATH": f"{fake_bin}:{os.environ['PATH']}"},
+        site_overrides={name: "" for name in EXTERNAL_CONTROL_FIELDS},
     )
-    assert result.returncode == 0, result.stderr
-    assert "H100_V100_RUNS_ROOT" not in (tmp_path / f"site-{mode}.env").read_text()
+    snapshot = Path(submitted_args[-2])
+    snapshot_text = snapshot.read_text()
+    assert submitted_args[-3] == mode
+    compute_sources = CAMPAIGN_SBATCH.read_text() + SMOKE_SBATCH.read_text()
+    for name in EXTERNAL_CONTROL_FIELDS:
+        assert name not in snapshot_text
+        assert name not in compute_sources
 
 
 @pytest.mark.parametrize(
@@ -581,10 +596,8 @@ def test_submit_snapshots_sanitized_site_and_batches_reject_tampering(tmp_path: 
     assert hashlib.sha256(snapshot_bytes).hexdigest() == digest
     snapshot_text = snapshot_bytes.decode()
     assert "BOX_" not in snapshot_text
-    assert "H100_V100_RUNS_ROOT" not in snapshot_text
-    assert "H100_REFERENCES_PACKAGE_" not in snapshot_text
-    assert "H100_DIAGNOSTIC_ISOLATION_PACKAGE_" not in snapshot_text
-    assert "H100_V100_CONTROL_PLANE=box-transfer-v1" in snapshot_text
+    for name in EXTERNAL_CONTROL_FIELDS:
+        assert name not in snapshot_text
     assert "secret-folder-fixture" not in snapshot_text
 
     assert "H100_BASE_PYTHON_LIB_DIR=" in snapshot_text
