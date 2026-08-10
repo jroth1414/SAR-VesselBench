@@ -1,0 +1,23 @@
+\begin{figure}[t]
+\centering
+\setlength{\fboxsep}{3pt}
+\fbox{\parbox[c][1.75cm][c]{0.26\textwidth}{\centering\scriptsize
+\textbf{Frozen scenes}\\[2pt]
+111 train / 23 dev / 16 test\\
+Nested 12, 28, 56, 111\\
+50 verified, used once}}
+\hfill$\Longrightarrow$\hfill
+\fbox{\parbox[c][1.75cm][c]{0.28\textwidth}{\centering\scriptsize
+\textbf{Two matched tracks}\\[2pt]
+ViT-B/16: random, optical, SAR, ImageNet\\
+ConvNeXt-V2-B: same roles}}
+\hfill$\Longrightarrow$\hfill
+\fbox{\parbox[c][1.75cm][c]{0.25\textwidth}{\centering\scriptsize
+\textbf{One detector contract}\\[2pt]
+Shared input, head, optimizer, seed, FP32, and point scorer}}
+\caption{Controlled study design. Initialization is the only variable within
+each architecture track. Matched roles are compared descriptively across
+tracks; the final human-verified set remains sealed until model selection and
+test review are complete.}
+\label{fig:study-design}
+\end{figure}

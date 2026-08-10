@@ -1,0 +1,29 @@
+\begin{table}[t]
+\caption{Controlled core arms. All non-random entries are downloaded encoders;
+task-specific heads are discarded. Parameter counts describe the complete
+detector and are constant within each track.}
+\label{tab:arms}
+\centering
+\scriptsize
+\setlength{\tabcolsep}{3.2pt}
+\begin{tabularx}{\textwidth}{@{}cllXl@{}}
+\toprule
+Arm & Track & Role & Released initialization and source recipe & License \\
+\midrule
+1 & ViT & Random & ViT-B/16, fresh initialization & -- \\
+2 & ViT & Optical & SatDINO ViT-B/16; DINO on fMoW-RGB & Apache-2.0 \\
+3 & ViT & SAR & SARMAE ViT-B; masked autoencoding on SAR-1M & CC BY-NC 4.0 \\
+4 & ViT & ImageNet & AugReg ViT-B/16; supervised ImageNet-1K & Apache-2.0 \\
+\midrule
+5 & CNN & Random & ConvNeXt-V2-Base, fresh initialization & -- \\
+6 & CNN & Optical & reBEN BigEarthNet-v2 Sentinel-2 model & model card \\
+7 & CNN & SAR & reBEN BigEarthNet-v2 Sentinel-1 model & model card \\
+8 & CNN & ImageNet & FCMAE then supervised ImageNet-1K & Apache-2.0 \\
+\bottomrule
+\end{tabularx}
+\vspace{2pt}
+\parbox{\textwidth}{\scriptsize Complete detector sizes are 89,996,801
+parameters for ViT and 93,988,865 for CNN. The corresponding backbone sizes
+are approximately 86M and 89M, respectively. Exact checkpoint paths, hashes,
+and source/license notes are archived with the campaign manifest.}
+\end{table}

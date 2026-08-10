@@ -1,0 +1,129 @@
+\section{Controlled Experimental Design}
+\label{sec:design}
+
+\subsection{Two Architecture-Matched Tracks}
+
+Table~\ref{tab:arms} enumerates the eight core arms. Arms 1--4 share a
+ViT-B/16 backbone; Arms 5--8 share ConvNeXt-V2-Base. Within each track the
+architecture and parameter count are invariant, and only the initialization
+changes. The approximate pretrained-backbone sizes are 86M and 89M
+parameters; after attaching the family adapter and common detector head, the
+implemented models contain 89,996,801 and 93,988,865 trainable parameters,
+respectively. All pretrained checkpoints transfer the encoder only, with the
+source classification or reconstruction head removed. Random floors use the
+identical target architecture without transferred values.
+
+\input{tables/arms}
+
+The four roles are:
+
+\begin{description}
+  \item[Random floor.] Standard random initialization for ViT-B/16 or
+    ConvNeXt-V2-Base.
+  \item[ImageNet.] Supervised AugReg ImageNet-1K for ViT-B/16, and
+    FCMAE followed by supervised ImageNet-1K fine-tuning for
+    ConvNeXt-V2-Base.
+  \item[Optical remote sensing.] SatDINO ViT-B/16 pretrained with DINO on
+    fMoW-RGB, and BigEarthNet Sentinel-2 ConvNeXt-V2-Base.
+  \item[SAR.] SARMAE ViT-B/16 pretrained with masked autoencoding on SAR-1M,
+    and BigEarthNet Sentinel-1 ConvNeXt-V2-Base.
+\end{description}
+
+The BigEarthNet Sentinel-1/Sentinel-2 pair is the study's cleanest modality
+contrast because model, dataset family, and supervised task are shared. The
+SatDINO/SARMAE comparison additionally changes DINO versus masked
+autoencoding. Likewise, the matched ImageNet role holds source dataset and
+final classification supervision constant across tracks but not the complete
+training history. We preserve these distinctions in all interpretation: the
+primary domain comparisons are within-track, and matched-role cross-track
+comparisons test architectural persistence rather than asserting perfect
+pretraining-method control.
+
+\subsection{Input and Shared Point Detector}
+
+Every arm receives the same three-channel, decibel-domain tensor
+\begin{equation}
+  \mathbf{x} = [\mathrm{VH},\ \mathrm{VV},\ \mathrm{VH}-\mathrm{VV}].
+  \label{eq:channels}
+\end{equation}
+The channel construction is fixed before the model and is never tuned by arm.
+Each released encoder is instantiated through the documented \texttt{timm}
+\texttt{in\_chans=3} path~\cite{wightman2019timm}. This leaves already three-channel stems unchanged in
+shape and applies the library's repeat-with-rescaling adaptation where the
+source checkpoint used a different band count. No hand-written patch-embed or
+stem surgery is used.
+
+The detector predicts one vessel-presence heatmap on a common stride-4 grid.
+For a $512\times512$ training crop, the output is $128\times128$. Each vessel
+point becomes a Gaussian target with standard deviation two output pixels;
+LOW-confidence annotations define ignore neighborhoods of radius three output
+pixels. Training uses the penalty-reduced focal objective associated with
+CenterNet-style point detection~\cite{lin2017focal,zhou2019objects}. The ViT
+adapter receives stride-16 features, while the CNN adapter receives stride-32
+features and performs one additional learned upsampling stage. Both terminate
+in the same 256-channel head and stride-4 heatmap. The different pre-head
+resolutions are an inherent architecture-family distinction and are disclosed
+rather than tuned away.
+
+At inference, local peaks above a permissive candidate floor of 0.05 are
+mapped to scene coordinates. Distance non-maximum suppression uses 120~m, and
+the operating threshold is selected only on the designated development
+scenes as described in Sect.~\ref{sec:data-evaluation}. Whole scenes are tiled
+with $512\times512$ windows at stride 384 and predictions are reconciled in
+geographic coordinates.
+
+\subsection{Uniform Fine-Tuning Recipe}
+
+All eight arms use one PyTorch Lightning module, one data module, and one
+trainer configuration~\cite{falcon2019lightning}. AdamW~\cite{loshchilov2019decoupled} uses learning rate
+$10^{-4}$, weight decay 0.05, layer-wise decay 0.65, and gradient clipping at
+1.0. The schedule has five warm-up epochs followed by cosine decay, with a
+maximum of 50 epochs. Full-scene development evaluation occurs every five
+epochs, and early stopping uses patience four development evaluations. A
+foreground-balanced sampler targets a 0.5 foreground fraction. Shared
+augmentations comprise horizontal and vertical flips, $90^{\circ}$ rotations,
+a vessel-biased crop policy for 70\% of crops, and a common intensity jitter
+of $\pm1$~dB. No hyperparameter is selected per arm or label fraction.
+
+The core matrix uses micro-batch 16, accumulation 1, and therefore effective
+batch 16 for every cell. Each run fine-tunes the full encoder and detector
+using Lightning \texttt{32-true}. The canonical execution platform is one H100
+GPU per process with no distributed data parallelism. Both CUDA matrix-multiply
+and cuDNN TensorFloat-32 paths are disabled before model initialization and
+asserted again in training and inference subprocesses. Hardware identifiers,
+backend state, code and environment hashes, checkpoint hashes, parameter
+counts, and measured runtime are recorded with each cell.
+
+Randomness is fixed to seed 0 for Python, NumPy, PyTorch, and data-loader
+workers. The design consequently contains $8\times4=32$ core fine-tunes, not
+seed replications. Results are reported as seed-0 point estimates without
+error bars or empirical seed-noise claims.
+
+\subsection{Nested Label Fractions and Registered Contrasts}
+
+The four nominal fractions correspond to exact nested training sets of 12,
+28, 56, and 111 scenes. If $S_{10}$, $S_{25}$, $S_{50}$, and $S_{100}$ denote
+these sets, then
+\begin{equation}
+  S_{10}\subset S_{25}\subset S_{50}\subset S_{100}.
+  \label{eq:nesting}
+\end{equation}
+The same sets are used by all arms, so a fraction never changes which scenes
+one method sees relative to another.
+
+For track $t$, role $r$, and fraction $f$, let $F^{(t)}_{r,f}$ denote held-out
+F1 at the development-selected operating threshold. In addition to absolute
+F1, the planned analysis reports transfer over the corresponding same-track
+random floor and the within-track SAR--optical contrast at every registered
+fraction (Sect.~\ref{sec:transfer-results}). A non-monotone curve is reported
+as observed rather than smoothed or clamped. Any statement about ``labels
+saved'' additionally requires a prespecified target and interpolation rule.
+Until that rule is fixed, the manuscript reports the four-point curves and
+contrasts but does not invent an interpolated savings number.
+
+Two external systems---a COCO-pretrained YOLO26 detector and zero-shot
+LocateAnything-3B---provide context~\cite{jocher2026yolo26,wang2026locateanything}.
+Their architectures, supervision, and
+inference recipes are not controlled to match the core arms, so they are
+reported in a separate reference table and never placed on the controlled
+label-efficiency curves.

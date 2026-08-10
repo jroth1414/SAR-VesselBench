@@ -1,0 +1,73 @@
+\section{Error Analysis}
+\label{sec:error-analysis}
+
+\subsection{Checkpoint-bound threshold transfer}
+\label{sec:threshold-transfer}
+
+The primary operating point is selected on the training-time dev subset and
+is stored with the exact best-dev checkpoint that produced it.  Held-out
+predictions use that pair unchanged.  To describe calibration transfer
+without tuning on test, we may compute an oracle diagnostic after primary
+scoring,
+\begin{equation}
+  \Delta_{\mathrm{cal}} =
+  F1_{\mathrm{test}}(\tau^{\star}_{\mathrm{test}})
+  -F1_{\mathrm{test}}(\tau_{\mathrm{dev}}),
+  \label{eq:calibration-gap}
+\end{equation}
+where $\tau^{\star}_{\mathrm{test}}$ is used only to quantify the possible
+threshold-transfer gap.  It never replaces $\tau_{\mathrm{dev}}$, changes a
+reported primary metric, or influences the once-only final evaluation.  We
+also inspect precision and recall at $\tau_{\mathrm{dev}}$ to distinguish a
+ranking failure from a shifted score scale.
+
+\ifdiagnosticdraft
+Calibration-gap values are intentionally blank until corrected H100
+predictions are available.  Historical V100 thresholds are not eligible for
+this analysis because they are tied to the superseded selection contract.
+\fi
+
+\subsection{Dark vessels and near-shore clutter}
+\label{sec:slice-errors}
+
+Dark-vessel recall and near-shore F1 probe different failure modes.  The
+former measures misses among human-verified vessels without a matched AIS
+report; the latter includes unmatched predictions near the coast and
+therefore exposes shoreline clutter.  Dark labels occur only in the
+50-scene human-verified set.  Conversely, the 16-scene test split contains
+only two valid near-shore vessel targets, too little support for a stable
+standalone coastal conclusion.  We therefore show test near-shore F1 only as
+a support-qualified diagnostic and reserve substantive slice interpretation
+for the once-only human-verified evaluation in
+Fig.~\ref{fig:final-slices}.
+
+When the final predictions are unlocked, we compare slice errors at each
+model's frozen dev threshold.  The analysis reports the numerator and
+denominator beside every recall or F1 value so that an apparently large gap
+cannot conceal small support.  A source-domain advantage in aggregate F1 is
+not assumed to transfer to dark vessels or coastal clutter; those are
+separate empirical questions.
+
+\subsection{False-positive taxonomy and qualitative review}
+\label{sec:qualitative-errors}
+
+Figure~\ref{fig:qualitative} presents registered $[\mathrm{VH},\mathrm{VV},
+\mathrm{VH}-\mathrm{VV}]$ chips with ground truth, predictions, confidence,
+distance to shore, and the frozen operating threshold.  A stratified manual
+review of approximately 200 false positives assigns one of four
+predeclared descriptive categories: shoreline clutter, fixed infrastructure,
+open-water sea clutter, or sidelobe/bright-target response.  Ambiguous cases
+remain marked ambiguous rather than being forced into a class.  The sample is
+used to explain mechanisms, not to estimate population frequencies or to
+retune the detector.
+
+\ifdiagnosticdraft
+The diagnostic build contains the gallery layout and category definitions
+only.  Image examples and category counts must come from the corrected H100
+cohort and the authorized evaluation stage before they can enter the
+submission.
+\else
+The qualitative cases are interpreted alongside, but do not supersede, the
+quantitative findings in Sections~\ref{sec:transfer-results}
+and~\ref{sec:final-results}.
+\fi

@@ -1,0 +1,157 @@
+\section{Results}
+\label{sec:results}
+
+\subsection{Result provenance and reporting contract}
+\label{sec:result-provenance}
+
+The reportable core result is one complete cohort of 32 runs: eight
+initialization arms, four nested label fractions, and seed~0.  Every row in
+Table~\ref{tab:core-results} must be bound to the same corrected evaluation
+contract, strict-IEEE-FP32 H100 execution environment, best-dev checkpoint,
+and threshold selected with that checkpoint.  Figure~\ref{fig:label-efficiency}
+is generated only from this cohort.  The two external references use their
+own published inference recipes and are reported separately; they are never
+inserted into a controlled label-efficiency curve.
+
+\ifdiagnosticdraft
+The legacy V100 execution cohort is complete: all 32 strict-FP32 core cells
+and both external references finished by \ResultCompletedUTC.  Every core
+marker records code revision \texttt{48e10534}, detector hash
+\texttt{c42ae65b}, Lightning \texttt{\ResultPrecision}, micro-batch
+and effective batch 16, and disabled TF32.  No core completion marker contains
+a non-finite metric.  Core execution consumed \ResultCoreGPUHours{} GPU-hours;
+the references consumed \ResultReferenceGPUHours{} GPU-hours, for
+\ResultTotalGPUHours{} GPU-hours total.  End-to-end parameter counts were
+\ResultVitParameterCount{} for the ViT track and \ResultCnnParameterCount{}
+for the CNN track.  Table~\ref{tab:v100-diagnostic} preserves the complete
+set of recorded best-development F1 values as an execution audit.
+
+The legacy development values also trigger the predeclared monotonicity
+alarm: the 25\%--50\% transition declines by 0.026 for ViT random, 0.038 for
+SatDINO, 0.044 for SARMAE, 0.029 for ViT ImageNet, and 0.043 for CNN ImageNet.
+This audit flag is recorded transparently; we neither smooth the curves nor
+selectively rerun them.
+
+Those values are not reportable core rankings.  The V100 runs used the
+superseded ground-truth conversion and legacy checkpoint--threshold selection
+contract; the former influenced threshold selection, checkpoint selection,
+and early stopping.  The corrected H100 cohort and once-only human-verified
+evaluation therefore remain represented by explicit result slots.  The V100
+audit cannot support a comparison, an abstract claim, a conclusion, or a
+final figure.
+\else
+The submission build is sourced from \ResultProvenance.  Its provenance gate
+requires a complete corrected H100 cohort before any values or finding text
+can be rendered.
+\fi
+
+\subsection{Label-efficiency curves}
+\label{sec:label-efficiency-results}
+
+For track $t\in\{\mathrm{ViT},\mathrm{CNN}\}$, initialization role $r$, and
+tested label fraction $f\in\mathcal{F}=\{10,25,50,100\}\%$, let
+$F_{r,f}^{(t)}$ denote held-out test F1 at the dev-selected operating point.
+Table~\ref{tab:core-results} reports all 32 point estimates together with the
+selected epoch, measured runtime, and GPU-hours.  The two panels of
+Fig.~\ref{fig:label-efficiency} retain the architecture tracks rather than
+pooling them: solid curves show the ViT-B/16 arms and dashed curves show the
+ConvNeXt-V2-Base arms, with a common color for each matched initialization
+role.  No uncertainty ribbon is drawn because the experiment has one fixed
+seed.
+
+We avoid estimating a continuous ``percent labels saved'' quantity after
+observing only four budgets.  Instead, we give a discrete crossing summary.
+For a pretrained role $r$, define
+\begin{equation}
+  B_{r}^{(t)} =
+  \min\left\{f\in\mathcal{F}:F_{r,f}^{(t)}
+  \geq F_{\mathrm{random},100}^{(t)}\right\}.
+  \label{eq:discrete-crossing}
+\end{equation}
+Thus, $B_{r}^{(t)}$ is the smallest \emph{tested} budget at which an arm
+reaches the full-data random baseline in its own track; a missing crossing is
+reported as ``not reached.''  Equation~\eqref{eq:discrete-crossing} is a
+descriptive grid summary, not an interpolation between fractions.
+
+\ifdiagnosticdraft
+The discrete crossings and curve ordering remain pending corrected H100 test
+results.  In particular, no crossing is inferred from the non-reportable V100
+diagnostic points.
+\else
+\paragraph{Label efficiency.}
+\FindingLabelEfficiency
+\fi
+
+\subsection{Transfer gains and source-domain contrasts}
+\label{sec:transfer-results}
+
+We summarize transfer relative to the track-matched random floor as
+\begin{equation}
+  \Delta_{r,f}^{(t)} =
+  F_{r,f}^{(t)}-F_{\mathrm{random},f}^{(t)},
+  \label{eq:transfer-gain}
+\end{equation}
+and the within-track SAR--optical contrast as
+\begin{equation}
+  \Delta_{\mathrm{SAR-opt},f}^{(t)} =
+  F_{\mathrm{SAR},f}^{(t)}-F_{\mathrm{optical},f}^{(t)}.
+  \label{eq:sar-optical-gap}
+\end{equation}
+Figure~\ref{fig:transfer-gains} shows these signed differences at each tested
+fraction.  Positive values of Eq.~\eqref{eq:transfer-gain} indicate an
+advantage over training the same architecture from random initialization;
+positive values of Eq.~\eqref{eq:sar-optical-gap} indicate an advantage for
+the SAR checkpoint over the optical checkpoint in that architecture.  These
+are within-track contrasts.  Agreement in the sign and fraction-wise pattern
+of Eq.~\eqref{eq:sar-optical-gap} across tracks is the evidence used to assess
+architecture generality; it is not treated as a pooled effect estimate.
+
+\ifdiagnosticdraft
+All transfer-gain panels and corresponding prose remain placeholders.  This
+prevents diagnostic V100 values from silently entering a final comparison.
+\else
+\paragraph{ViT domain contrast.}
+\FindingVitDomainContrast
+
+\paragraph{CNN domain contrast.}
+\FindingCnnDomainContrast
+
+\paragraph{Architecture generality.}
+\FindingArchitectureGeneralization
+\fi
+
+\subsection{External references and human-verified evaluation}
+\label{sec:final-results}
+
+The corrected YOLO26 and LocateAnything results provide external context in
+Table~\ref{tab:final-eval}.  Because their architectures, supervision, input
+construction, and operating procedures differ from the controlled arms, they
+remain off the curves and are not used in Eqs.~\eqref{eq:transfer-gain}
+or~\eqref{eq:sar-optical-gap}.
+
+After the 32-cell cohort and its checkpoint-bound thresholds are frozen, the
+models are evaluated once on the disjoint 50-scene human-verified set.
+Table~\ref{tab:final-eval} reports aggregate F1, dark-vessel recall, and
+near-shore F1, while Fig.~\ref{fig:final-slices} visualizes the two operational
+slices.  Dark-vessel recall is available only on this set; it is not
+back-filled from dev or test labels.  The two valid near-shore vessel targets
+in the 16-scene test set make test near-shore F1 a sparse diagnostic, so the
+human-verified set supplies the substantive coastal result.
+
+\ifdiagnosticdraft
+The once-only evaluation has not been substituted with V100 diagnostics, and
+no dark-vessel or near-shore finding is asserted in this build.
+\else
+\paragraph{Operational slices.}
+\FindingFinalSlices
+\fi
+
+\ifdiagnosticdraft
+\input{tables/result_placeholders}
+\input{tables/v100_diagnostic}
+\input{figures/result_placeholders}
+\else
+\input{generated/h100_core_test_table}
+\input{generated/h100_final_table}
+\input{generated/h100_result_figures}
+\fi

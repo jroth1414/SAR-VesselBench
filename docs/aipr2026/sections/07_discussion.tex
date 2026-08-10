@@ -1,0 +1,85 @@
+\section{Discussion}
+\label{sec:discussion}
+
+The controlled comparisons answer two linked questions.  First, within each
+architecture, does a downloaded SAR-domain initialization improve
+label-efficient vessel detection relative to optical remote-sensing,
+ImageNet, and random initialization?  Second, does the direction of that
+within-track contrast persist across ViT and CNN backbones?  We interpret
+Eqs.~\eqref{eq:transfer-gain} and~\eqref{eq:sar-optical-gap} in that order.
+Cross-track agreement strengthens an architecture-generality claim, but a
+difference between tracks cannot be attributed to architecture alone without
+the qualifications below.
+
+\ifdiagnosticdraft
+Because the corrected H100 cohort and once-only evaluation are pending, this
+draft does not select a winning initialization or claim a source-domain
+advantage.  Both a consistent SAR advantage and a null or architecture-specific
+pattern would answer the stated research question; the discussion will be
+completed from the guarded finding macros rather than from V100 diagnostics.
+\else
+\FindingArchitectureGeneralization
+\fi
+
+\subsection{Limits of the comparison}
+\label{sec:limitations}
+
+\paragraph{One fixed seed.}
+All 32 controlled cells use seed~0.  The curves are therefore point estimates,
+not estimates of run-to-run variability.  We report no error bars,
+confidence intervals, or statistical significance tests, and small
+fraction-wise differences should not be overinterpreted.
+
+\paragraph{In-region rather than geographic holdout.}
+The splits are disjoint by scene identifier, but Sentinel-1 revisits create
+geographic proximity across splits: 22 of 23 dev scenes fall within 32~km of
+a training scene, and 42 of the 50 human-verified scenes fall within 50~km of
+a training scene.  The reported metrics therefore characterize in-region
+generalization under scene-level separation, not transfer to wholly unseen
+geographies or acquisition regimes.
+
+\paragraph{Uneven slice support.}
+The test split contains 1,165 valid vessel targets but only two valid
+near-shore vessel targets.  Near-shore test F1 is correspondingly sparse.
+Dark-vessel labels are available only in the disjoint 50-scene
+human-verified set, which is evaluated once after model and threshold
+freezing.  Neither slice should be extrapolated beyond its observed support.
+
+\paragraph{Source domain is not isolated from pretraining recipe.}
+The ViT comparison pairs SatDINO, trained with a DINO objective on optical
+fMoW imagery, with SARMAE, trained by masked autoencoding on SAR-1M.  Their
+difference includes objective and corpus construction as well as modality.
+The CNN BigEarthNet Sentinel-2/Sentinel-1 pair is the cleaner modality
+contrast because model family, downstream source task, and dataset family are
+matched more closely.  The generic controls also have different histories:
+the ViT checkpoint uses supervised AugReg on ImageNet-1K, whereas the
+ConvNeXt-V2 checkpoint uses FCMAE pretraining followed by supervised
+ImageNet-1K fine-tuning.  We therefore make domain claims within architecture
+and treat cross-track agreement as replication of a pattern, not a pooled
+causal estimate of source modality.
+
+\paragraph{Size matching is not compute matching.}
+ViT-B/16 and ConvNeXt-V2-Base are approximately size matched, but their
+pretraining data volume, optimization compute, token or feature geometry, and
+training histories differ.  Their detector adapters are necessarily
+family-specific even though both emit the same stride-4 output geometry.
+Consequently, matched-role ViT--CNN gaps include architecture, adapter, and
+pretraining-history effects.  Measured fine-tuning GPU-hours and parameter
+counts make these differences visible but do not eliminate them.
+
+\paragraph{Numerical and hardware scope.}
+Every core cell uses one process per H100, micro-batch and effective batch 16,
+Lightning \texttt{32-true}, and disabled CUDA-matmul and cuDNN TF32.  This
+strict FP32 choice removes precision as a within-study variable and follows a
+non-finite mixed-precision diagnostic, but it does not establish that FP32 is
+universally preferable or that identical rankings would hold under another
+numerical format or hardware generation.
+
+\paragraph{External references are contextual.}
+YOLO26 and LocateAnything are valuable operational reference points, but they
+do not share the controlled backbones, pretraining roles, input handling, or
+training protocol.  They remain outside the core curves and cannot be used to
+infer the label savings or source-domain effect defined by this experiment.
+Finally, the study covers one dataset, one point-detector family, four tested
+label budgets, and one operating-seed realization; broader claims require
+additional sensors, regions, detectors, and seeds.

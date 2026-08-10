@@ -1,0 +1,5 @@
+build/*.aux
+build/*.blg
+build/*.log
+build/*.xdv
+build/*.synctex.gz

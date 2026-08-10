@@ -1,0 +1,115 @@
+\section{Data and Evaluation Protocol}
+\label{sec:data-evaluation}
+
+\subsection{xView3 Study Cohort}
+
+We use xView3-SAR Sentinel-1 ground-range-detected scenes with VH and VV
+polarizations at 10~m pixel spacing~\cite{paolo2022xview3}. Scene identifiers,
+not image chips, are the unit of partitioning. A frozen seed-0 cohort contains
+150 study scenes: 111 train, 23 development, and 16 test. Selection is
+stratified by coarse geographic region and shoreline presence. The split is
+immutable, and every data loader checks that scene membership is disjoint.
+The exact counts and evaluation supports are summarized in
+Table~\ref{tab:data-protocol}.
+
+\input{tables/data_protocol}
+
+The 111 training scenes produce 105,408 overlapping $800\times800$ chips.
+Training-time normalization statistics are computed from training scenes
+only: VH mean/standard deviation $-26.448/5.951$~dB and VV
+$-16.599/6.062$~dB. Each optimization sample is a shared $512\times512$ crop
+from these chips. The label-fraction subsets contain exactly 12, 28, 56, and
+111 scenes and are nested as in Eq.~\ref{eq:nesting}; no development, test, or
+human-verified scene appears in any training subset.
+
+A separate set of 50 human-verified scenes is designated
+\texttt{eval\_final}. It is disjoint from the 150-scene study cohort and is
+used once, only after the 32-cell cohort, model selection, operating
+thresholds, and analysis code are frozen. Human verification supplies the
+manual-label provenance needed for the dark-vessel slice. Consequently,
+dark-vessel recall is undefined for the ordinary development and test sets and
+is reported only on \texttt{eval\_final}.
+
+\subsection{Ground-Truth Contract}
+
+Evaluation uses the same target semantics as training. A row is a positive
+vessel point only when \texttt{is\_vessel} is true and confidence is HIGH or
+MEDIUM. A HIGH/MEDIUM row explicitly marked as non-vessel is background and is
+excluded from the positive set. LOW-confidence rows are retained as ignore
+points. Confidence and boolean fields are normalized and validated before
+constructing scorer inputs; an ambiguous HIGH/MEDIUM vessel flag is an error,
+not an implicit positive.
+
+This contract yields 517 positive vessels, 107 excluded HIGH/MEDIUM
+non-vessels, and 118 LOW-confidence ignores on the fixed eight-scene
+training-time development subset. The full 23-scene development set contains
+1,479/804/441 rows in those three categories, and the 16-scene test set
+contains 1,165/420/325. These support counts are pre-registered integrity
+checks: evaluation stops if regenerated counts differ. Training jobs can read
+only the 111 training scenes and fixed development eight; the test view is
+staged only after an immutable 32-cell cohort exists, and final-evaluation
+labels remain outside both views.
+
+An audit of an earlier V100 diagnostic campaign found that its development
+conversion had admitted HIGH/MEDIUM non-vessels as positives. The same audit
+found that held-out scripts could pair the selected \texttt{best.ckpt} with a
+threshold from the last development evaluation rather than the threshold
+selected for that checkpoint. Because development F1 controls early stopping
+and checkpoint selection, post-hoc rescoring cannot make those runs
+reportable. We corrected the caller-side ground-truth conversion without
+modifying the frozen scorer, bound each best-development operating point to an
+exact checkpoint hash and epoch, and require all 32 H100 cells to restart from
+scratch. V100 values are excluded from reportable tables, curves, summaries,
+and cross-hardware aggregates.
+
+\subsection{Checkpoint Selection and Held-Out Access}
+
+Every five epochs, each training run performs full-scene inference on the same
+fixed, sorted set of eight development scenes. Candidate detections are swept
+to select the score threshold that maximizes aggregate development F1. The
+complete operating point---epoch, threshold, precision, recall, counts, and
+candidate total---is stored together with the SHA-256 of the exact best
+checkpoint. Resume and requeue restore this state. A completed cell is invalid
+if checkpoint epoch, checkpoint digest, or operating-point record disagree.
+
+After all 32 corrected cells form one immutable cohort, the stored threshold
+is applied verbatim to the 16 test scenes. Test annotations are never used to
+retune a threshold, select a checkpoint, or change an analysis choice. The
+same checkpoint-bound threshold is subsequently used for the once-only
+human-verified evaluation. This separation makes the development set the sole
+source of model selection and operating-point calibration.
+
+\subsection{Metrics and Reporting}
+
+The frozen scorer performs one-to-one geographic matching within 200~m.
+Aggregate precision, recall, and F1 are computed from sums of true positives,
+false positives, and false negatives across scenes; the principal
+label-efficiency outcome is aggregate test F1 at the development-selected
+threshold. The scorer implementation and hash are held fixed across every
+arm.
+
+Two operational slices are evaluated on the human-verified set. Dark-vessel
+recall measures matched manually sourced vessel positives, which serve as the
+benchmark's proxy for vessels without matched AIS. We report recall, not a
+dark-vessel F1, because ``dark'' is a ground-truth attribute and is not defined
+for arbitrary false-positive predictions. Near-shore F1 uses vessel ground
+truth and unmatched predictions at or within 2~km of shore, so coastal false
+alarms count against the slice. The ordinary test split contains only two
+valid near-shore vessel positives; its near-shore F1 is therefore identified
+as a sparse diagnostic, while the registered operational near-shore result
+comes from the larger human-verified set.
+
+The main results report all eight four-point H100 curves, the transfer gains
+in Eq.~\ref{eq:transfer-gain}, the SAR--optical contrasts in
+Eq.~\ref{eq:sar-optical-gap}, measured epochs and GPU-hours, and the once-only
+verified metrics. We neither enforce monotonicity nor select favorable
+fractions post hoc. With one seed, these are point estimates without error
+bars, confidence intervals derived from seed variation, or significance
+claims.
+
+Finally, the frozen scene split is leakage-free but not a claim of geographic
+independence. A post-freeze proximity audit found that 22 of 23 development
+scenes lie within 32~km of a training scene and 42 of 50 human-verified scenes
+lie within 50~km of one. We therefore describe held-out performance as
+\emph{in-region generalization}; conclusions about transfer to new maritime
+regions require a separately designed geographic holdout.

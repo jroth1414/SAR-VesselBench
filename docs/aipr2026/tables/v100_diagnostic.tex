@@ -1,0 +1,28 @@
+\begin{table}[t]
+\caption{Completed legacy V100 development-score audit for all 32 core cells.
+Entries are the best development F1 values recorded during training under the
+superseded positive-target conversion. They are not held-out test or final
+metrics; because that conversion affected model selection and early stopping,
+the values are retained only as execution provenance and do not support the
+confirmatory comparisons in this paper. Columns give nested training-scene
+counts (10\%, 25\%, 50\%, and 100\% of the 111-scene training split).}
+\label{tab:v100-diagnostic}
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}llrrrr@{}}
+\toprule
+Track & Initialization & 12 & 28 & 56 & 111 \\
+\midrule
+ViT & Random & \DiagVitRandomTen & \DiagVitRandomTwentyFive & \DiagVitRandomFifty & \DiagVitRandomHundred \\
+ViT & Optical & \DiagVitOpticalTen & \DiagVitOpticalTwentyFive & \DiagVitOpticalFifty & \DiagVitOpticalHundred \\
+ViT & SAR & \DiagVitSarTen & \DiagVitSarTwentyFive & \DiagVitSarFifty & \DiagVitSarHundred \\
+ViT & ImageNet & \DiagVitImageNetTen & \DiagVitImageNetTwentyFive & \DiagVitImageNetFifty & \DiagVitImageNetHundred \\
+\midrule
+CNN & Random & \DiagCnnRandomTen & \DiagCnnRandomTwentyFive & \DiagCnnRandomFifty & \DiagCnnRandomHundred \\
+CNN & Optical & \DiagCnnOpticalTen & \DiagCnnOpticalTwentyFive & \DiagCnnOpticalFifty & \DiagCnnOpticalHundred \\
+CNN & SAR & \DiagCnnSarTen & \DiagCnnSarTwentyFive & \DiagCnnSarFifty & \DiagCnnSarHundred \\
+CNN & ImageNet & \DiagCnnImageNetTen & \DiagCnnImageNetTwentyFive & \DiagCnnImageNetFifty & \DiagCnnImageNetHundred \\
+\bottomrule
+\end{tabular}
+\end{table}
