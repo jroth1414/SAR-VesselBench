@@ -21,6 +21,7 @@ macro. Final tables and arithmetic should be generated from the machine-readable
 From this directory, use the pinned Tectonic executable available on the
 development host:
 
+    export LD_LIBRARY_PATH=/home/johnroth/miniconda3/envs/qac-core-env/lib:/home/johnroth/miniconda3/envs/giga/lib
     /home/johnroth/miniconda3/pkgs/tectonic-0.16.9-ha39f199_0/bin/tectonic \
       --keep-logs --keep-intermediates --outdir build paper.tex
 
