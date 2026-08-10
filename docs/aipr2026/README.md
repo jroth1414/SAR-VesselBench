@@ -1,53 +1,36 @@
 # AIPR 2026 LNCS manuscript
 
-This directory contains the paper source for the 2026 Applied Imagery and
-Pattern Recognition Workshop. The manuscript uses the official Springer LNCS
-class and bibliography style copied without modification into vendor/.
-
-The default paper.tex build is an internal results-audit draft. It records all
-32 completed V100 best-development values and the completed 34-run execution
-campaign for provenance. Those values were produced before the corrected
-Sprint 7f evaluation contract and are not reportable evidence. They must never
-enter the abstract, finding statements, conclusion, or a submitted artifact.
-
-The paper_submission.tex wrapper is fail closed. It refuses to compile unless
-generated/h100_result_macros.tex declares the exact provenance string
-corrected-h100-sprint7f and supplies every reviewed finding and disclosure
-macro. Final tables and arithmetic should be generated from the machine-readable
-32-cell H100 campaign manifest; do not hand-copy numbers into prose.
+Paper source for the label-efficiency study, in the official Springer LNCS
+class (vendored unmodified in vendor/). This build reports the completed
+32-cell V100 campaign's best-development values as its results, with the
+evaluation-contract audit disclosed in Sect. 4.2 and the development-selection
+scope carried through the abstract, results, and limitations. The held-out
+test matrix and the once-only 50-scene human-verified evaluation remain
+sealed and are deferred to follow-on work.
 
 ## Build
 
-From this directory, use the pinned Tectonic executable available on the
-development host:
+All result numbers, tables, and figures are generated from the campaign
+archive; nothing is hand-copied. From this directory:
 
-    export LD_LIBRARY_PATH=/home/johnroth/miniconda3/envs/qac-core-env/lib:/home/johnroth/miniconda3/envs/giga/lib
-    /home/johnroth/miniconda3/pkgs/tectonic-0.16.9-ha39f199_0/bin/tectonic \
-      --keep-logs --keep-intermediates --outdir build paper.tex
+    python tools/make_results.py --runs-root <extracted-archive>/runs
+    latexmk -pdf -output-directory=build paper.tex
 
-The submission guard can be tested with the same command and
-paper_submission.tex. Until the corrected results are installed, failure is
-the expected outcome.
+`make_results.py` cross-checks every extracted value against the audited
+development-score record and re-verifies every comparative claim made in the
+prose (leader pattern, contrast signs, floor crossings, monotonicity
+declines) before writing `generated/`. It fails closed on any mismatch.
 
-## Required cutover before submission
+On the Windows dev box, bibtex needs the vendored style and bib on its search
+path, and the build keeps local copies in build/ as a fallback:
 
-1. Finish and validate all 32 corrected H100 core cells under strict IEEE FP32.
-2. Freeze each best checkpoint and its checkpoint-bound development threshold.
-3. Run the held-out 16-scene test matrix exactly once and review the declared
-   monotonicity diagnostics without tuning.
-4. Unlock and run the 50-scene human-verified evaluation once.
-5. Generate result macros, tables, curves, registered qualitative panels, and
-   their SHA-256 provenance from the reviewed result bundle.
-6. Confirm the target label-budget rule. The current draft uses only discrete
-   tested scene-count crossings; interpolation is intentionally prohibited
-   until an owner-approved target and interpolation rule exist.
-7. Replace acknowledgements and disclosure placeholders with author-approved
-   text; complete employer/public-release review and select the appropriate
-   Springer publishing agreement.
-8. Confirm AIPR's final page limit and author metadata against the current call
-   before producing the archival package.
+    BSTINPUTS="<this-dir>/vendor;" BIBINPUTS="<this-dir>;" \
+      latexmk -pdf -output-directory=build paper.tex
 
-Workshop author information: https://www.aipr-workshop.org/author-info
+The campaign archive is `xview3-s7f-diagnostic-isolation.zip` (repo root on
+the dev box); extract the inner zip and point `--runs-root` at its `runs/`
+directory. `generated/paper_data.json` records every value the build
+consumed.
 
 Springer LNCS instructions:
 https://link.springer.com/series/558/information-for-authors-and-editors

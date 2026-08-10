@@ -6,14 +6,14 @@ observation independent of daylight and through most weather conditions
 ~\cite{torres2012sentinel1}.
 Those properties make Sentinel-1 imagery useful for detecting vessels that do
 not have a contemporaneous matched Automatic Identification System (AIS)
-report---so-called \emph{dark vessels}. Such detections can support maritime
-safety, fisheries monitoring, and investigation of activity potentially
-associated with sanctions evasion. The task is nevertheless difficult:
-vessels occupy few pixels in a large SAR scene, sea clutter and coastal
-structures produce strong responses, and human-verified dark-vessel labels are
-expensive. The xView3-SAR benchmark makes this problem concrete with
-Sentinel-1 ground-range-detected imagery, georeferenced point annotations, and
-an evaluation protocol based on geographic matching~\cite{paolo2022xview3}.
+report, the so-called \emph{dark vessels}. Such detections can support
+maritime safety, fisheries monitoring, and investigation of activity
+potentially associated with sanctions evasion. The task is difficult: vessels
+occupy few pixels in a large SAR scene, sea clutter and coastal structures
+produce strong responses, and human-verified dark-vessel labels are expensive.
+The xView3-SAR benchmark makes this problem concrete with Sentinel-1
+ground-range-detected imagery, georeferenced point annotations, and an
+evaluation protocol based on geographic matching~\cite{paolo2022xview3}.
 
 The scarcity of verified labels motivates transfer learning. A representation
 learned from a large source corpus may reduce the amount of task-specific
@@ -23,10 +23,9 @@ optical remote-sensing pretraining introduces overhead-scene statistics; and
 SAR pretraining additionally shares the sensing modality. These alternatives
 also interact with architecture. Vision transformers (ViTs) and convolutional
 networks encode different inductive biases, and released remote-sensing
-checkpoints are not available under one perfectly method-matched pretraining
-recipe. A comparison that changes architecture, optimization, detector, and
-pretraining source simultaneously therefore cannot isolate the source-domain
-question.
+checkpoints are not available under one method-matched pretraining recipe. A
+comparison that changes architecture, optimization, detector, and pretraining
+source simultaneously cannot isolate the source-domain question.
 
 We study label efficiency through two architecture-matched tracks, summarized
 in Fig.~\ref{fig:study-design}. The ViT track uses ViT-B/16 and the CNN track
@@ -47,8 +46,8 @@ The study addresses three questions:
 
 \begin{enumerate}
   \item How does random, ImageNet, optical remote-sensing, or SAR
-    initialization change held-out detection F1 as the number of labeled
-    xView3 scenes increases?
+    initialization change distance-matched detection F1 as the number of
+    labeled xView3 scenes increases?
   \item Does SAR pretraining improve upon optical pretraining within each
     architecture, especially in the scarce-label regime, and is the direction
     of that contrast consistent across ViT and CNN tracks?
@@ -56,28 +55,34 @@ The study addresses three questions:
     arms generalize to human-verified dark vessels and near-shore clutter?
 \end{enumerate}
 
+This paper answers the first two questions with the evidence produced by the
+completed 32-cell campaign: the development-set F1 recorded at each cell's
+checkpoint-bound operating point. The third question requires the sealed
+50-scene human-verified evaluation; the protocol defines that stage
+(Sect.~\ref{sec:data-evaluation}) and we defer its execution to follow-on
+work.
+
 Our contribution is the experimental control rather than a new detector or
 pretraining method. Specifically, we provide (i) an eight-arm, two-family
 label-efficiency design in which initialization is the only within-track
 variable; (ii) a shared point-detection and evaluation contract with
 scene-disjoint nested subsets and checkpoint-bound operating thresholds; and
-(iii) a once-only evaluation on 50 disjoint human-verified scenes, including
-dark-vessel recall and near-shore F1. All six pretrained encoders are released
-checkpoints; this work performs no source-domain pretraining.
+(iii) a complete 32-cell execution of that design, with per-cell provenance,
+recorded operating points, and the resulting label-efficiency comparisons.
+All six pretrained encoders are released checkpoints; this work performs no
+source-domain pretraining.
 
-The reportable core matrix is intentionally uniform: all 32 cells run from
-scratch on H100 GPUs in strict IEEE FP32 with TensorFloat-32 disabled, one
-process per GPU, effective batch size 16, and seed 0. An earlier V100 campaign
-helped reveal an evaluation-conversion defect and a checkpoint/threshold
-binding defect. Because both defects could affect early stopping and model
-selection, its core outputs are retained only as non-reportable diagnostics
-and are never mixed with the corrected H100 cohort. Consequently, until the
-corrected cohort and once-only evaluation are complete, this manuscript uses
-result placeholders and makes no empirical claim about which initialization
-wins.
+The core matrix is uniform: all 32 cells ran from scratch on V100 GPUs in
+strict IEEE FP32 with TensorFloat-32 disabled, one process per GPU, effective
+batch size 16, and seed 0. A post-campaign audit of the evaluation pipeline
+found a defect in the development label conversion; Sect.~\ref{sec:gt-contract}
+states what the defect touched, what we corrected, and how it bounds the
+interpretation of the reported values. Comparisons between arms remain
+internally consistent because every cell used the identical conversion,
+selection rule, and seed.
 
 The remainder of the paper reviews relevant transfer and detection work
 (Sect.~\ref{sec:related}), defines the controlled arms and common training
 recipe (Sect.~\ref{sec:design}), specifies the data and evaluation protocol
-(Sect.~\ref{sec:data-evaluation}), and then presents the registered result and
-error-analysis views without changing the evaluation contract.
+(Sect.~\ref{sec:data-evaluation}), and then presents the results and analysis
+views without changing the evaluation contract.

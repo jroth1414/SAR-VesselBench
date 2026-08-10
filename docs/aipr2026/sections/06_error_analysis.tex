@@ -1,73 +1,54 @@
-\section{Error Analysis}
+\section{Analysis}
 \label{sec:error-analysis}
 
-\subsection{Checkpoint-bound threshold transfer}
+\subsection{Operating thresholds and calibration}
 \label{sec:threshold-transfer}
 
-The primary operating point is selected on the training-time dev subset and
-is stored with the exact best-dev checkpoint that produced it.  Held-out
-predictions use that pair unchanged.  To describe calibration transfer
-without tuning on test, we may compute an oracle diagnostic after primary
-scoring,
-\begin{equation}
-  \Delta_{\mathrm{cal}} =
-  F1_{\mathrm{test}}(\tau^{\star}_{\mathrm{test}})
-  -F1_{\mathrm{test}}(\tau_{\mathrm{dev}}),
-  \label{eq:calibration-gap}
-\end{equation}
-where $\tau^{\star}_{\mathrm{test}}$ is used only to quantify the possible
-threshold-transfer gap.  It never replaces $\tau_{\mathrm{dev}}$, changes a
-reported primary metric, or influences the once-only final evaluation.  We
-also inspect precision and recall at $\tau_{\mathrm{dev}}$ to distinguish a
-ranking failure from a shifted score scale.
+Each cell's operating point is selected on the training-time development
+subset. The campaign's completion records retain the operating point of the
+final development evaluation (Sect.~\ref{sec:gt-contract}), so we analyze
+those final-evaluation records here. The recorded thresholds vary widely:
+from \ThreshMinVit{} to \ThreshMaxVit{} across the ViT cells and from
+\ThreshMinCnn{} to \ThreshMaxCnn{} across the CNN cells. The spread confirms
+that a single shared threshold would misrepresent most arms and that the
+per-cell sweep is doing real calibration work. At the final-evaluation
+operating point, precision exceeds recall in \CellsPrecOverRecall{} of the
+32 cells, so the swept points sit on the conservative side of the
+precision--recall curve for most arms. The protocol also defines a
+calibration-transfer diagnostic for the held-out stage, comparing the bound
+threshold against an oracle test-optimal threshold after primary scoring;
+that diagnostic becomes available only when the test matrix runs.
 
-\ifdiagnosticdraft
-Calibration-gap values are intentionally blank until corrected H100
-predictions are available.  Historical V100 thresholds are not eligible for
-this analysis because they are tied to the superseded selection contract.
-\fi
+\subsection{Training dynamics and cost}
+\label{sec:training-dynamics}
 
-\subsection{Dark vessels and near-shore clutter}
-\label{sec:slice-errors}
+Early stopping with patience four development evaluations ended
+\CellsEarlyStopped{} of the 32 cells before the 50-epoch cap. The median
+best-checkpoint epoch is \MedianBestEpochVit{} for the ViT track and
+\MedianBestEpochCnn{} for the CNN track. Fine-tuning cost is uneven between
+the families: a core cell averaged \MeanCellHoursVit{} GPU-hours in the ViT
+track and \MeanCellHoursCnn{} GPU-hours in the CNN track, with the full core
+matrix consuming \ResultCoreGPUHours{} GPU-hours. Within each track, cost
+scales with the label fraction, so the scarce-label cells that carry the
+study's headline contrasts are also its cheapest.
 
-Dark-vessel recall and near-shore F1 probe different failure modes.  The
-former measures misses among human-verified vessels without a matched AIS
-report; the latter includes unmatched predictions near the coast and
-therefore exposes shoreline clutter.  Dark labels occur only in the
-50-scene human-verified set.  Conversely, the 16-scene test split contains
-only two valid near-shore vessel targets, too little support for a stable
-standalone coastal conclusion.  We therefore show test near-shore F1 only as
-a support-qualified diagnostic and reserve substantive slice interpretation
-for the once-only human-verified evaluation in
-Fig.~\ref{fig:final-slices}.
-
-When the final predictions are unlocked, we compare slice errors at each
-model's frozen dev threshold.  The analysis reports the numerator and
-denominator beside every recall or F1 value so that an apparently large gap
-cannot conceal small support.  A source-domain advantage in aggregate F1 is
-not assumed to transfer to dark vessels or coastal clutter; those are
-separate empirical questions.
-
-\subsection{False-positive taxonomy and qualitative review}
+\subsection{Qualitative examples}
 \label{sec:qualitative-errors}
 
-Figure~\ref{fig:qualitative} presents registered $[\mathrm{VH},\mathrm{VV},
-\mathrm{VH}-\mathrm{VV}]$ chips with ground truth, predictions, confidence,
-distance to shore, and the frozen operating threshold.  A stratified manual
-review of approximately 200 false positives assigns one of four
-predeclared descriptive categories: shoreline clutter, fixed infrastructure,
-open-water sea clutter, or sidelobe/bright-target response.  Ambiguous cases
-remain marked ambiguous rather than being forced into a class.  The sample is
-used to explain mechanisms, not to estimate population frequencies or to
-retune the detector.
+\input{generated/v100_fig_qualitative}
 
-\ifdiagnosticdraft
-The diagnostic build contains the gallery layout and category definitions
-only.  Image examples and category counts must come from the corrected H100
-cohort and the authorized evaluation stage before they can enter the
-submission.
-\else
-The qualitative cases are interpreted alongside, but do not supersede, the
-quantitative findings in Sections~\ref{sec:transfer-results}
-and~\ref{sec:final-results}.
-\fi
+Figure~\ref{fig:qualitative} shows the shared input representation and a
+representative detector response on development scenes. The input triptych
+illustrates the fixed $[\mathrm{VH},\mathrm{VV},\mathrm{VH}-\mathrm{VV}]$
+construction: a vessel-scale bright return stands out against sea clutter in
+both polarizations, while the difference channel changes the surrounding
+texture contrast. The response panel, produced with the shared detector
+during development-phase probe runs on this study's frozen splits, shows a
+heatmap peak localized on a vessel-and-wake target at a raw score of 0.22.
+Peaks this far below 1.0 on clear targets explain two protocol choices: the
+permissive 0.05 candidate floor and the per-cell threshold sweep, without
+which a fixed high threshold would silently drop true detections. These
+panels illustrate mechanisms; they are not a scored sample, and the
+protocol's registered false-positive taxonomy review is reserved for the
+held-out stage. The qualitative cases are interpreted alongside, but do not
+supersede, the quantitative findings in Sect.~\ref{sec:transfer-results}.

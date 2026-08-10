@@ -24,92 +24,104 @@ human-verified scene appears in any training subset.
 
 A separate set of 50 human-verified scenes is designated
 \texttt{eval\_final}. It is disjoint from the 150-scene study cohort and is
-used once, only after the 32-cell cohort, model selection, operating
-thresholds, and analysis code are frozen. Human verification supplies the
-manual-label provenance needed for the dark-vessel slice. Consequently,
-dark-vessel recall is undefined for the ordinary development and test sets and
-is reported only on \texttt{eval\_final}.
+reserved for a single evaluation after model selection, operating thresholds,
+and analysis code are frozen. Human verification supplies the manual-label
+provenance needed for the dark-vessel slice. Consequently, dark-vessel recall
+is undefined for the ordinary development and test sets and can be reported
+only on \texttt{eval\_final}. That evaluation remains sealed at the time of
+writing.
 
 \subsection{Ground-Truth Contract}
+\label{sec:gt-contract}
 
-Evaluation uses the same target semantics as training. A row is a positive
-vessel point only when \texttt{is\_vessel} is true and confidence is HIGH or
-MEDIUM. A HIGH/MEDIUM row explicitly marked as non-vessel is background and is
-excluded from the positive set. LOW-confidence rows are retained as ignore
-points. Confidence and boolean fields are normalized and validated before
-constructing scorer inputs; an ambiguous HIGH/MEDIUM vessel flag is an error,
-not an implicit positive.
+The study defines one target-semantics contract for training and evaluation.
+A row is a positive vessel point only when \texttt{is\_vessel} is true and
+confidence is HIGH or MEDIUM. A HIGH/MEDIUM row explicitly marked as
+non-vessel is background and is excluded from the positive set.
+LOW-confidence rows are retained as ignore points. Confidence and boolean
+fields are normalized and validated before constructing scorer inputs; an
+ambiguous HIGH/MEDIUM vessel flag is an error, not an implicit positive.
 
-This contract yields 517 positive vessels, 107 excluded HIGH/MEDIUM
-non-vessels, and 118 LOW-confidence ignores on the fixed eight-scene
-training-time development subset. The full 23-scene development set contains
+Under this contract the fixed eight-scene training-time development subset
+contains 517 positive vessels, 107 excluded HIGH/MEDIUM non-vessels, and 118
+LOW-confidence ignores. The full 23-scene development set contains
 1,479/804/441 rows in those three categories, and the 16-scene test set
 contains 1,165/420/325. These support counts are pre-registered integrity
 checks: evaluation stops if regenerated counts differ. Training jobs can read
-only the 111 training scenes and fixed development eight; the test view is
-staged only after an immutable 32-cell cohort exists, and final-evaluation
+only the 111 training scenes and the fixed development eight; the test view
+is staged only after an immutable 32-cell cohort exists, and final-evaluation
 labels remain outside both views.
 
-An audit of an earlier V100 diagnostic campaign found that its development
-conversion had admitted HIGH/MEDIUM non-vessels as positives. The same audit
-found that held-out scripts could pair the selected \texttt{best.ckpt} with a
-threshold from the last development evaluation rather than the threshold
-selected for that checkpoint. Because development F1 controls early stopping
-and checkpoint selection, post-hoc rescoring cannot make those runs
-reportable. We corrected the caller-side ground-truth conversion without
-modifying the frozen scorer, bound each best-development operating point to an
-exact checkpoint hash and epoch, and require all 32 H100 cells to restart from
-scratch. V100 values are excluded from reportable tables, curves, summaries,
-and cross-hardware aggregates.
+A post-campaign audit found that the conversion used during training had
+admitted the HIGH/MEDIUM non-vessel rows as positives, so the development
+positive set seen by every run was 624 rows rather than 517. The audit also
+found that held-out scoring scripts could pair the selected
+\texttt{best.ckpt} with a threshold from the last development evaluation
+rather than the threshold selected for that checkpoint. We corrected the
+caller-side conversion without modifying the frozen scorer and bound each
+best-development operating point to an exact checkpoint hash and epoch. The
+values reported in this paper are the best-development F1 scores recorded
+during the campaign under the training-time conversion. Every cell used the
+identical conversion, selection rule, and seed, so comparisons between arms
+and fractions are internally consistent; the absolute values are not
+exchangeable with corrected-contract or held-out scores, and
+Sect.~\ref{sec:limitations} carries this limit into the interpretation.
 
-\subsection{Checkpoint Selection and Held-Out Access}
+\subsection{Checkpoint Selection and Development-Only Access}
 
 Every five epochs, each training run performs full-scene inference on the same
 fixed, sorted set of eight development scenes. Candidate detections are swept
-to select the score threshold that maximizes aggregate development F1. The
-complete operating point---epoch, threshold, precision, recall, counts, and
-candidate total---is stored together with the SHA-256 of the exact best
-checkpoint. Resume and requeue restore this state. A completed cell is invalid
-if checkpoint epoch, checkpoint digest, or operating-point record disagree.
+to select the score threshold that maximizes aggregate development F1, and the
+best value across evaluations is recorded with the retained checkpoint. The
+audit of Sect.~\ref{sec:gt-contract} also found that the campaign's completion
+records paired that checkpoint with the operating point of the final
+evaluation rather than the best one. The corrected protocol now stores the
+complete operating point (epoch, threshold, precision, recall, and counts)
+with the SHA-256 of the exact best checkpoint and invalidates any cell whose
+records disagree. For the campaign reported here, best-development F1 is well
+defined for every cell; threshold-dependent quantities are labeled as
+final-evaluation records wherever they appear
+(Sect.~\ref{sec:threshold-transfer}).
 
-After all 32 corrected cells form one immutable cohort, the stored threshold
-is applied verbatim to the 16 test scenes. Test annotations are never used to
-retune a threshold, select a checkpoint, or change an analysis choice. The
-same checkpoint-bound threshold is subsequently used for the once-only
-human-verified evaluation. This separation makes the development set the sole
-source of model selection and operating-point calibration.
+The development subset is therefore the sole source of model selection and
+operating-point calibration. The protocol's held-out stages apply each stored
+threshold verbatim, first to the 16 test scenes and then, once, to the
+human-verified set; test annotations are never used to retune a threshold,
+select a checkpoint, or change an analysis choice. Neither held-out stage has
+been executed for the campaign reported here, so this paper reports the
+development-selection scores and leaves the held-out matrix to follow-on
+work.
 
 \subsection{Metrics and Reporting}
 
 The frozen scorer performs one-to-one geographic matching within 200~m.
 Aggregate precision, recall, and F1 are computed from sums of true positives,
-false positives, and false negatives across scenes; the principal
-label-efficiency outcome is aggregate test F1 at the development-selected
-threshold. The scorer implementation and hash are held fixed across every
-arm.
+false positives, and false negatives across scenes. The principal
+label-efficiency outcome in this paper is aggregate development F1 at the
+checkpoint-bound operating threshold. The scorer implementation and hash are
+held fixed across every arm.
 
-Two operational slices are evaluated on the human-verified set. Dark-vessel
-recall measures matched manually sourced vessel positives, which serve as the
-benchmark's proxy for vessels without matched AIS. We report recall, not a
-dark-vessel F1, because ``dark'' is a ground-truth attribute and is not defined
-for arbitrary false-positive predictions. Near-shore F1 uses vessel ground
-truth and unmatched predictions at or within 2~km of shore, so coastal false
-alarms count against the slice. The ordinary test split contains only two
-valid near-shore vessel positives; its near-shore F1 is therefore identified
-as a sparse diagnostic, while the registered operational near-shore result
-comes from the larger human-verified set.
+The protocol defines two operational slices on the human-verified set.
+Dark-vessel recall measures matched manually sourced vessel positives, which
+serve as the benchmark's proxy for vessels without matched AIS. The protocol
+reports recall, not a dark-vessel F1, because ``dark'' is a ground-truth
+attribute and is not defined for arbitrary false-positive predictions.
+Near-shore F1 uses vessel ground truth and unmatched predictions at or within
+2~km of shore, so coastal false alarms count against the slice. The ordinary
+test split contains only two valid near-shore vessel positives, so the
+human-verified set supplies the substantive coastal measurement. Both slices
+await the sealed evaluation.
 
-The main results report all eight four-point H100 curves, the transfer gains
-in Eq.~\ref{eq:transfer-gain}, the SAR--optical contrasts in
-Eq.~\ref{eq:sar-optical-gap}, measured epochs and GPU-hours, and the once-only
-verified metrics. We neither enforce monotonicity nor select favorable
-fractions post hoc. With one seed, these are point estimates without error
-bars, confidence intervals derived from seed variation, or significance
-claims.
+The main results report all eight four-point development curves, the transfer
+gains in Eq.~\ref{eq:transfer-gain}, the SAR--optical contrasts in
+Eq.~\ref{eq:sar-optical-gap}, and measured epochs and GPU-hours. We neither
+enforce monotonicity nor select favorable fractions post hoc. With one seed,
+these are point estimates without error bars, confidence intervals derived
+from seed variation, or significance claims.
 
 Finally, the frozen scene split is leakage-free but not a claim of geographic
 independence. A post-freeze proximity audit found that 22 of 23 development
 scenes lie within 32~km of a training scene and 42 of 50 human-verified scenes
-lie within 50~km of one. We therefore describe held-out performance as
-\emph{in-region generalization}; conclusions about transfer to new maritime
-regions require a separately designed geographic holdout.
+lie within 50~km of one. We therefore describe performance as \emph{in-region
+generalization}; conclusions about transfer to new maritime regions require a
+separately designed geographic holdout.

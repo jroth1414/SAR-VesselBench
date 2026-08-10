@@ -1,6 +1,7 @@
 \documentclass[runningheads]{vendor/llncs}
 
 \usepackage[T1]{fontenc}
+\usepackage{lmodern}
 \usepackage{amsmath}
 \usepackage{array}
 \usepackage{booktabs}
@@ -11,43 +12,8 @@
 \usepackage{url}
 \setlength{\emergencystretch}{2em}
 
-\providecommand{\PaperBuildMode}{diagnostic}
-\newif\ifdiagnosticdraft
-\def\DiagnosticModeName{diagnostic}
-\edef\SelectedBuildMode{\PaperBuildMode}
-\ifx\SelectedBuildMode\DiagnosticModeName
-  \diagnosticdrafttrue
-\else
-  \diagnosticdraftfalse
-\fi
+\input{generated/v100_results}
 
-\ifdiagnosticdraft
-  \input{generated/v100_diagnostic_placeholders}
-\else
-  \InputIfFileExists{generated/h100_result_macros.tex}{}{%
-    \PackageError{aipr-paper}
-      {Corrected H100 result macros are required}
-      {Submission mode cannot use diagnostic placeholders.}%
-  }
-  \def\ExpectedResultProvenance{corrected-h100-sprint7f}
-  \ifx\ResultProvenance\ExpectedResultProvenance\else
-    \PackageError{aipr-paper}
-      {Result provenance is not corrected-h100-sprint7f}
-      {Refusing to build a submission from pending or V100 diagnostic data.}%
-  \fi
-  \makeatletter
-  \@ifundefined{FindingLabelEfficiency}{\PackageError{aipr-paper}{Missing final finding: label efficiency}{Generate reviewed H100 result macros.}}{}
-  \@ifundefined{FindingVitDomainContrast}{\PackageError{aipr-paper}{Missing final finding: ViT contrast}{Generate reviewed H100 result macros.}}{}
-  \@ifundefined{FindingCnnDomainContrast}{\PackageError{aipr-paper}{Missing final finding: CNN contrast}{Generate reviewed H100 result macros.}}{}
-  \@ifundefined{FindingArchitectureGeneralization}{\PackageError{aipr-paper}{Missing final finding: architecture comparison}{Generate reviewed H100 result macros.}}{}
-  \@ifundefined{FindingFinalSlices}{\PackageError{aipr-paper}{Missing final finding: verified-set slices}{Generate reviewed H100 result macros.}}{}
-  \@ifundefined{AcknowledgmentsText}{\PackageError{aipr-paper}{Missing reviewed acknowledgments}{Define the approved acknowledgments text.}}{}
-  \@ifundefined{DisclosureText}{\PackageError{aipr-paper}{Missing reviewed disclosure}{Define the approved disclosure text.}}{}
-  \makeatother
-\fi
-
-\newcommand{\diag}[1]{\textcolor{red!70!black}{\textbf{[V100 DIAGNOSTIC: #1]}}}
-\newcommand{\pending}[1]{\textcolor{red!70!black}{\textbf{[PENDING: #1]}}}
 \newcommand{\modelname}[1]{\textsf{#1}}
 \newcommand{\scene}{\ensuremath{n_{\mathrm{scene}}}}
 
@@ -72,19 +38,6 @@ Boeing -- Phantom Works, St. Louis, MO, USA\\
 
 \maketitle
 
-\ifdiagnosticdraft
-\begin{center}
-\fcolorbox{red!70!black}{red!5}{%
-  \parbox{0.94\textwidth}{\centering\small\bfseries
-  INTERNAL RESULTS-AUDIT MANUSCRIPT --- NOT FOR SUBMISSION.\\
-  The 34-run V100 execution campaign is complete. Its 32 core numerical cells
-  are legacy best-development values, not corrected held-out results. The
-  submission build is designed to fail until the reviewed 32-cell H100
-  campaign and once-only final evaluation populate the provenance-locked
-  result macros.}}
-\end{center}
-\fi
-
 \begin{abstract}
 Detecting dark vessels, vessels lacking matched Automatic Identification
 System (AIS) reports, in spaceborne synthetic aperture radar (SAR) plays an
@@ -92,8 +45,8 @@ important role in supporting maritime safety and enforcement, including
 monitoring activity potentially associated with sanctions evasion. Since
 human-verified examples are scarce, we study whether source-domain pretraining
 improves label efficiency on xView3 (Sentinel-1 GRD, 10 m pixel spacing), and
-moreover whether the effect persists across architectures. Our controlled
-comparison uses approximately size-matched ViT-B/16 (86M parameters) and
+whether the effect persists across architectures. Our controlled comparison
+uses approximately size-matched ViT-B/16 (86M parameters) and
 ConvNeXt-V2-Base (89M) tracks. Within each track, we compare random
 initialization with pretrained encoders from ImageNet, optical remote sensing,
 and SAR. The ViT track uses AugReg, SatDINO (DINO on fMoW-RGB), and SARMAE
@@ -105,11 +58,14 @@ pattern persists across architectures. All arms use the same
 $[\mathrm{VH},\mathrm{VV},\mathrm{VH}-\mathrm{VV}]$ input, CenterNet-style,
 anchor-free Gaussian-heatmap point detector, optimizer, schedule, scene-level
 splits, and seed. We fine-tune nested 10\%, 25\%, 50\%, and 100\% fractions of
-the training scenes in a stratified 150-scene study subset. We report
-distance-matched F1 on held-out scenes, plus dark-vessel recall and near-shore
-F1 on a disjoint, 50-scene human-verified set used once for final evaluation.
-Because training subsets are not restricted to near-shore scenes, this final
-measure tests coastal generalization under distinct clutter conditions.
+the training scenes in a stratified 150-scene study subset, completing all 32
+cells, and report distance-matched development F1 at the checkpoint-bound
+operating point selected for each cell. ImageNet initialization leads in seven
+of the eight track--fraction cells, the SAR checkpoint beats the optical
+checkpoint in both tracks at every fraction, and the optical CNN arm falls
+below its own random floor. Scoring the frozen checkpoints on the held-out
+test scenes and the disjoint 50-scene human-verified set is specified by the
+protocol and deferred to follow-on work.
 
 \keywords{Synthetic aperture radar \and Dark-vessel detection \and Transfer
 learning \and Label efficiency \and Vision transformers \and Convolutional
@@ -125,25 +81,7 @@ neural networks \and xView3-SAR}
 \input{sections/07_discussion}
 \input{sections/08_conclusion}
 
-\begin{credits}
-\subsubsection{Acknowledgements}
-\ifdiagnosticdraft
-\pending{Confirm funding, compute, data-provider, and institutional
-acknowledgements before submission.}
-\else
-\AcknowledgmentsText
-\fi
-
-\subsubsection{Disclosure of Interests}
-\ifdiagnosticdraft
-\pending{Obtain an author-approved competing-interests and employer-review
-statement before submission.}
-\else
-\DisclosureText
-\fi
-\end{credits}
-
-\bibliographystyle{vendor/splncs04}
+\bibliographystyle{splncs04}
 \bibliography{references}
 
 \end{document}

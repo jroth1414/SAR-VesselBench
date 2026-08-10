@@ -87,8 +87,8 @@ of $\pm1$~dB. No hyperparameter is selected per arm or label fraction.
 
 The core matrix uses micro-batch 16, accumulation 1, and therefore effective
 batch 16 for every cell. Each run fine-tunes the full encoder and detector
-using Lightning \texttt{32-true}. The canonical execution platform is one H100
-GPU per process with no distributed data parallelism. Both CUDA matrix-multiply
+using Lightning \texttt{32-true}. The execution platform is one V100 GPU per
+process with no distributed data parallelism. Both CUDA matrix-multiply
 and cuDNN TensorFloat-32 paths are disabled before model initialization and
 asserted again in training and inference subprocesses. Hardware identifiers,
 backend state, code and environment hashes, checkpoint hashes, parameter
@@ -111,11 +111,11 @@ these sets, then
 The same sets are used by all arms, so a fraction never changes which scenes
 one method sees relative to another.
 
-For track $t$, role $r$, and fraction $f$, let $F^{(t)}_{r,f}$ denote held-out
-F1 at the development-selected operating threshold. In addition to absolute
-F1, the planned analysis reports transfer over the corresponding same-track
-random floor and the within-track SAR--optical contrast at every registered
-fraction (Sect.~\ref{sec:transfer-results}). A non-monotone curve is reported
+For track $t$, role $r$, and fraction $f$, let $F^{(t)}_{r,f}$ denote
+development F1 at that cell's checkpoint-bound operating threshold. In
+addition to absolute F1, the analysis reports transfer over the corresponding
+same-track random floor and the within-track SAR--optical contrast at every
+registered fraction (Sect.~\ref{sec:transfer-results}). A non-monotone curve is reported
 as observed rather than smoothed or clamped. Any statement about ``labels
 saved'' additionally requires a prespecified target and interpolation rule.
 Until that rule is fixed, the manuscript reports the four-point curves and
