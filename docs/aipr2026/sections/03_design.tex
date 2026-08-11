@@ -70,7 +70,10 @@ mapped to scene coordinates. Distance non-maximum suppression uses 120~m, and
 the operating threshold is selected only on the designated development
 scenes as described in Sect.~\ref{sec:data-evaluation}. Whole scenes are tiled
 with $512\times512$ windows at stride 384 and predictions are reconciled in
-geographic coordinates.
+geographic coordinates. Figure~\ref{fig:detector} summarizes the shared path
+from input to matched detections.
+
+\input{figures/detector_pipeline}
 
 \subsection{Uniform Fine-Tuning Recipe}
 
@@ -121,9 +124,8 @@ saved'' additionally requires a prespecified target and interpolation rule.
 Until that rule is fixed, the manuscript reports the four-point curves and
 contrasts but does not invent an interpolated savings number.
 
-Two external systems---a COCO-pretrained YOLO26 detector and zero-shot
-LocateAnything-3B---provide context~\cite{jocher2026yolo26,wang2026locateanything}.
-Their architectures, supervision, and
-inference recipes are not controlled to match the core arms, so they are
-reported in a separate reference table and never placed on the controlled
-label-efficiency curves.
+Two external systems, a COCO-pretrained YOLO26 detector and zero-shot
+LocateAnything-3B, provide
+context~\cite{jocher2026yolo26,wang2026locateanything};
+Sect.~\ref{sec:final-results} reports them separately from the controlled
+curves.

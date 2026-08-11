@@ -20,9 +20,7 @@ Every value in Table~\ref{tab:core-results} is bound to one best-development
 checkpoint and the operating threshold selected with that checkpoint, under
 the single evaluation contract of Sect.~\ref{sec:gt-contract}. The reported
 metric is aggregate development F1 at that operating point. The two external
-references use their own published inference recipes and are reported
-separately in Table~\ref{tab:references}; they are never inserted into a
-controlled label-efficiency curve.
+references are reported separately in Table~\ref{tab:references}.
 
 \subsection{Label-efficiency curves}
 \label{sec:label-efficiency-results}
@@ -135,7 +133,8 @@ Sentinel-2 checkpoints share architecture, dataset family, and supervised
 task, this contrast is the study's cleanest modality effect.
 
 \paragraph{Architecture generality.}
-The SAR--optical contrast is positive in both tracks at all four fractions:
+The right panel of Fig.~\ref{fig:transfer-gains} plots the SAR--optical
+contrast for both tracks. It is positive in both tracks at all four fractions:
 eight of eight signed comparisons favor the SAR checkpoint. The magnitude is
 architecture-dependent, at or below \SarOptVitMaxAbs{} for ViT against
 \SarOptCnnHundredAbs{} to \SarOptCnnTwentyFiveAbs{} for the CNN. The direction of

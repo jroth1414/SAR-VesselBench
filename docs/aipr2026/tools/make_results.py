@@ -22,6 +22,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import numpy as np
 
 PAPER_DIR = Path(__file__).resolve().parent.parent
 REPO_DOCS_FIGURES = PAPER_DIR.parent / "figures"
@@ -101,6 +102,7 @@ def load_cell(runs, track, role, fpct):
         "recall": fm["last_dev"]["recall"],
         "gpu_hours": rp["gpu_hours"],
         "finished_utc": rp["finished_utc"],
+        "history": [(int(float(r["epoch"])), float(r["dev_f1"])) for r in evals],
     }
 
 
@@ -124,6 +126,9 @@ def num(name, value, signed=False):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--runs-root", type=Path, default=DEFAULT_RUNS)
+    ap.add_argument("--labels-train", type=Path, default=Path(r"D:\train.csv"))
+    ap.add_argument("--labels-val", type=Path, default=Path(r"D:\validation.csv"))
+    ap.add_argument("--splits", type=Path, default=PAPER_DIR.parent.parent / "data" / "splits.json")
     args = ap.parse_args()
     runs = args.runs_root
 
@@ -281,7 +286,8 @@ def main():
             "training subsets.}",
             "\\label{tab:core-results}",
             "\\centering",
-            "\\small",
+            "\\scriptsize",
+            "\\renewcommand{\\arraystretch}{0.95}",
             "\\setlength{\\tabcolsep}{5pt}",
             "\\begin{tabular}{@{}llrrrrr@{}}",
             "\\toprule",
@@ -343,7 +349,7 @@ def main():
     scenes_x = [s for _, _, s in FRACS]
     figs = PAPER_DIR / "figures"
 
-    fig, axes = plt.subplots(1, 2, figsize=(4.8, 2.35), sharey=True, layout="constrained")
+    fig, axes = plt.subplots(1, 2, figsize=(4.8, 1.85), sharey=True, layout="constrained")
     for ax, t in zip(axes, TRACKS):
         for r in ("Random", "Optical", "Sar", "ImageNet"):
             color, mark, ls = ROLE_STYLE[r]
@@ -370,30 +376,182 @@ def main():
     fig.savefig(figs / "label_efficiency.pdf")
     plt.close(fig)
 
-    fig, axes = plt.subplots(1, 2, figsize=(4.8, 2.35), sharey=True, layout="constrained")
-    for ax, t in zip(axes, TRACKS):
+    fig, axes = plt.subplots(1, 3, figsize=(4.8, 1.9), sharey=True, layout="constrained")
+    for ax, t in zip(axes[:2], TRACKS):
         for r in ("Optical", "Sar", "ImageNet"):
             color, mark, ls = ROLE_STYLE[r]
             ax.plot(
                 scenes_x,
                 [F(t, r, f) - F(t, "Random", f) for f, _, _ in FRACS],
                 marker=mark,
-                markersize=4,
-                linewidth=1.2,
+                markersize=3.5,
+                linewidth=1.1,
                 color=color,
                 label=ROLE_LABEL[r],
             )
-        ax.axhline(0.0, color="#555555", linewidth=0.8, linestyle="--")
-        ax.set_title("ViT-B/16" if t == "Vit" else "ConvNeXt-V2-Base", fontsize=8)
+        ax.set_title("ViT-B/16" if t == "Vit" else "ConvNeXt-V2-B", fontsize=8)
+    for t, ls, mark, fill in (("Vit", "--", "o", "none"), ("Cnn", "-", "o", "#0b0b0b")):
+        axes[2].plot(
+            scenes_x,
+            [F(t, "Sar", f) - F(t, "Optical", f) for f, _, _ in FRACS],
+            marker=mark,
+            markersize=3.5,
+            linewidth=1.1,
+            linestyle=ls,
+            color="#0b0b0b",
+            markerfacecolor=fill,
+            label=TRACK_LABEL[t],
+        )
+    axes[2].set_title("SAR $-$ optical", fontsize=8)
+    axes[2].legend(loc="upper right", fontsize=6.5, handlelength=1.6)
+    for ax in axes:
+        ax.axhline(0.0, color="#555555", linewidth=0.8, linestyle=":")
         ax.set_xticks(scenes_x)
-        ax.set_xlabel("Training scenes")
+        ax.tick_params(axis="x", labelsize=6.5)
         ax.grid(True, axis="y")
         ax.set_axisbelow(True)
         for side in ("top", "right"):
             ax.spines[side].set_visible(False)
-    axes[0].set_ylabel("$\\Delta$F1 vs. random floor")
-    axes[1].legend(loc="upper right", fontsize=7, handlelength=1.8)
+    axes[1].set_xlabel("Training scenes")
+    axes[0].set_ylabel("$\\Delta$F1")
+    axes[1].legend(loc="upper right", fontsize=6.5, handlelength=1.6)
     fig.savefig(figs / "transfer_gains.pdf")
+    plt.close(fig)
+
+    # operating points: PR scatter with iso-F1, threshold strip, cost scatter
+    track_fill = {"Vit": True, "Cnn": False}
+    track_marker = {"Vit": "o", "Cnn": "s"}
+    fig, axes = plt.subplots(1, 3, figsize=(4.8, 1.8), layout="constrained")
+    ax = axes[0]
+    rec = [c["recall"] for c in cells.values()]
+    prc = [c["precision"] for c in cells.values()]
+    lo = min(min(rec), min(prc)) - 0.03
+    hi = max(max(rec), max(prc)) + 0.02
+    rr = np.linspace(lo, hi, 300)
+    for fval in (0.7, 0.8, 0.9):
+        pp = fval * rr / np.maximum(2 * rr - fval, 1e-9)
+        m = (rr > fval / 2 + 0.02) & (pp >= lo) & (pp <= hi)
+        ax.plot(rr[m], pp[m], color="#e1e0d9", linewidth=0.7, zorder=1)
+        if m.any():
+            ax.annotate(f"F1={fval}", (rr[m][-1], pp[m][-1]), fontsize=5,
+                        color="#898781", ha="right", va="bottom")
+    ax.plot([lo, hi], [lo, hi], color="#c3c2b7", linewidth=0.6, linestyle=":", zorder=1)
+    for t in TRACKS:
+        for r0 in ROLES:
+            color = ROLE_STYLE[r0][0]
+            xs = [cells[(t, r0, f)]["recall"] for f, _, _ in FRACS]
+            ys = [cells[(t, r0, f)]["precision"] for f, _, _ in FRACS]
+            ax.scatter(xs, ys, s=12, marker=track_marker[t], zorder=3,
+                       facecolors=color if track_fill[t] else "none",
+                       edgecolors=color, linewidths=0.9)
+    ax.set_xlabel("Recall")
+    ax.set_ylabel("Precision")
+    ax.set_xlim(lo, hi)
+    ax.set_ylim(lo, hi)
+
+    ax = axes[1]
+    for i, r0 in enumerate(ROLES):
+        color = ROLE_STYLE[r0][0]
+        for t, dx in (("Vit", -0.17), ("Cnn", 0.17)):
+            ys = [cells[(t, r0, f)]["threshold"] for f, _, _ in FRACS]
+            ax.scatter([i + dx] * len(ys), ys, s=12, marker=track_marker[t],
+                       facecolors=color if track_fill[t] else "none",
+                       edgecolors=color, linewidths=0.9)
+    ax.set_xticks(range(len(ROLES)))
+    ax.set_xticklabels(["Rand", "Opt", "SAR", "IN"], fontsize=6.5)
+    ax.set_ylabel("Threshold")
+    ax.set_xlim(-0.6, len(ROLES) - 0.4)
+
+    ax = axes[2]
+    for t in TRACKS:
+        for r0 in ROLES:
+            color = ROLE_STYLE[r0][0]
+            xs = [cells[(t, r0, f)]["gpu_hours"] for f, _, _ in FRACS]
+            ys = [cells[(t, r0, f)]["f1"] for f, _, _ in FRACS]
+            ax.scatter(xs, ys, s=12, marker=track_marker[t],
+                       facecolors=color if track_fill[t] else "none",
+                       edgecolors=color, linewidths=0.9)
+    ax.set_xlabel("GPU-hours")
+    ax.set_ylabel("Dev F1")
+    for ax in axes:
+        ax.grid(True, linewidth=0.4)
+        ax.set_axisbelow(True)
+        ax.tick_params(labelsize=6.5)
+        for side in ("top", "right"):
+            ax.spines[side].set_visible(False)
+    fig.savefig(figs / "operating_points.pdf")
+    plt.close(fig)
+
+    # training dynamics: dev-F1 evaluation history, scarce vs full budgets
+    fig, axes = plt.subplots(1, 2, figsize=(4.8, 1.85), sharey=True, layout="constrained")
+    for ax, t in zip(axes, TRACKS):
+        for r0 in ROLES:
+            color = ROLE_STYLE[r0][0]
+            for fpct, ls in ((10, "-"), (100, ":")):
+                h = cells[(t, r0, fpct)]["history"]
+                ax.plot([e for e, _ in h], [v for _, v in h], color=color,
+                        linestyle=ls, linewidth=1.0)
+                be, bf = max(h, key=lambda p: p[1])
+                ax.plot([be], [bf], marker=".", color=color, markersize=5)
+        ax.set_title("ViT-B/16" if t == "Vit" else "ConvNeXt-V2-Base", fontsize=8)
+        ax.set_xlabel("Epoch")
+        ax.grid(True, axis="y")
+        ax.set_axisbelow(True)
+        ax.tick_params(labelsize=6.5)
+        for side in ("top", "right"):
+            ax.spines[side].set_visible(False)
+    axes[0].set_ylabel("Development F1")
+    from matplotlib.lines import Line2D
+
+    axes[0].legend(
+        handles=[Line2D([], [], color=ROLE_STYLE[r0][0], linewidth=1.2,
+                        label=ROLE_LABEL[r0]) for r0 in ROLES],
+        loc="lower right", fontsize=6.5, handlelength=1.6)
+    axes[1].legend(
+        handles=[Line2D([], [], color="#0b0b0b", linestyle="-", label="12 scenes"),
+                 Line2D([], [], color="#0b0b0b", linestyle=":", label="111 scenes")],
+        loc="lower right", fontsize=6.5, handlelength=1.6)
+    fig.savefig(figs / "training_dynamics.pdf")
+    plt.close(fig)
+
+    # scene map: study-cohort geographic distribution
+    def scene_centroids(csv_path):
+        acc = {}
+        with open(csv_path, newline="") as fh:
+            for row in csv.DictReader(fh):
+                try:
+                    la, lo_ = float(row["detect_lat"]), float(row["detect_lon"])
+                except (ValueError, KeyError):
+                    continue
+                acc.setdefault(row["scene_id"], []).append((la, lo_))
+        return {s: (median(x for x, _ in v), median(y for _, y in v)) for s, v in acc.items()}
+
+    splits = json.loads(args.splits.read_text())["splits"]
+    cent_train = scene_centroids(args.labels_train)
+    cent_val = scene_centroids(args.labels_val)
+    split_style = [
+        ("train", cent_train, "#c3c2b7", ".", 8, "Train (111)"),
+        ("dev", cent_train, "#4a3aa7", "^", 14, "Development (23)"),
+        ("test", cent_train, "#e34948", "s", 14, "Test (16)"),
+        ("eval_final", cent_val, "#008300", "o", 14, "Verified final (50)"),
+    ]
+    fig, ax = plt.subplots(figsize=(4.8, 1.55), layout="constrained")
+    for key, cent, color, mark, size, label in split_style:
+        missing = [s for s in splits[key] if s not in cent]
+        if missing:
+            fail(f"scene map: no label rows for {key} scenes {missing[:3]}")
+        pts = [cent[s] for s in splits[key]]
+        ax.scatter([lo_ for _, lo_ in pts], [la for la, _ in pts], s=size,
+                   marker=mark, color=color, label=label, linewidths=0)
+    ax.set_xlabel("Longitude ($^\\circ$)")
+    ax.set_ylabel("Latitude ($^\\circ$)")
+    ax.grid(True, linewidth=0.4)
+    ax.set_axisbelow(True)
+    ax.tick_params(labelsize=6.5)
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
+    ax.legend(loc="best", fontsize=6.5, ncols=2, handletextpad=0.2, columnspacing=0.8)
+    fig.savefig(figs / "scene_map.pdf")
     plt.close(fig)
 
     for img in ("input_triptych.png", "heatmap_overlay.png"):
@@ -416,9 +574,11 @@ ribbon is drawn.}
 \begin{figure}[t]
 \centering
 \includegraphics[width=\textwidth]{figures/transfer_gains}
-\caption{Transfer gain over the track-matched random floor
+\caption{Left, center: transfer gain over the track-matched random floor
 (Eq.~\ref{eq:transfer-gain}) at each tested budget. The optical CNN arm is
-negative at every fraction; the ViT arms compress near zero.}
+negative at every fraction; the ViT arms compress near zero. Right: the
+SAR--optical contrast (Eq.~\ref{eq:sar-optical-gap}) for both tracks; the
+sign agrees at every fraction while the magnitude is architecture-dependent.}
 \label{fig:transfer-gains}
 \end{figure}
 """
@@ -427,8 +587,8 @@ negative at every fraction; the ViT arms compress near zero.}
     fig_qual = r"""% GENERATED by tools/make_results.py -- do not edit by hand.
 \begin{figure}[t]
 \centering
-\includegraphics[width=\textwidth]{figures/input_triptych}\\[4pt]
-\includegraphics[width=\textwidth]{figures/heatmap_overlay}
+\includegraphics[width=0.72\textwidth]{figures/input_triptych}\\[3pt]
+\includegraphics[width=0.72\textwidth]{figures/heatmap_overlay}
 \caption{Qualitative views from development scenes. Top: the fixed
 three-channel input, identical for every arm. Bottom: a vessel-and-wake
 target and the shared detector's heatmap response from a development-phase
@@ -439,6 +599,46 @@ sweep. Illustrative only; not a scored sample.}
 \end{figure}
 """
     (gen / "v100_fig_qualitative.tex").write_text(fig_qual, newline="\n")
+
+    fig_op = r"""% GENERATED by tools/make_results.py -- do not edit by hand.
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{figures/operating_points}
+\caption{Final-evaluation operating points for all 32 cells (filled circles:
+ViT; open squares: CNN; colors as in Fig.~\ref{fig:label-efficiency}). Left:
+precision--recall positions with iso-F1 contours; most cells sit above the
+dotted $P=R$ diagonal. Center: swept threshold by initialization role.
+Right: best-development F1 against measured GPU-hours per cell.}
+\label{fig:operating-points}
+\end{figure}
+"""
+    (gen / "v100_fig_operating_points.tex").write_text(fig_op, newline="\n")
+
+    fig_dyn = r"""% GENERATED by tools/make_results.py -- do not edit by hand.
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{figures/training_dynamics}
+\caption{Development-F1 evaluation history for the smallest (12 scenes,
+solid) and largest (111 scenes, dotted) budgets, with the best-checkpoint
+epoch marked. Pretrained arms separate from the random floor within the
+first evaluations; the CNN random floor climbs for the full 50 epochs.}
+\label{fig:training-dynamics}
+\end{figure}
+"""
+    (gen / "v100_fig_training_dynamics.tex").write_text(fig_dyn, newline="\n")
+
+    fig_map = r"""% GENERATED by tools/make_results.py -- do not edit by hand.
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{figures/scene_map}
+\caption{Scene centroids of the frozen splits, computed from the label
+records. Sentinel-1 revisits of the same fishing regions place development,
+test, and verified scenes near training scenes, which is why
+Sect.~\ref{sec:data-evaluation} reports in-region generalization.}
+\label{fig:scene-map}
+\end{figure}
+"""
+    (gen / "v100_fig_scene_map.tex").write_text(fig_map, newline="\n")
 
     # machine-readable dump for provenance
     dump = {

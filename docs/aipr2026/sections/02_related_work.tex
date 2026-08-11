@@ -12,8 +12,7 @@ annotations and evaluates geographically matched detections rather than box
 overlap~\cite{paolo2022xview3}. Its dark-vessel objective also distinguishes
 the operational question from generic ship detection: the relevant final
 slice consists of human-verified vessels lacking a matched AIS report. We use
-the benchmark's point geometry directly and reserve the human-verified scenes
-for a single final evaluation.
+the benchmark's point geometry directly.
 
 Many SAR ship detectors are built around bounding boxes. Boxes are useful when
 extent is reliably annotated, but deriving them from point labels would add a
@@ -72,9 +71,7 @@ Label-efficiency studies further require more than reporting performance at a
 single fraction. Non-nested samples can confound fraction with scene choice,
 while chip-level splits can leak adjacent content across train and evaluation
 sets. We use one frozen, nested sequence of scene sets and report the full
-four-point curve for each arm. Because the study uses a single fixed seed, the
-curves are point estimates; we do not draw uncertainty bands, estimate seed
-variance, or claim statistical significance. This constraint favors careful
-effect reporting (absolute F1, improvement over the within-track random
-floor, and the SAR-minus-optical contrast at each registered fraction) over
-post-hoc significance language.
+four-point curve for each arm. The study uses a single fixed seed, so we
+favor careful effect reporting (absolute F1, improvement over the
+within-track random floor, and the SAR-minus-optical contrast at each
+registered fraction) over post-hoc significance language.

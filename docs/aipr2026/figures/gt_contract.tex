@@ -1,0 +1,25 @@
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[font=\scriptsize,
+  box/.style={draw, rounded corners=1pt, align=center, inner sep=2.5pt}]
+\node[box] (rows) {Annotation rows\\ (dev-8 scenes)};
+\node[box] (pos) at ($(rows.east)+(24mm,9mm)$) [anchor=west]
+  {517 positives\\ vessel, HIGH/MEDIUM};
+\node[box] (neg) at ($(rows.east)+(24mm,0)$) [anchor=west]
+  {107 background\\ non-vessel, HIGH/MEDIUM};
+\node[box] (ign) at ($(rows.east)+(24mm,-9mm)$) [anchor=west]
+  {118 ignore\\ LOW confidence};
+\draw[->] (rows.east) -- (pos.west);
+\draw[->] (rows.east) -- (neg.west);
+\draw[->] (rows.east) -- (ign.west);
+\draw[->, red!70!black, dashed]
+  (neg.east) to[bend right=55] (pos.east);
+\node[align=left, font=\tiny, red!70!black, anchor=west]
+  at ($(pos.north west)+(0mm,3mm)$)
+  {superseded conversion admitted\\ these as positives (624 total; audited)};
+\end{tikzpicture}
+\caption{The ground-truth contract on the training-time development subset.
+The audited training-time conversion (dashed) admitted the 107 HIGH/MEDIUM
+non-vessels as positives (624 total).}
+\label{fig:gt-contract}
+\end{figure}

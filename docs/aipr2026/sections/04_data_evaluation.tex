@@ -10,9 +10,11 @@ not image chips, are the unit of partitioning. A frozen seed-0 cohort contains
 stratified by coarse geographic region and shoreline presence. The split is
 immutable, and every data loader checks that scene membership is disjoint.
 The exact counts and evaluation supports are summarized in
-Table~\ref{tab:data-protocol}.
+Table~\ref{tab:data-protocol}, and Fig.~\ref{fig:scene-map} shows the scene
+centroids of all four partitions.
 
 \input{tables/data_protocol}
+\input{generated/v100_fig_scene_map}
 
 The 111 training scenes produce 105,408 overlapping $800\times800$ chips.
 Training-time normalization statistics are computed from training scenes
@@ -28,8 +30,7 @@ protocol reserves it for a single evaluation after we freeze model selection,
 operating thresholds, and analysis code. Human verification supplies the manual-label
 provenance needed for the dark-vessel slice. Consequently, dark-vessel recall
 is undefined for the ordinary development and test sets and can be reported
-only on \texttt{eval\_final}. That evaluation remains sealed at the time of
-writing.
+only on \texttt{eval\_final}.
 
 \subsection{Ground-Truth Contract}
 \label{sec:gt-contract}
@@ -41,6 +42,10 @@ non-vessel is background and is excluded from the positive set.
 LOW-confidence rows are retained as ignore points. Confidence and boolean
 fields are normalized and validated before constructing scorer inputs; an
 ambiguous HIGH/MEDIUM vessel flag is an error, not an implicit positive.
+Figure~\ref{fig:gt-contract} summarizes the contract and the audit finding
+described below.
+
+\input{figures/gt_contract}
 
 Under this contract the fixed eight-scene training-time development subset
 contains 517 positive vessels, 107 excluded HIGH/MEDIUM non-vessels, and 118
@@ -115,9 +120,7 @@ await the sealed evaluation.
 The main results report all eight four-point development curves, the transfer
 gains in Eq.~\ref{eq:transfer-gain}, the SAR--optical contrasts in
 Eq.~\ref{eq:sar-optical-gap}, and measured epochs and GPU-hours. We neither
-enforce monotonicity nor select favorable fractions post hoc. With one seed,
-these are point estimates without error bars, confidence intervals derived
-from seed variation, or significance claims.
+enforce monotonicity nor select favorable fractions post hoc.
 
 Finally, the frozen scene split is leakage-free but not a claim of geographic
 independence. A post-freeze proximity audit found that 22 of 23 development

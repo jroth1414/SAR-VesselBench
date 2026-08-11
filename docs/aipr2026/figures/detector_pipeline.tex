@@ -1,0 +1,28 @@
+\begin{figure}[t]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[font=\scriptsize,
+  box/.style={draw, rounded corners=1pt, align=center, inner sep=2.5pt,
+              minimum height=7.5mm}]
+\node[box] (inp) {$[\mathrm{VH},\mathrm{VV},\mathrm{VH{-}VV}]$\\ $512^2$};
+\node[box] (vit) at ($(inp.east)+(10mm,6.5mm)$) [anchor=west]
+  {ViT-B/16\\ stride 16};
+\node[box] (cnn) at ($(inp.east)+(10mm,-6.5mm)$) [anchor=west]
+  {ConvNeXt-V2-B\\ stride 32, $+$up};
+\node[box] (head) at ($(inp.east)+(36mm,0)$) [anchor=west]
+  {256-ch head\\ $128^2$ heatmap};
+\node[box, right=3mm of head] (dec) {peaks $\geq 0.05$\\ 120 m NMS};
+\node[box, right=3mm of dec] (op) {$\tau_{\mathrm{dev}}$\\ dev-selected};
+\node[box, right=3mm of op] (mat) {200 m\\ geo match};
+\draw[->] (inp.east) -- (vit.west);
+\draw[->] (inp.east) -- (cnn.west);
+\draw[->] (vit.east) -- (head.west);
+\draw[->] (cnn.east) -- (head.west);
+\draw[->] (head) -- (dec);
+\draw[->] (dec) -- (op);
+\draw[->] (op) -- (mat);
+\end{tikzpicture}}
+\caption{The shared detection path: only the encoder differs by track; one
+head, decode rule, dev-selected threshold, and frozen scorer serve every arm.}
+\label{fig:detector}
+\end{figure}

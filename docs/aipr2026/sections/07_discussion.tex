@@ -1,11 +1,10 @@
 \section{Discussion}
 \label{sec:discussion}
 
-The controlled comparisons answer two linked questions. First, within each
-architecture, does a downloaded SAR-domain initialization improve
-label-efficient vessel detection relative to optical remote-sensing,
-ImageNet, and random initialization? Second, does the direction of that
-within-track contrast persist across ViT and CNN backbones?
+The controlled comparisons answer two linked questions: whether a downloaded
+SAR-domain initialization improves label-efficient vessel detection within
+each architecture, and whether the direction of that within-track contrast
+persists across ViT and CNN backbones.
 
 On the first question, the campaign's development evidence splits the answer
 by comparison. Against optical pretraining, the SAR checkpoint wins in both
@@ -41,10 +40,9 @@ the audit later corrected (Sect.~\ref{sec:gt-contract}), with per-cell
 threshold sweeps on the same subset that drives early stopping. They are
 selection scores, biased upward relative to held-out scoring, and the
 declining ViT curves show the selection surface is not a monotone function
-of training-set size. Every cell shares the identical conversion, selection
-rule, and seed, so the between-arm comparisons and signed contrasts are
-internally consistent; the absolute values are not exchangeable with
-corrected-contract held-out scores. The frozen checkpoints and the staged
+of training-set size. Section~\ref{sec:gt-contract} explains why between-arm
+comparisons remain internally consistent while the absolute values are not
+exchangeable with held-out scores. The frozen checkpoints and the staged
 test view make the deferred held-out matrix a mechanical follow-on step.
 
 \paragraph{One fixed seed.}

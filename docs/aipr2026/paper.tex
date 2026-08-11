@@ -9,8 +9,13 @@
 \usepackage{microtype}
 \usepackage{tabularx}
 \usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{calc,positioning}
 \usepackage{url}
 \setlength{\emergencystretch}{2em}
+\renewcommand{\topfraction}{0.9}
+\renewcommand{\textfraction}{0.07}
+\renewcommand{\floatpagefraction}{0.7}
 
 \input{generated/v100_results}
 
@@ -82,6 +87,7 @@ neural networks \and xView3-SAR}
 \input{sections/08_conclusion}
 
 \bibliographystyle{splncs04}
-\bibliography{references}
+{\small
+\bibliography{references}}
 
 \end{document}

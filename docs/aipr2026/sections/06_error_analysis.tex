@@ -7,22 +7,29 @@
 Each cell's operating point is selected on the training-time development
 subset. The campaign's completion records retain the operating point of the
 final development evaluation (Sect.~\ref{sec:gt-contract}), so we analyze
-those final-evaluation records here. The recorded thresholds vary widely:
-from \ThreshMinVit{} to \ThreshMaxVit{} across the ViT cells and from
+those final-evaluation records here. Figure~\ref{fig:operating-points} shows
+all 32 of them. The recorded thresholds vary widely (center panel): from
+\ThreshMinVit{} to \ThreshMaxVit{} across the ViT cells and from
 \ThreshMinCnn{} to \ThreshMaxCnn{} across the CNN cells. The spread confirms
 that a single shared threshold would misrepresent most arms and that the
 per-cell sweep is doing real calibration work. At the final-evaluation
 operating point, precision exceeds recall in \CellsPrecOverRecall{} of the
-32 cells, so the swept points sit on the conservative side of the
-precision--recall curve for most arms. The protocol also defines a
+32 cells (left panel), so the swept points sit on the conservative side of
+the precision--recall curve for most arms. The protocol also defines a
 calibration-transfer diagnostic for the held-out stage, comparing the bound
 threshold against an oracle test-optimal threshold after primary scoring;
 that diagnostic becomes available only when the test matrix runs.
 
+\input{generated/v100_fig_operating_points}
+
 \subsection{Training dynamics and cost}
 \label{sec:training-dynamics}
 
-Early stopping (patience of four development evaluations) ended
+Figure~\ref{fig:training-dynamics} traces the development-F1 evaluation
+history for the smallest and largest budgets. The pretrained CNN arms open a
+large gap in the first evaluations and hold it, while the CNN random floor
+climbs for the full schedule; the ViT arms bunch together early. Early
+stopping (patience of four development evaluations) ended
 \CellsEarlyStopped{} of the 32 cells before the 50-epoch cap. The median
 best-checkpoint epoch is \MedianBestEpochVit{} for the ViT track and
 \MedianBestEpochCnn{} for the CNN track. Fine-tuning cost is uneven between
@@ -30,7 +37,11 @@ the families: a core cell averaged \MeanCellHoursVit{} GPU-hours in the ViT
 track and \MeanCellHoursCnn{} GPU-hours in the CNN track, with the full core
 matrix consuming \ResultCoreGPUHours{} GPU-hours. Within each track, cost
 scales with the label fraction, so the scarce-label cells that carry the
-study's headline contrasts are also its cheapest.
+study's headline contrasts are also its cheapest; the right panel of
+Fig.~\ref{fig:operating-points} shows the resulting cost--performance
+layout, with the 12-scene SAR and ImageNet cells in its upper left.
+
+\input{generated/v100_fig_training_dynamics}
 
 \subsection{Qualitative examples}
 \label{sec:qualitative-errors}
@@ -48,7 +59,7 @@ heatmap peak localized on a vessel-and-wake target at a raw score of 0.22.
 Peaks this far below 1.0 on clear targets explain two protocol choices: the
 permissive 0.05 candidate floor and the per-cell threshold sweep, without
 which a fixed high threshold would silently drop true detections. These
-panels illustrate mechanisms; they are not a scored sample, and the
-protocol's registered false-positive taxonomy review is reserved for the
-held-out stage. We interpret the qualitative cases alongside, not above, the quantitative
+panels illustrate mechanisms, not a scored sample; the registered
+false-positive taxonomy review is reserved for the held-out stage. We
+interpret the qualitative cases alongside, not above, the quantitative
 findings in Sect.~\ref{sec:transfer-results}.
