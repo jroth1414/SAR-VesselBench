@@ -8,14 +8,13 @@ persists across ViT and CNN backbones.
 
 On the first question, the campaign's development evidence splits the answer
 by comparison. Against optical pretraining, the SAR checkpoint wins in both
-tracks at all four label fractions, and the CNN version of that contrast is
-the study's cleanest: the BigEarthNet Sentinel-1 and Sentinel-2 checkpoints
-share architecture, dataset family, and supervised task, so the
-\SarOptCnnHundredAbs--\SarOptCnnTwentyFiveAbs{} gap isolates sensing modality
-more credibly than any other pair in the design. Against generic ImageNet
-transfer, however, SAR pretraining loses in seven of eight track--fraction
-cells. The title question resolves to: SAR-domain pretraining beats optical
-transfer, and nothing in this campaign beats ImageNet.
+tracks at all four label fractions; the CNN version of that contrast, the
+design's cleanest modality comparison (Sect.~\ref{sec:design}), separates
+the sources by \SarOptCnnHundredAbs{} to \SarOptCnnTwentyFiveAbs. Against
+generic ImageNet transfer, however, SAR pretraining loses in seven of eight
+track--fraction cells. The title question resolves to: SAR-domain
+pretraining beats optical transfer, and nothing in this campaign beats
+ImageNet.
 
 On the second question, the sign of the SAR--optical contrast replicates
 across architecture families at every fraction, while its magnitude does
@@ -29,6 +28,40 @@ transfer of the optical Sentinel-2 CNN checkpoint, below its own random
 floor at every fraction, is a caution against assuming that overhead imagery
 of any modality helps a SAR task. Land-cover optical features appear to be a
 poor starting point for detecting vessel-scale bright returns.
+
+\subsection{Why does generic pretraining win?}
+\label{sec:mechanisms}
+
+Three readings are consistent with the observed pattern, and the design
+separates them only partly. The first is feature generality at scale. Both
+ImageNet controls distill 1.28 million natural images under strong
+augmentation, and after decibel scaling and per-channel normalization a
+vessel is a compact bright blob against textured clutter: detecting it
+rests on generic low- and mid-level features (edges, blobs, local contrast)
+that large-scale natural-image pretraining supplies in abundance. A
+domain-specific corpus must beat that supply with relevance, and in this
+campaign only the SAR checkpoints come close.
+
+The second reading is objective mismatch, made concrete by the negative
+transfer of the optical CNN arm. BigEarthNet training optimizes multi-label
+land-cover classification over whole patches, which rewards aggregate
+texture and spectral statistics and exerts no pressure to preserve
+point-target detail; those features start the detector below its own random
+floor. The matched Sentinel-1 checkpoint shares this objective yet
+transfers well, so modality match can outweigh objective mismatch, but not
+by enough to overtake ImageNet.
+
+The third reading is headroom. The ViT random floor is already high on the
+development support, compressing every pretraining effect to
+\SarOptVitMaxAbs{} or less, while the CNN floor starts low and exposes
+initialization quality. Within that compressed ViT band, SARMAE's masked
+autoencoding on SAR-1M, a reconstruction objective that preserves
+small-target structure, supplies the one cell where a domain checkpoint
+beats ImageNet (\DevFVitSarTwentyFive{} against
+\DevFVitImageNetTwentyFive{} at 28 scenes). These are readings, not
+conclusions: one seed, development-selection scores, and released-checkpoint
+confounds (Sect.~\ref{sec:limitations}) all apply, and the held-out matrix
+with seed replication is the designed test.
 
 \subsection{Limits of the comparison}
 \label{sec:limitations}
@@ -72,26 +105,15 @@ ImageNet-1K fine-tuning. We therefore make domain claims within architecture
 and treat cross-track agreement as replication of a pattern, not a pooled
 causal estimate of source modality.
 
-\paragraph{Size matching is not compute matching.}
+\paragraph{Scope of the controlled comparison.}
 ViT-B/16 and ConvNeXt-V2-Base are approximately size matched, but their
-pretraining data volume, optimization compute, token or feature geometry, and
-training histories differ. Their detector adapters are necessarily
-family-specific even though both emit the same stride-4 output geometry.
-Matched-role ViT--CNN gaps therefore include architecture, adapter, and
-pretraining-history effects. Measured fine-tuning GPU-hours and parameter
-counts make these differences visible but do not eliminate them.
-
-\paragraph{Numerical and hardware scope.}
-Every core cell uses one process per V100, micro-batch and effective batch 16,
-Lightning \texttt{32-true}, and disabled CUDA-matmul and cuDNN TF32. This
-strict FP32 choice removes precision as a within-study variable and follows a
-non-finite mixed-precision diagnostic, but it does not establish that FP32 is
-preferable in general or that identical rankings would hold under another
-numerical format or hardware generation.
-
-\paragraph{External references are contextual.}
-YOLO26 and LocateAnything do not share the controlled backbones, pretraining
-roles, input handling, or training protocol, so they stay outside the core
-curves. The study covers one dataset, one point-detector family, four tested
-label budgets, and one operating-seed realization; broader claims require
-additional sensors, regions, detectors, and seeds.
+pretraining data volume, optimization compute, feature geometry, and
+training histories differ, and their detector adapters are necessarily
+family-specific; matched-role ViT--CNN gaps therefore include architecture,
+adapter, and pretraining-history effects that the measured GPU-hours and
+parameter counts expose but do not remove. Numerically, every cell ran
+strict FP32 on one V100 with TF32 disabled, which removes precision as a
+within-study variable but does not establish that identical rankings would
+hold under other formats or hardware. The study covers one dataset, one
+point-detector family, four tested label budgets, and one seed; broader
+claims require additional sensors, regions, detectors, and seeds.

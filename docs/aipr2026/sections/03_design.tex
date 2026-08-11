@@ -64,7 +64,8 @@ resolutions are an inherent architecture-family distinction and are disclosed
 rather than tuned away.
 
 At inference, local peaks above a permissive candidate floor of 0.05 are
-mapped to scene coordinates. Distance non-maximum suppression uses 120~m, and
+mapped to scene coordinates; the floor is permissive because clear targets
+can peak well below 1.0 (Fig.~\ref{fig:qualitative}). Distance non-maximum suppression uses 120~m, and
 the operating threshold is selected only on the designated development
 scenes as described in Sect.~\ref{sec:data-evaluation}. Whole scenes are tiled
 with $512\times512$ windows at stride 384 and predictions are reconciled in

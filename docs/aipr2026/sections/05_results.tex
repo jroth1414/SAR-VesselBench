@@ -20,7 +20,7 @@ Every value in Table~\ref{tab:core-results} is bound to one best-development
 checkpoint and the operating threshold selected with that checkpoint, under
 the single evaluation contract of Sect.~\ref{sec:gt-contract}. The reported
 metric is aggregate development F1 at that operating point. The two external
-references are reported separately in Table~\ref{tab:references}.
+references are reported in Sect.~\ref{sec:final-results}.
 
 \subsection{Label-efficiency curves}
 \label{sec:label-efficiency-results}
@@ -57,7 +57,14 @@ ImageNet, and \MonoDropCnnImageNet{} for CNN ImageNet. We report these
 declines as observed and do not smooth or selectively rerun the curves.
 Because the metric is development F1 under a fixed per-cell threshold sweep,
 a larger training set does not guarantee a higher score on the fixed
-eight-scene development subset.
+eight-scene development subset. The declines are also small relative to the
+metric's support: development scores rest on a few hundred positives in
+eight scenes, so a shift of a few hundredths of F1 corresponds to a handful
+of detections gained or lost at the swept threshold. The direction is
+nonetheless consistent across five arms, which points to a systematic
+interaction between training-set size and the small fixed development
+support rather than pure selection noise; held-out scoring on the sealed
+sixteen-scene split is the designed way to resolve it.
 
 We avoid estimating a continuous ``percent labels saved'' quantity after
 observing only four budgets. Instead, we give a discrete crossing summary.
@@ -143,15 +150,15 @@ does not.
 \subsection{External references}
 \label{sec:final-results}
 
-\input{generated/v100_reference_table}
-
-Table~\ref{tab:references} reports the two context systems under the same
-development-scene scoring: YOLO26 fine-tuned on the full 111-scene training
-split with its published recipe, and zero-shot LocateAnything-3B. Their
-architectures, supervision, input construction, and operating procedures
-differ from the controlled arms, so they remain off the curves and are not
-used in Eqs.~\eqref{eq:transfer-gain} or~\eqref{eq:sar-optical-gap}. The
-protocol's sealed stages remain ahead of this campaign: the 16-scene test
-matrix, and the once-only 50-scene human-verified evaluation with its
-dark-vessel and near-shore slices. We do not substitute development values
-for either stage.
+Two context systems ran under the same development-scene scoring, each with
+its own published recipe. YOLO26, fine-tuned on the full 111-scene training
+split, reaches development F1 \RefYoloDevF. Zero-shot LocateAnything-3B
+collapses on SAR imagery and is prompt-sensitive: F1 \RefLocShip{} for
+``ship,'' \RefLocVessel{} for ``vessel,'' and \RefLocBoat{} for ``boat.''
+Neither system shares the controlled backbones, pretraining roles, input
+handling, or training protocol, so both stay off the curves, outside
+Eqs.~\eqref{eq:transfer-gain} and~\eqref{eq:sar-optical-gap}, and outside any
+label-savings inference. The protocol's sealed stages remain ahead of this
+campaign: the 16-scene test matrix, and the once-only 50-scene
+human-verified evaluation with its dark-vessel and near-shore slices. We do
+not substitute development values for either stage.

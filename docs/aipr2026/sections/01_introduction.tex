@@ -74,10 +74,7 @@ source-domain pretraining.
 
 The core matrix is uniform: all 32 cells ran from scratch on V100 GPUs in
 strict FP32 with one shared recipe and seed
-(Sect.~\ref{sec:design}). A post-campaign audit of the evaluation pipeline
-found a defect in the development label conversion; Sect.~\ref{sec:gt-contract}
-states what the defect touched, what we corrected, and how it bounds the
-interpretation of the reported values. Comparisons between arms remain
-internally consistent because every cell used the identical conversion,
-selection rule, and seed.
+(Sect.~\ref{sec:design}). A post-campaign audit found two evaluation-pipeline
+defects; Sect.~\ref{sec:data-evaluation} states what they touched, what we
+corrected, and how they bound the interpretation of the reported values.
 
