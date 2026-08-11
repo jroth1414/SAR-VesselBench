@@ -23,9 +23,9 @@ from these chips. The label-fraction subsets contain exactly 12, 28, 56, and
 human-verified scene appears in any training subset.
 
 A separate set of 50 human-verified scenes is designated
-\texttt{eval\_final}. It is disjoint from the 150-scene study cohort and is
-reserved for a single evaluation after model selection, operating thresholds,
-and analysis code are frozen. Human verification supplies the manual-label
+\texttt{eval\_final}. It is disjoint from the 150-scene study cohort. The
+protocol reserves it for a single evaluation after we freeze model selection,
+operating thresholds, and analysis code. Human verification supplies the manual-label
 provenance needed for the dark-vessel slice. Consequently, dark-vessel recall
 is undefined for the ordinary development and test sets and can be reported
 only on \texttt{eval\_final}. That evaluation remains sealed at the time of
@@ -77,7 +77,7 @@ audit of Sect.~\ref{sec:gt-contract} also found that the campaign's completion
 records paired that checkpoint with the operating point of the final
 evaluation rather than the best one. The corrected protocol now stores the
 complete operating point (epoch, threshold, precision, recall, and counts)
-with the SHA-256 of the exact best checkpoint and invalidates any cell whose
+with the SHA-256 of the exact best checkpoint. It invalidates any cell whose
 records disagree. For the campaign reported here, best-development F1 is well
 defined for every cell; threshold-dependent quantities are labeled as
 final-evaluation records wherever they appear
@@ -87,8 +87,8 @@ The development subset is therefore the sole source of model selection and
 operating-point calibration. The protocol's held-out stages apply each stored
 threshold verbatim, first to the 16 test scenes and then, once, to the
 human-verified set; test annotations are never used to retune a threshold,
-select a checkpoint, or change an analysis choice. Neither held-out stage has
-been executed for the campaign reported here, so this paper reports the
+select a checkpoint, or change an analysis choice. We did not run either
+held-out stage for the campaign reported here, so this paper reports the
 development-selection scores and leaves the held-out matrix to follow-on
 work.
 

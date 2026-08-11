@@ -22,7 +22,7 @@ that diagnostic becomes available only when the test matrix runs.
 \subsection{Training dynamics and cost}
 \label{sec:training-dynamics}
 
-Early stopping with patience four development evaluations ended
+Early stopping (patience of four development evaluations) ended
 \CellsEarlyStopped{} of the 32 cells before the 50-epoch cap. The median
 best-checkpoint epoch is \MedianBestEpochVit{} for the ViT track and
 \MedianBestEpochCnn{} for the CNN track. Fine-tuning cost is uneven between
@@ -50,5 +50,5 @@ permissive 0.05 candidate floor and the per-cell threshold sweep, without
 which a fixed high threshold would silently drop true detections. These
 panels illustrate mechanisms; they are not a scored sample, and the
 protocol's registered false-positive taxonomy review is reserved for the
-held-out stage. The qualitative cases are interpreted alongside, but do not
-supersede, the quantitative findings in Sect.~\ref{sec:transfer-results}.
+held-out stage. We interpret the qualitative cases alongside, not above, the quantitative
+findings in Sect.~\ref{sec:transfer-results}.

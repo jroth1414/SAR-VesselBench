@@ -57,7 +57,7 @@ Several arms violate monotonicity at the 25\%--50\% transition: development
 F1 drops by \MonoDropVitRandom{} for ViT random, \MonoDropVitOptical{} for
 SatDINO, \MonoDropVitSar{} for SARMAE, \MonoDropVitImageNet{} for ViT
 ImageNet, and \MonoDropCnnImageNet{} for CNN ImageNet. We report these
-declines as observed; the curves are neither smoothed nor selectively rerun.
+declines as observed and do not smooth or selectively rerun the curves.
 Because the metric is development F1 under a fixed per-cell threshold sweep,
 a larger training set does not guarantee a higher score on the fixed
 eight-scene development subset.
@@ -72,8 +72,8 @@ For a pretrained role $r$, define
   \label{eq:discrete-crossing}
 \end{equation}
 Thus, $B_{r}^{(t)}$ is the smallest \emph{tested} budget at which an arm
-reaches the full-data random baseline in its own track; a missing crossing is
-reported as ``not reached.''  Equation~\eqref{eq:discrete-crossing} is a
+reaches the full-data random baseline in its own track; we report a missing
+crossing as ``not reached.''  Equation~\eqref{eq:discrete-crossing} is a
 descriptive grid summary, not an interpolation between fractions.
 
 \paragraph{Label efficiency.}
@@ -153,6 +153,7 @@ split with its published recipe, and zero-shot LocateAnything-3B. Their
 architectures, supervision, input construction, and operating procedures
 differ from the controlled arms, so they remain off the curves and are not
 used in Eqs.~\eqref{eq:transfer-gain} or~\eqref{eq:sar-optical-gap}. The
-protocol's sealed stages, the 16-scene test matrix and the once-only 50-scene
-human-verified evaluation with its dark-vessel and near-shore slices, remain
-ahead of this campaign and are not substituted with development values.
+protocol's sealed stages remain ahead of this campaign: the 16-scene test
+matrix, and the once-only 50-scene human-verified evaluation with its
+dark-vessel and near-shore slices. We do not substitute development values
+for either stage.

@@ -31,7 +31,7 @@ We study label efficiency through two architecture-matched tracks, summarized
 in Fig.~\ref{fig:study-design}. The ViT track uses ViT-B/16 and the CNN track
 uses the similarly sized ConvNeXt-V2-Base. Within each track, four arms differ
 only in initialization: random, ImageNet, optical remote sensing, or SAR.
-Every arm is fine-tuned end to end through the same point-native detector,
+We fine-tune every arm end to end through the same point-native detector,
 input representation, optimizer, schedule, label subsets, and fixed seed. The
 four training subsets are nested at the scene level, containing exactly 12,
 28, 56, and 111 scenes. This produces 32 controlled core cells: eight
