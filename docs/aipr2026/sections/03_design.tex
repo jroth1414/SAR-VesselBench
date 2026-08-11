@@ -34,10 +34,8 @@ contrast because model, dataset family, and supervised task are shared. The
 SatDINO/SARMAE comparison additionally changes DINO versus masked
 autoencoding. Likewise, the matched ImageNet role holds source dataset and
 final classification supervision constant across tracks but not the complete
-training history. We preserve these distinctions in all interpretation: the
-primary domain comparisons are within-track, and matched-role cross-track
-comparisons test architectural persistence rather than asserting perfect
-pretraining-method control.
+training history. The primary domain comparisons are therefore within-track,
+and matched-role cross-track comparisons test architectural persistence.
 
 \subsection{Input and Shared Point Detector}
 
@@ -119,10 +117,7 @@ development F1 at that cell's checkpoint-bound operating threshold. In
 addition to absolute F1, the analysis reports transfer over the corresponding
 same-track random floor and the within-track SAR--optical contrast at every
 registered fraction (Sect.~\ref{sec:transfer-results}). A non-monotone curve is reported
-as observed rather than smoothed or clamped. Any statement about ``labels
-saved'' additionally requires a prespecified target and interpolation rule.
-Until that rule is fixed, the manuscript reports the four-point curves and
-contrasts but does not invent an interpolated savings number.
+as observed rather than smoothed or clamped.
 
 Two external systems, a COCO-pretrained YOLO26 detector and zero-shot
 LocateAnything-3B, provide

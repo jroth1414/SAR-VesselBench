@@ -33,9 +33,8 @@ ViT-B/16 checkpoint trained with supervised augmentation and regularization
 generic control is ConvNeXt-V2-Base initialized by fully convolutional masked
 autoencoding followed by supervised ImageNet-1K fine-tuning
 ~\cite{woo2023convnextv2}. The checkpoints therefore match in final source
-dataset and classification supervision, but not in full training history.
-They are treated as matched \emph{roles}, not as a controlled comparison of
-pretraining algorithms.
+dataset and classification supervision, but not in full training history;
+they are matched \emph{roles}.
 
 Remote-sensing pretraining may narrow the gap between source and target
 statistics. SatDINO applies DINO self-distillation~\cite{caron2021emerging} to

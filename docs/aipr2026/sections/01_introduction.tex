@@ -73,8 +73,8 @@ All six pretrained encoders are released checkpoints; this work performs no
 source-domain pretraining.
 
 The core matrix is uniform: all 32 cells ran from scratch on V100 GPUs in
-strict IEEE FP32 with TensorFloat-32 disabled, one process per GPU, effective
-batch size 16, and seed 0. A post-campaign audit of the evaluation pipeline
+strict FP32 with one shared recipe and seed
+(Sect.~\ref{sec:design}). A post-campaign audit of the evaluation pipeline
 found a defect in the development label conversion; Sect.~\ref{sec:gt-contract}
 states what the defect touched, what we corrected, and how it bounds the
 interpretation of the reported values. Comparisons between arms remain

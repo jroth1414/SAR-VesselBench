@@ -16,13 +16,17 @@ centroids of all four partitions.
 \input{tables/data_protocol}
 \input{generated/v100_fig_scene_map}
 
-The 111 training scenes produce 105,408 overlapping $800\times800$ chips.
+The 111 training scenes produce 105,408 overlapping $800\times800$ chips;
+Fig.~\ref{fig:chip-context} shows the scale relationship between one scene
+and one chip.
 Training-time normalization statistics are computed from training scenes
 only: VH mean/standard deviation $-26.448/5.951$~dB and VV
 $-16.599/6.062$~dB. Each optimization sample is a shared $512\times512$ crop
 from these chips. The label-fraction subsets contain exactly 12, 28, 56, and
 111 scenes and are nested as in Eq.~\ref{eq:nesting}; no development, test, or
 human-verified scene appears in any training subset.
+
+\input{generated/v100_fig_chip_context}
 
 A separate set of 50 human-verified scenes is designated
 \texttt{eval\_final}. It is disjoint from the 150-scene study cohort. The

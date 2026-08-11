@@ -10,12 +10,20 @@
 \usepackage{tabularx}
 \usepackage{xcolor}
 \usepackage{tikz}
-\usetikzlibrary{calc,positioning}
+\usetikzlibrary{calc,positioning,arrows.meta,fit,backgrounds}
+\definecolor{figblue}{HTML}{2a78d6}
+\definecolor{figorange}{HTML}{eb6834}
+\definecolor{figgreen}{HTML}{008300}
+\definecolor{figred}{HTML}{c03535}
+\definecolor{figink}{HTML}{31302e}
 \usepackage{url}
 \setlength{\emergencystretch}{2em}
 \renewcommand{\topfraction}{0.9}
 \renewcommand{\textfraction}{0.07}
 \renewcommand{\floatpagefraction}{0.7}
+\setlength{\textfloatsep}{9pt plus 2pt minus 3pt}
+\setlength{\floatsep}{7pt plus 2pt minus 2pt}
+\setlength{\abovecaptionskip}{5pt}
 
 \input{generated/v100_results}
 
@@ -87,7 +95,6 @@ neural networks \and xView3-SAR}
 \input{sections/08_conclusion}
 
 \bibliographystyle{splncs04}
-{\small
-\bibliography{references}}
+\bibliography{references}
 
 \end{document}
