@@ -22,6 +22,11 @@ import re
 from pathlib import Path
 from typing import Sequence
 
+if __name__ == "__main__":
+    from src.runtime.precision import assert_strict_fp32_environment
+
+    assert_strict_fp32_environment()
+
 from lightning.pytorch.callbacks import Callback
 
 from src.eval.result_contract import (
@@ -50,6 +55,14 @@ def exp_id(init_name: str, label_frac: float, seed: int) -> str:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    from src.runtime.lightning_contract import (
+        assert_launch_process_contract,
+        assert_pre_trainer_contract,
+        assert_trainer_contract,
+    )
+
+    assert_launch_process_contract()
+
     import lightning as L
     import yaml
     from lightning.pytorch.callbacks import (
@@ -59,11 +72,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     from lightning.pytorch.loggers import CSVLogger
 
-    from scripts.h100.lightning_contract import (
-        assert_pre_trainer_contract,
-        assert_trainer_contract,
-        h100_runtime_active,
-    )
     from src.train.datamodule import FineTuneDataModule
     from src.train.lit_modules import HeatmapLitModule
 
@@ -74,7 +82,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--git-sha",
         default=None,
-        help="full host-validated source SHA (avoids requiring git in a slim SIF)",
+        help="full validated source SHA when checkout metadata is unavailable",
     )
     parser.add_argument("--epochs", type=int, default=None, help="override detector.yaml (smoke only)")
     parser.add_argument("--data-config", default="configs/data.yaml")
@@ -83,11 +91,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--smoke",
         action="store_true",
-        help="3-epoch dev-box sanity: small batch, capped steps, 1 dev scene",
+        help="3-epoch sanity check: small batch, capped steps, 1 dev scene",
     )
-    # Check-level overrides (P3.6 early-signal runs on the dev card). The
-    # frozen detector.yaml stays authoritative for the real grid — these
-    # exist so short comparisons can share IDENTICAL reduced settings.
+    # Check-level overrides for smoke and reduced-memory probes. The frozen
+    # detector.yaml stays authoritative for the reported grid; these exist so
+    # short comparisons can share identical reduced settings.
     parser.add_argument("--exp-suffix", default=None, help="append to the run id (e.g. p36)")
     parser.add_argument("--batch-size", type=int, default=None)
     parser.add_argument(
@@ -96,8 +104,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=None,
         help="hardware adaptation: split the recipe batch into micro-batches "
         "with gradient accumulation (recipe batch stays the effective batch; "
-        "needed for ConvNeXt cells on the 16 GB dev card where batch 16 "
-        "overflows VRAM into shared memory)",
+        "use only for an explicitly documented memory-constrained probe)",
     )
     parser.add_argument("--samples-per-epoch", type=int, default=None)
     parser.add_argument("--dev-every", type=int, default=None)
@@ -130,9 +137,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         batch_size = args.micro_batch
     limit_train_batches = None
     if args.smoke:
-        # dev-box smoke: smaller batch for the 16 GB card, full epochs — at
-        # ~8 it/s the whole f0.1 dataset is ~3 min/epoch, and the capped-step
-        # variant produced too little signal to decode a single detection.
+        # A smoke run uses a smaller batch while retaining the requested epoch
+        # count; capped-step probes can be too short to decode a detection.
         batch_size = min(batch_size, 8)
 
     datamodule = FineTuneDataModule(
@@ -200,16 +206,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         LearningRateMonitor(logging_interval="epoch"),
     ]
 
-    h100_pre_trainer = None
-    h100_runtime_contract = None
-    if h100_runtime_active():
-        h100_pre_trainer = assert_pre_trainer_contract(
-            module,
-            precision=det_cfg["schedule"]["precision"],
-            devices=1,
-            micro_batch=batch_size,
-            gradient_accumulation=accumulate,
-        )
+    strict_pre_trainer = assert_pre_trainer_contract(
+        module,
+        precision=det_cfg["schedule"]["precision"],
+        devices=1,
+        micro_batch=batch_size,
+        gradient_accumulation=accumulate,
+    )
     trainer = L.Trainer(
         max_epochs=epochs,
         accelerator="gpu",
@@ -225,16 +228,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         log_every_n_steps=10,
         enable_progress_bar=True,
     )
-    if h100_pre_trainer is not None:
-        h100_runtime_contract = assert_trainer_contract(
-            trainer,
-            module,
-            precision=det_cfg["schedule"]["precision"],
-            devices=1,
-            micro_batch=batch_size,
-            gradient_accumulation=accumulate,
-            pre_trainer=h100_pre_trainer,
-        )
+    strict_runtime_contract = assert_trainer_contract(
+        trainer,
+        module,
+        precision=det_cfg["schedule"]["precision"],
+        devices=1,
+        micro_batch=batch_size,
+        gradient_accumulation=accumulate,
+        pre_trainer=strict_pre_trainer,
+    )
 
     resolved = {
         "exp_id": run_id,
@@ -247,10 +249,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             "micro_batch": batch_size,
             "gradient_accumulation": accumulate,
             "effective_batch": batch_size * accumulate,
+            "h100_runtime_contract": strict_runtime_contract,
         },
     }
-    if h100_runtime_contract is not None:
-        resolved["execution"]["h100_runtime_contract"] = h100_runtime_contract
     (run_dir / "config.yaml").write_text(yaml.safe_dump(resolved), newline="\n")
 
     last_ckpt = run_dir / "checkpoints" / "last.ckpt"
@@ -295,9 +296,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "best_checkpoint": best_checkpoint,
         "last_dev": dev_eval.last_result,
         "train_loss": float(trainer.callback_metrics.get("train_loss", float("nan"))),
+        "h100_runtime_contract": strict_runtime_contract,
     }
-    if h100_runtime_contract is not None:
-        final["h100_runtime_contract"] = h100_runtime_contract
     expected_recipe = {
         name: final[name]
         for name in (

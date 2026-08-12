@@ -1,0 +1,67 @@
+\documentclass[10pt]{article}
+\usepackage[letterpaper,margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern,microtype,booktabs,graphicx,tabularx,xcolor,url}
+\usepackage[hidelinks]{hyperref}
+\usepackage{enumitem}
+\setlist{nosep,leftmargin=*}
+\setlength{\parindent}{1em}
+\setlength{\parskip}{0pt}
+\setlength{\textfloatsep}{7pt plus 2pt minus 2pt}
+\setlength{\floatsep}{6pt plus 2pt minus 2pt}
+\setlength{\abovecaptionskip}{4pt}
+\setlength{\belowcaptionskip}{0pt}
+\renewcommand{\topfraction}{0.95}
+\renewcommand{\textfraction}{0.05}
+\renewcommand{\floatpagefraction}{0.8}
+\input{../results/generated/h100_results}
+\graphicspath{{../results/generated/}}
+\newcommand{\ClassReportRoles}{}
+\title{Label-Efficient Dark-Vessel Detection in SAR:\\
+A Controlled Comparison of Encoder Pretraining}
+\author{John Roth \and Kyle Wagner\\
+\small Johns Hopkins University, EN.705.643}
+\date{2026}
+\begin{document}
+\maketitle
+\vspace{-1.5em}
+\begin{abstract}
+Human-verified labels for vessels without matched Automatic Identification
+System reports are scarce. We test whether generic ImageNet, optical
+remote-sensing, or SAR pretraining reduces the labeled-data requirement for
+point detection in Sentinel-1 imagery. Two size-matched tracks use ViT-B/16
+and ConvNeXt-V2-Base backbones. Four initialization roles within each track
+share the input, detector, schedule, scene subsets, seed, and strict-FP32
+execution. The design contains 32 cells across four nested label budgets.
+\ifHFullGridComplete
+The verified H100 snapshot closes all 32 cells, and this report presents the
+resulting four-fraction comparison.
+\else
+\ifHHasReportableCohort
+The deadline snapshot closes \HResultReportableFractions{} as complete
+eight-arm cohorts. We report only those corrected development-selection
+comparisons; remaining cells appear as in progress.
+\else
+The submission snapshot records campaign progress but lacks the completion
+receipts needed to admit numerical results. We therefore report the design,
+current status, and fail-closed result path without an H100 ranking or
+label-efficiency claim.
+\fi
+\fi
+The snapshot contains no test metric; the human-verified set remains sealed.
+\end{abstract}
+\label{mainbody:start}
+\input{sections/introduction}
+\input{sections/data_protocol}
+\input{sections/related_work}
+\input{sections/methods}
+\input{sections/results}
+\input{sections/conclusion}
+\label{mainbody:end}
+\clearpage
+\bibliographystyle{abbrv}
+\bibliography{../aipr2026/references}
+\clearpage
+\appendix
+\input{sections/appendix}
+\end{document}

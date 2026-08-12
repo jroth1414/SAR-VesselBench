@@ -1,18 +1,19 @@
-# CI-only dependencies (CPU, minimal).
-# This is deliberately NOT the training environment. The active GPU host uses
-# locks/env-v100node.txt (sm_70); locks/env-5070ti.txt (sm_120) and
-# locks/env-p100node.txt (sm_60) are historical machine-specific freezes.
-# CI only needs enough to import the package and run the guard tests against
-# tiny in-repo fixtures — no CUDA, no large data, no model downloads.
+# Minimal CPU test and paper-result generation dependencies. This file does not
+# reproduce the CUDA training environment; see locks/env-h100-cu126.txt.
 #
-# torch is installed by the workflow from the CPU index-url (small wheel)
-# BEFORE this file, so timm does not pull the large default (CUDA) wheel.
+# Install CPU torch and torchvision together before this file:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 pytest>=8.0
 numpy>=1.26
-scipy>=1.11          # src/eval/decode.py imports scipy.spatial.cKDTree (test_decode)
-timm>=1.0            # test_backbone_parity instantiates ViT-B / ConvNeXt-V2-B
-# transformers / configilm are intentionally NOT here: in CI the fm-checkpoints
-# guard runs only its CPU-offline structural (key-manifest) half. The
-# value-sensitive weight load (needing transformers for SatDINO and configilm
-# for BigEarthNet) runs on the GPU machines — see DEVPLAN §1b guard 3 and the
-# GPU lockfiles.
+scipy>=1.11
+pandas>=2.1
+pyyaml>=6.0
+matplotlib>=3.8
+pypdf>=6.0
+lightning>=2.6,<2.7
+rasterio>=1.4
+shapely>=2.1
+timm>=1.0
+# transformers and configilm are absent by design. CPU CI checks checkpoint key
+# manifests; the six value-sensitive loads run with downloaded checkpoints in
+# the training environment.

@@ -15,7 +15,7 @@ import subprocess
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from scripts.h100.contracts import load_cells
+from src.runtime.experiment import load_cells
 from src.eval.heldout_contract import (
     COHORT_FILENAME,
     TEST_RESULT_FILENAME,
@@ -109,7 +109,7 @@ def load_score_labels(
     """Open score-view labels only after the selected checkpoint revalidates."""
 
     validate_checkpoint_load_boundary(checkpoint, checkpoint_binding)
-    from scripts.h100.data_staging import score_labels_summary
+    from src.eval.label_scope import score_labels_summary
 
     score_labels_summary(labels_path, splits_path=splits_path, production=True)
     import pandas as pd

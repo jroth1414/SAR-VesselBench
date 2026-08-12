@@ -1,0 +1,40 @@
+\section{Methods}
+
+Every arm predicts a stride-4 vessel heatmap from the same input. Gaussian
+targets mark positive points, and ignore neighborhoods mask LOW-confidence
+labels. The detector decodes local peaks above a permissive candidate floor,
+maps them to scene coordinates, and applies distance-based non-maximum
+suppression before scoring. ViT and CNN adapters reconcile native feature
+strides with the shared 256-channel head.
+
+One PyTorch Lightning module and data module serve all cells. AdamW uses a
+$10^{-4}$ learning rate, 0.05 weight decay, layer-wise decay 0.65, five warm-up
+epochs, and cosine decay across at most 50 epochs. Full-scene development
+evaluation occurs every five epochs; early stopping waits four evaluation
+cycles. All runs use seed 0, micro-batch 16, accumulation 1, and end-to-end
+fine-tuning.
+
+The corrected campaign runs one process per NVIDIA H100 in Lightning
+\texttt{32-true}. CUDA matrix-multiply TF32 and cuDNN TF32 stay disabled.
+Runtime receipts bind code, configuration, environment, GPU identity,
+checkpoint hashes, and completion markers. The result importer rejects a
+non-H100 cell, a duplicate identifier, a non-finite metric, a missing marker,
+or any fraction that lacks all eight completed arms.
+
+\begin{table}[t]
+\centering
+\caption{Controlled initialization roles. Source heads are discarded.}
+\label{tab:arms-short}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Role & ViT-B/16 & ConvNeXt-V2-Base \\
+\midrule
+Random & fresh initialization & fresh initialization \\
+Optical & SatDINO, fMoW-RGB & BigEarthNet Sentinel-2 \\
+SAR & SARMAE, SAR-1M & BigEarthNet Sentinel-1 \\
+ImageNet & supervised AugReg & FCMAE $+$ supervised \\
+\bottomrule
+\end{tabular}
+\end{table}

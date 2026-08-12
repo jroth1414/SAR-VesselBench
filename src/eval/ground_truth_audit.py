@@ -319,10 +319,10 @@ def validate_ground_truth_audit_receipt(
 ) -> dict[str, object]:
     """Validate a source-built audit without opening the held-out label file.
 
-    The runtime amendment carries this metadata receipt after its builder audits
-    the immutable Sprint 7d label member on the source host. Judy binds the
-    receipt back to that member's SHA-256/size and the frozen split bytes; it
-    does not need to parse TEST rows before the all-training cohort exists.
+    A transfer package can carry this metadata receipt after its builder audits
+    the immutable label member. The consumer binds the receipt back to that
+    member's SHA-256/size and the frozen split bytes; it does not need to parse
+    TEST rows before the all-training cohort exists.
     """
 
     splits_path = Path(splits_json)

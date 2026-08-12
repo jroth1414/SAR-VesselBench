@@ -1,6 +1,0 @@
-{
- "exp_id": "vitsup-lsssdd",
- "epochs_run": 50,
- "best_val_loss": 5.688900461819912e-10,
- "best_checkpoint": "runs\\vitsup-lsssdd\\checkpoints\\best.ckpt"
-}

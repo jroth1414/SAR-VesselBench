@@ -9,8 +9,8 @@ Owns three frozen-at-sprint-1-merge artifacts:
 - ``data/stats.json``    — per-polarization mean/std computed ONCE over the
   train-split chips only, reused unchanged for every label fraction, both
   tracks, and all seeds.
-- ``data/lsssdd_split.json`` — the seeded LS-SSDD internal train/val
-  partition consumed identically by the Arm-4 and Arm-8 pretrainings.
+- ``data/lsssdd_split.json`` — immutable historical provenance only; this
+  module does not regenerate or consume it.
 
 Scene-pool convention: xView3 scene ids end in ``t`` (train pool — split
 75/15/10 here) or ``v`` (the human-verified validation scenes -> eval_final,
@@ -22,7 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Iterable, Mapping, Sequence
+from typing import Mapping, Sequence
 
 import numpy as np
 
@@ -236,25 +236,6 @@ def _largest_remainder_quota(
     return quotas.tolist()
 
 
-def build_lsssdd_split(
-    sub_image_names: Iterable[str], *, train_frac: float, seed: int
-) -> dict[str, list[str]]:
-    """Seeded internal train/val partition of LS-SSDD sub-images (P1.5)."""
-
-    names = sorted(set(str(name) for name in sub_image_names))
-    if not names:
-        raise ValueError("no LS-SSDD sub-image names supplied")
-    rng = np.random.default_rng(seed)
-    shuffled = list(names)
-    rng.shuffle(shuffled)
-    n_train = int(round(train_frac * len(shuffled)))
-    n_train = min(max(n_train, 1), len(shuffled) - 1) if len(shuffled) > 1 else 1
-    return {
-        "train": sorted(shuffled[:n_train]),
-        "val": sorted(shuffled[n_train:]),
-    }
-
-
 def compute_channel_stats(chip_paths: Sequence[Path]) -> dict[str, object]:
     """Per-polarization mean/std over float16 chips (NaN = nodata, excluded).
 
@@ -347,16 +328,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         "(used after the long chipping job; does not touch splits.json)",
     )
     parser.add_argument(
-        "--lsssdd-root",
-        default=None,
-        help="LS-SSDD sub-image root; when given, also writes data/lsssdd_split.json",
-    )
-    parser.add_argument(
-        "--lsssdd-only",
-        action="store_true",
-        help="only build data/lsssdd_split.json; do not touch splits.json or stats",
-    )
-    parser.add_argument(
         "--allow-overwrite",
         action="store_true",
         help="overwrite existing artifacts (they freeze at sprint-1 merge; "
@@ -369,7 +340,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     paths = config["paths"]
     splits_path = Path(paths["splits"])
 
-    if not args.stats_only and not args.lsssdd_only:
+    if not args.stats_only:
         if splits_path.exists() and not args.allow_overwrite:
             raise SystemExit(
                 f"{splits_path} already exists and freezes at sprint-1 merge; "
@@ -429,7 +400,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     else:
         splits = json.loads(splits_path.read_text())["splits"] if splits_path.exists() else None
 
-    if (args.build_stats or args.stats_only) and not args.lsssdd_only:
+    if args.build_stats or args.stats_only:
         chips_root = Path(paths["chips"])
         train_chips = [
             path
@@ -445,23 +416,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         stats_path.write_text(json.dumps(stats, indent=1), newline="\n")
         print(f"stats over {len(train_chips)} train chips -> {stats_path}")
 
-    if args.lsssdd_root:
-        names = sorted(
-            path.name
-            for path in Path(args.lsssdd_root).rglob("*.jpg")
-        )
-        lsssdd = build_lsssdd_split(
-            names, train_frac=float(config["lsssdd_split"]["train_frac"]), seed=seed
-        )
-        lsssdd_path = Path(paths["lsssdd_split"])
-        if lsssdd_path.exists() and not args.allow_overwrite:
-            raise SystemExit(f"{lsssdd_path} already exists (frozen artifact)")
-        lsssdd_path.write_text(
-            json.dumps({"meta": {"seed": seed}, **lsssdd}, indent=1), newline="\n"
-        )
-        print(
-            f"lsssdd split: {len(lsssdd['train'])} train / {len(lsssdd['val'])} val -> {lsssdd_path}"
-        )
     return 0
 
 

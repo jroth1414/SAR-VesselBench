@@ -1,0 +1,34 @@
+\section{Conclusion and Future Work}
+
+We built a controlled two-track experiment for measuring transfer under four
+nested label budgets. One detector, one corrected label contract, and one
+strict-FP32 H100 recipe constrain all 32 cells.
+\ifHFullGridComplete
+The verified complete snapshot supplies all four label-fraction curves needed
+for the controlled comparison. They remain corrected development-selection
+results rather than held-out estimates, and one seed supports no variance claim.
+\else
+\ifHHasReportableCohort
+The deadline snapshot admits comparisons at \HResultReportableFractions{} while
+the remaining budgets continue. It supports no complete label-efficiency
+conclusion.
+\else
+The current deadline snapshot reports campaign progress but lacks the result
+receipts needed for a numerical claim. We therefore publish no H100 ranking or
+label-efficiency conclusion at this cutoff.
+\fi
+\fi
+
+\ifHFullGridComplete
+The next step freezes this cohort, scores the 16-scene test split, and uses the
+50 human-verified scenes once for dark-vessel and near-shore analysis.
+\else
+The next analysis step imports the verified reverse bundle, closes all 32
+cells, and regenerates both papers from that single source. The team will then
+freeze the cohort, score the 16-scene test split, and use the 50 human-verified
+scenes once for dark-vessel and near-shore analysis.
+\fi
+\ifdefined\ClassReportRoles John Roth and Kyle Wagner
+jointly designed the study, implemented its data, model, training, and
+evaluation code, ran the experiments, analyzed the evidence, and wrote this
+report.\fi

@@ -1,0 +1,28 @@
+\section{Dataset and Evaluation Protocol}
+
+The frozen xView3 cohort contains 111 training scenes, 23 development scenes,
+and 16 test scenes. A separate set of 50 human-verified scenes remains sealed
+for one final evaluation. Scene identifiers, rather than chips, define every
+split. The four training budgets contain 12, 28, 56, and 111 scenes and satisfy
+$S_{10}\subset S_{25}\subset S_{50}\subset S_{100}$. All arms see the same
+scene set at a given budget.
+
+The preprocessing path converts each dual-polarization GRD scene into a fixed
+three-channel tensor $[\mathrm{VH},\mathrm{VV},\mathrm{VH}-\mathrm{VV}]$ in
+decibels. It computes normalization statistics from training scenes only and
+creates overlapping 800-pixel chips. Optimization samples shared 512-pixel
+crops from these chips.
+
+The corrected label contract treats a HIGH- or MEDIUM-confidence row as a
+positive only when \texttt{is\_vessel} is true. HIGH/MEDIUM non-vessels form
+background; LOW-confidence rows define ignore regions. The eight development
+scenes used during training contain 517 positives, 107 background non-vessels,
+and 118 ignores under this contract. Training never stages test or
+human-verified labels.
+
+The frozen scorer greedily matches predictions and ground truth within 200 m,
+then aggregates precision, recall, and F1 across scenes. Each cell selects its
+threshold on development predictions and binds that operating point to the
+selected checkpoint. The public snapshot reports development-selection F1.
+It does not substitute that value for test F1, dark-vessel recall, or
+near-shore performance.

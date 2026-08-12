@@ -73,11 +73,6 @@ class HeatmapLitModule(L.LightningModule):
     def training_step(self, batch: dict, batch_idx: int) -> torch.Tensor:
         return self._step(batch, "train")
 
-    def validation_step(self, batch: dict, batch_idx: int) -> torch.Tensor:
-        # Retained for legacy LS-SSDD tooling; core fine-tune arms evaluate
-        # via whole-scene dev inference instead.
-        return self._step(batch, "val")
-
     def configure_optimizers(self):
         param_groups = self._layer_decay_param_groups()
         # Bake lr_scale into each group's lr: timm only APPLIES lr_scale via

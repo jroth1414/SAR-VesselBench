@@ -10,8 +10,8 @@ train-split chips (the frozen per-polarization stats) unless it already
 exists.
 
 Typical launch (detached, logged):
-    python scripts/chip_study_scenes.py --archive-dir D:/downloads/train \
-        --labels-csv D:/train.csv > runs/logs/chip_study.log 2>&1
+    python scripts/chip_study_scenes.py --archive-dir /path/to/xview3/train \
+        --labels-csv /path/to/xview3/train.csv > runs/logs/chip_study.log 2>&1
 """
 
 from __future__ import annotations

@@ -57,7 +57,8 @@ COMPLETION_FIELDS = frozenset(
         "train_loss",
     }
 )
-H100_RUNTIME_CONTRACT_FIELD = "h100_runtime_contract"
+# The legacy wire key is retained so existing H100 results remain verifiable.
+STRICT_RUNTIME_CONTRACT_FIELD = "h100_runtime_contract"
 _HEX_40 = re.compile(r"[0-9a-f]{40}")
 _HEX_64 = re.compile(r"[0-9a-f]{64}")
 
@@ -207,11 +208,11 @@ def _safe_checkpoint_path(run_dir: str | Path, checkpoint: str | Path) -> tuple[
         relative = candidate.relative_to(root)
         component_root = root
     except ValueError:
-        # Lightning canonicalizes ModelCheckpoint.dirpath with realpath.  The
-        # Judy checkout deliberately exposes the persistent run namespace via
-        # repo/runs -> H100_RUNS_ROOT, so best_model_path is canonical even
-        # though run_dir is lexical.  Accept only that exact canonical root;
-        # arbitrary aliases that merely resolve into it remain forbidden.
+        # Lightning canonicalizes ModelCheckpoint.dirpath with realpath. A run
+        # namespace may be exposed through a repository symlink, so
+        # best_model_path can be canonical even though run_dir is lexical.
+        # Accept only that exact canonical root; arbitrary aliases that merely
+        # resolve into it remain forbidden.
         try:
             relative = candidate.relative_to(resolved_root)
             component_root = resolved_root
@@ -361,13 +362,13 @@ def validate_completion_payload(
     if payload.get("result_schema") != RESULT_SCHEMA:
         raise ResultContractError(f"completion marker requires result_schema == {RESULT_SCHEMA}")
     observed_fields = set(payload)
-    fields_with_h100_runtime = COMPLETION_FIELDS | {H100_RUNTIME_CONTRACT_FIELD}
+    fields_with_runtime = COMPLETION_FIELDS | {STRICT_RUNTIME_CONTRACT_FIELD}
     if (
         observed_fields != COMPLETION_FIELDS
-        and observed_fields != fields_with_h100_runtime
+        and observed_fields != fields_with_runtime
     ):
         missing = COMPLETION_FIELDS - observed_fields
-        unexpected = observed_fields - fields_with_h100_runtime
+        unexpected = observed_fields - fields_with_runtime
         raise ResultContractError(
             "completion marker keys do not match the exact contract; "
             f"missing: {', '.join(sorted(map(str, missing))) or '<none>'}; "

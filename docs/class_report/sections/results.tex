@@ -1,0 +1,66 @@
+\section{Results and Analysis}
+
+\ifHFullGridComplete
+The verified snapshot closes all 32 H100 cells. Figure~\ref{fig:h100-results}
+shows the four label-fraction curves, and Table~\ref{tab:h100-status} records
+the completed evidence inventory. The cell-level values and checkpoint-bound
+status appear in Appendix~\ref{app:inventory}.
+\else
+\ifHHasReportableCohort
+The deadline snapshot closes \HResultReportableFractions{} as complete
+eight-arm cohorts. Figure~\ref{fig:h100-results} reports only those
+corrected-development comparisons. Table~\ref{tab:h100-status} records the
+remaining execution state, and Appendix~\ref{app:inventory} lists every cell.
+Other dashes mean unavailable evidence, not zero performance.
+\else
+The committed snapshot is an operational status export rather than a verified
+reverse-result bundle. It records the state of all 32 planned cells, but it
+does not carry the completion-marker and checkpoint hashes required to admit a
+metric. The fail-closed generator therefore emits no numerical comparison.
+Table~\ref{tab:h100-status} and Fig.~\ref{fig:h100-results} summarize campaign
+progress. The full inventory appears in Appendix~\ref{app:inventory}; dashes
+mean unavailable evidence, not zero performance.
+\fi
+\fi
+
+\input{../results/generated/h100_status_table}
+\input{../results/generated/h100_figure}
+
+\ifHFullGridComplete
+All plotted values are corrected development-selection F1 from bound
+checkpoints. The four-fraction curves support descriptive within-track transfer
+comparisons, but they are not held-out test results. One fixed seed also
+precludes error bars, significance tests, or empirical seed-noise estimates.
+\else
+\ifHHasReportableCohort
+The completion-closed cohorts support comparisons only at
+\HResultReportableFractions{}. They do not support a full label-efficiency
+curve or inference about unfinished budgets. Copying values from running cells
+would compare arms after unequal optimization. One fixed seed precludes error
+bars and significance tests.
+\else
+This cutoff supports conclusions about execution coverage only. The full-data
+jobs have reached a terminal status in the operator snapshot, while work at the
+lower budgets continues. We do not treat terminal status alone as proof of a
+reportable checkpoint. A valid metric also needs its completion receipt,
+checkpoint binding, strict-FP32 provenance, and finite corrected-development
+record.
+
+The status profile cannot establish an initialization ranking or label
+efficiency. A label-fraction comparison requires all eight roles at a common
+budget, and the generator must verify every corresponding receipt. We therefore
+make no claim about labels saved, curve monotonicity, scarce-label ordering, or
+transfer gains. One seed also precludes error bars and significance tests.
+\fi
+\fi
+
+\ifHFullGridComplete
+The analysis compares transfer against the random floor within each track and
+SAR against optical transfer at each fraction. Agreement in the latter
+contrast's sign across tracks tests architecture generality.
+\else
+The complete analysis will make those same comparisons after the reverse
+bundle passes validation.
+\fi
+The released checkpoints differ in objective and source-data volume, so these
+contrasts do not identify a causal effect of source modality alone.

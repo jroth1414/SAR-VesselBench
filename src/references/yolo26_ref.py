@@ -31,7 +31,7 @@ from typing import Mapping, Sequence
 
 import numpy as np
 
-from src.references.runtime_provenance import (
+from src.runtime.reference import (
     ReferenceRuntimeInputs,
     add_runtime_provenance_arguments,
     begin_reference_execution,

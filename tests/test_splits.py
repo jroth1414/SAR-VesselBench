@@ -5,7 +5,6 @@ import pytest
 
 from src.data.splits import (
     SPLIT_NAMES,
-    build_lsssdd_split,
     build_splits,
     compute_channel_stats,
     scene_pool,
@@ -97,18 +96,6 @@ def test_build_splits_tiny_pool_keeps_dev_and_test_nonempty():
     assert len(splits["test"]) >= 1
     assert len(splits["eval_final"]) == 2
 
-
-def test_lsssdd_split_fixed_seeded_disjoint():
-    names = [f"{scene:02d}_{i}_{j}.jpg" for scene in range(1, 16) for i in range(4) for j in range(10)]
-
-    first = build_lsssdd_split(names, train_frac=0.9, seed=0)
-    second = build_lsssdd_split(names, train_frac=0.9, seed=0)
-    assert first == second  # fixed + seeded
-
-    train, val = set(first["train"]), set(first["val"])
-    assert not train & val
-    assert train | val == set(names)
-    assert len(first["val"]) == pytest.approx(0.1 * len(names), abs=1)
 
 
 def test_compute_channel_stats_matches_known_values(tmp_path):

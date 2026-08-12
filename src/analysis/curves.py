@@ -11,7 +11,7 @@ from typing import Sequence
 
 import yaml
 
-from scripts.h100.contracts import load_cells
+from src.runtime.experiment import load_cells
 from src.eval.heldout_contract import (
     COHORT_FILENAME,
     cohort_record,

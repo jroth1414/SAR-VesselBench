@@ -18,7 +18,7 @@ import subprocess
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from scripts.h100.contracts import load_cells
+from src.runtime.experiment import load_cells
 from src.analysis.curves import (
     GRID_COLUMNS,
     GRID_COUNT_COLUMNS,

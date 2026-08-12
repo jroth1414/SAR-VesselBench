@@ -1,6 +1,0 @@
-# Separate, minimal Box JWT transfer environment.  Keep this out of the
-# training SIF; the H100 runtime installs only the verified offline wheelhouse.
-boxsdk[jwt]==4.13.0
-packaging==26.2
-PyYAML==6.0.3
-pytest==9.1.1

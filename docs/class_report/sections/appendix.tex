@@ -1,0 +1,27 @@
+\section{Full H100 Campaign Inventory}
+\label{app:inventory}
+\input{../results/generated/h100_core_table}
+
+\section{Reproducibility and Audit Record}
+
+The public snapshot records its capture time, H100 hardware class, source SHA,
+Python and PyTorch versions, strict-FP32 backend state, frozen artifact hashes,
+and one row for every planned cell. The generator validates those fields before
+writing a manuscript artifact. The committed public log contains sanitized
+campaign progress and no acceptance-test evidence. A future submission may
+include acceptance artifacts after the importer verifies a result handback. The
+submission excludes imagery, labels, weights, checkpoints, run trees,
+credentials, and private paths.
+
+The detector uses 512-pixel crops, a stride-4 heatmap, Gaussian standard
+deviation two output pixels, a candidate floor of 0.05, and 120 m distance NMS.
+Training uses at most 50 epochs with development evaluation every five epochs.
+The project fixes seed 0 and reports point estimates without uncertainty bands.
+
+\section{Qualitative-Evidence Boundary}
+
+The snapshot used for this report contains status metadata rather than exported
+H100 scene overlays or contract-verified development metrics. We omit
+qualitative examples instead of substituting engineering probes or opening
+sealed imagery. After we freeze the cohort and analysis code, we will sample
+successes and errors from the pre-registered held-out outputs.

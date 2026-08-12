@@ -1,0 +1,14 @@
+# LaTeX intermediates. The rendered final_report.pdf remains trackable as a
+# public deliverable after the source and five-page boundary pass validation.
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.run.xml
+*.synctex.gz
+*.toc
+*.xdv

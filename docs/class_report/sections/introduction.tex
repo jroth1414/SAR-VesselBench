@@ -1,0 +1,28 @@
+\section{Introduction}
+
+Sentinel-1 synthetic-aperture radar (SAR) supplies maritime imagery through
+clouds and without daylight~\cite{torres2012sentinel1}. Analysts can use it to
+find vessels that lack a contemporaneous matched Automatic Identification
+System report. These dark-vessel candidates matter for fisheries enforcement,
+maritime safety, and sanctions monitoring. They also present a difficult
+learning problem: a vessel occupies few pixels in a large scene, coastal
+infrastructure creates strong clutter, and human verification costs time.
+The xView3-SAR benchmark provides georeferenced point labels and a geographic
+matching protocol for this setting~\cite{paolo2022xview3}.
+
+Transfer learning may reduce the number of target labels required for a useful
+detector. Generic ImageNet features offer broad visual structure. Optical
+remote-sensing checkpoints add overhead-scene statistics, while SAR
+checkpoints share the sensing modality. Public checkpoints confound source
+domain with model family and pretraining objective, so an uncontrolled
+comparison cannot isolate transfer effects.
+
+We use two architecture-matched tracks. Four ViT-B/16 arms and four
+ConvNeXt-V2-Base arms differ only in initialization within their track:
+random, ImageNet, optical remote sensing, or SAR. Matched roles across tracks
+show whether a within-track pattern survives a change in architecture. We
+make no new detector or pretraining claim. The contribution is a controlled
+32-cell design, one corrected evaluation contract, and a provenance-bound
+H100 result path.
+
+\input{../aipr2026/figures/study_design}
