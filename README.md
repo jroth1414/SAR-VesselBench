@@ -189,6 +189,14 @@ The tool writes `dist/Roth_John_final_project.zip`, scans its allowlisted
 payload, rejects private infrastructure and prohibited file types, and records
 member hashes.
 
+The full Git checkout runs 490 public tests plus six expected weight-dependent
+skips. The data-free Canvas archive omits five test modules whose only inputs
+are the frozen metadata under `data/`: three immutable-hash guards and the two
+H100 snapshot-import suites. Those tests remain in Git and are required for a
+release. Running `python -m pytest -q` after ZIP extraction exercises the
+remaining package-safe scientific and runtime tests without reconstructing or
+redistributing excluded metadata.
+
 ## Contributions
 
 John Roth and Kyle Wagner jointly designed the study, implemented the data,

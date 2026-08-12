@@ -2,7 +2,14 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 
-from tools.build_submission import FIXED_TIME, ROOT_FILES, scan, select, zip_info
+from tools.build_submission import (
+    CANVAS_EXCLUDED_TESTS,
+    FIXED_TIME,
+    ROOT_FILES,
+    scan,
+    select,
+    zip_info,
+)
 from tools.check_report import page_labels
 
 
@@ -81,8 +88,14 @@ def test_submission_allowlist_excludes_data_and_build_debris(tmp_path: Path) -> 
     scorer.parent.mkdir(parents=True)
     scorer.write_text("# held-out cohort scorer\n", encoding="utf-8")
     tracked.add("scripts/score_test_cohort.py")
+    excluded = tmp_path / "tests" / "test_result_snapshot.py"
+    excluded.parent.mkdir(parents=True)
+    excluded.write_text("# requires Git-only frozen metadata\n", encoding="utf-8")
+    tracked.add("tests/test_result_snapshot.py")
     names = {path.relative_to(tmp_path).as_posix() for path in select(tmp_path, tracked)}
     assert "scripts/score_test_cohort.py" in names
+    assert "tests/test_result_snapshot.py" in CANVAS_EXCLUDED_TESTS
+    assert "tests/test_result_snapshot.py" not in names
     assert "docs/class_report/final_report.pdf" in names
     assert "docs/aipr2026/paper.pdf" in names
     assert "docs/class_report/final_report.aux" not in names

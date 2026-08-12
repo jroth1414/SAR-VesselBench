@@ -40,6 +40,15 @@ TREES = (
     "configs", "locks", ".github/workflows", "src", "scripts", "tests", "tools", "docs/class_report",
     "docs/aipr2026", "docs/results/generated", "results/h100",
 )
+CANVAS_EXCLUDED_TESTS = frozenset(
+    {
+        "tests/test_lsssdd_split_immutable.py",
+        "tests/test_result_snapshot.py",
+        "tests/test_result_snapshot_matrix.py",
+        "tests/test_splits_immutable.py",
+        "tests/test_stats_immutable.py",
+    }
+)
 
 
 def tracked(repo: Path) -> set[str]:
@@ -65,6 +74,8 @@ def select(repo: Path, tracked_paths: set[str]) -> list[Path]:
             continue
         for candidate in sorted(root.rglob("*")):
             rel_text = candidate.relative_to(repo).as_posix()
+            if rel_text in CANVAS_EXCLUDED_TESTS:
+                continue
             if (
                 rel_text in tracked_paths
                 and candidate.is_file()
