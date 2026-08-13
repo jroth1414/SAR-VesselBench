@@ -13,24 +13,26 @@ The matrix contains 32 core runs.
 
 ## Evidence status
 
-The committed H100 snapshot supplies every manuscript result table and figure.
-The generator accepts metrics only from verified `DONE` runs and compares a
-label fraction only after all eight arms at that fraction finish. It rejects
-V100 diagnostic values and metrics from running cells.
-
-When admitted, F1 values are corrected development-selection scores. The
-current snapshot contains no 16-scene test metric, and the separate 50-scene
-human-verified set remains sealed. This repository therefore makes no held-out
-dark-vessel-performance claim.
+`results/h100/evidence/` carries the frozen 32-cell training cohort, each
+cell's byte-exact completion marker, and each cell's training curve from the
+completed H100 campaign (all 32 cells trained; strict FP32; one seed). The
+held-out generator re-derives every published number from those bytes and
+fails closed on any inconsistency:
 
 ```bash
-python -m src.analysis.h100_results generate \
-  --snapshot results/h100/h100_campaign_snapshot.json \
-  --output-dir docs/results/generated
+python -m src.analysis.heldout_results --output-dir docs/results/generated
 ```
 
-The command generates complete label-efficiency curves from 32 verified cells
-or a deadline profile containing status and closed eight-arm cohorts.
+Published F1 values are corrected development-selection scores. Held-out
+16-scene TEST macros render only when all 32 immutable test results are
+present and revalidate against the cohort; the separate 50-scene
+human-verified set remains sealed until `final_verified.csv` exists. Until
+then this repository makes no held-out dark-vessel-performance claim.
+
+`results/h100/h100_campaign_snapshot.json` remains the sanitized operator
+status record from the campaign deadline, rendered by
+`python -m src.analysis.h100_results generate`; its import machinery stays
+available for a fully receipted reverse handback.
 
 ## Study controls
 
@@ -48,9 +50,8 @@ configuration, training statistics, and scorer hash.
 configs/                 experiment and detector configuration
 data/                    frozen split/statistics metadata only
 docs/class_report/       class report source
-docs/aipr2026/           supplemental AIPR manuscript source
 docs/results/generated/  generated H100 tables, macros, and figures
-results/h100/            sanitized H100 snapshot and public status log
+results/h100/            H100 evidence tree, sanitized snapshot, and logs
 locks/                   normalized H100 and CPU/test/paper locks
 src/                     data, models, training, evaluation, and analysis
 tests/                   unit, contract, and anti-drift tests
@@ -65,7 +66,7 @@ environment. The Canvas archive excludes the whole `data/` directory.
 Python 3.11 is required. The H100 campaign used the normalized CUDA 12.6 lock
 in `locks/env-h100-cu126.txt`. A separate exact CPU/test/paper-support lock is
 `locks/env-cpu-test-paper.txt`. Its PyTorch packages come from the official CPU
-wheel index. Install Tectonic 0.17.0 separately to build the manuscripts.
+wheel index. Install Tectonic 0.17.0 separately to build the report.
 
 ```bash
 python -m venv .venv
@@ -169,12 +170,10 @@ gate and remains unused until the study freezes its cohort and analysis code.
 ## Papers and class archive
 
 ```bash
+python -m src.analysis.heldout_results --output-dir docs/results/generated
 cd docs/class_report
 tectonic -X compile --keep-intermediates final_report.tex
 python ../../tools/check_report.py final_report.pdf --aux final_report.aux
-
-cd ../aipr2026
-tectonic -X compile --keep-intermediates paper.tex
 ```
 
 Use Tectonic 0.17.0. The class report limits Introduction through Conclusion to five pages.
@@ -189,13 +188,14 @@ The tool writes `dist/Roth_John_final_project.zip`, scans its allowlisted
 payload, rejects private infrastructure and prohibited file types, and records
 member hashes.
 
-The full Git checkout runs 490 public tests plus six expected weight-dependent
-skips. The data-free Canvas archive omits five test modules whose only inputs
-are the frozen metadata under `data/`: three immutable-hash guards and the two
-H100 snapshot-import suites. Those tests remain in Git and are required for a
-release. Running `python -m pytest -q` after ZIP extraction exercises the
-remaining package-safe scientific and runtime tests without reconstructing or
-redistributing excluded metadata.
+The full Git checkout runs the public test suite plus six expected
+weight-dependent skips. The data-free Canvas archive omits five test modules
+whose only inputs are the frozen metadata under `data/`: three immutable-hash
+guards and the two H100 snapshot-import suites. Those tests remain in Git and
+are required for a release. Running `python -m pytest -q` after ZIP extraction
+exercises the remaining package-safe scientific and runtime tests, including
+the held-out evidence suite, without reconstructing or redistributing excluded
+metadata.
 
 ## Contributions
 

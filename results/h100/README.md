@@ -1,68 +1,58 @@
 # H100 result evidence
 
-`h100_campaign_snapshot.json` is the single public input to the paper result
-generator. The committed deadline snapshot is an operator-status record, not a
-scientific result bundle. Its `DONE`, `STARTED`, and `PENDING` values describe
-campaign progress only. In particular, its status-only cells contain no loss,
-development F1, threshold, precision, or recall values.
+## Evidence tree (`evidence/`)
 
-Generate and validate the current paper inputs with:
+`evidence/` is the manuscript's input. It carries, from the completed 32-cell
+H100 campaign (code `1a82d508`, strict IEEE FP32, seed 0):
 
-```bash
-python -m src.analysis.h100_results generate \
-  --snapshot results/h100/h100_campaign_snapshot.json \
-  --arms-config configs/arms.yaml \
-  --output-dir docs/results/generated
-```
+- `TRAINING_COHORT.json` — the frozen cohort, byte-exact. It binds the
+  committed `configs/detector.yaml` by SHA-256 and records, for every cell,
+  the completion-marker hash, best-checkpoint hash and epoch, and the
+  dev-selected operating threshold.
+- `<exp_id>/final_metrics.json` — each cell's completion marker, byte-exact;
+  its SHA-256 must equal the cohort binding.
+- `<exp_id>/metrics.csv` — each cell's full training curve.
+- `<exp_id>/runtime_provenance.json` — sanitized copy (private cluster paths
+  replaced; `REDACTIONS.json` records each original SHA-256).
 
-The command also writes the sanitized, metric-free transcript at
-`results/h100/logs/campaign_status.txt` and binds its SHA-256 in the generated
-manifest.
+Checkpoint bytes stay outside the repository; their SHA-256 bindings are
+published so the operator archive can re-verify them.
 
-A deadline cohort may replace the status-only snapshot only through
-`import-deadline`. The command requires a status-only 32-cell ledger. It opens
-and hashes each completed cell marker, runtime record, and best and last
-checkpoint. The importer reports a fraction after all eight cells pass these
-checks.
+Generate and validate the paper inputs with:
 
 ```bash
-python -m src.analysis.h100_results import-deadline \
-  --extracted-root /path/to/verified/reverse-package \
-  --status-snapshot results/h100/h100_campaign_snapshot.json \
-  --arms-config configs/arms.yaml \
-  --frozen-root . \
-  --source-sha256 SHA256_OF_REVERSE_PACKAGE \
-  --captured-utc 2026-08-13T00:00:00+00:00 \
-  --output results/h100/h100_campaign_snapshot.json
+python -m src.analysis.heldout_results --output-dir docs/results/generated
 ```
 
-A `complete` snapshot may replace the deadline snapshot only through
-`import-complete`. The importer consumes a verified H100 result package. It
-checks the exact 32-cell matrix, strict IEEE FP32 H100 identity, frozen hashes,
-marker and runtime bindings, and the best and last checkpoint bytes. The
-generator then admits development-selection values to tables and curves.
+The generator fails closed: markers must hash to their cohort bindings, every
+metric must be TP/FP/FN-consistent, and each marker's best-dev F1 and epoch
+must equal its training-curve maximum. Held-out 16-scene TEST macros render
+only when all 32 immutable `test_metrics.json` results are present and
+revalidate against the cohort — all-or-nothing. The sealed 50-scene
+human-verified evaluation renders only from a committed `final_verified.csv`.
+Until those artifacts exist the report shows dashes, never substitutes.
 
-```bash
-python -m src.analysis.h100_results import-complete \
-  --extracted-root /path/to/verified/reverse-package \
-  --arms-config configs/arms.yaml \
-  --frozen-root . \
-  --source-sha256 SHA256_OF_REVERSE_PACKAGE \
-  --captured-utc 2026-08-13T00:00:00+00:00 \
-  --output results/h100/h100_campaign_snapshot.json
-```
+## Logs (`logs/`)
 
-If R2 and R3 are both complete, `--reference-receipt` may name a separately
-closed receipt for that exact pair. The importer rejects a singleton,
-non-`DONE` record, code-revision mismatch, duplicate experiment identity, or
-unbound marker/runtime hashes. Reference results remain separate from the
-32-cell core curves.
+- `campaign_status.txt` — the sanitized operator status transcript.
+- `h100_excerpts/<exp_id>.log` — head/tail excerpts of each training log
+  (full-log SHA-256 recorded in each header; site paths redacted).
+- `test_scoring_rtx5070ti.log` — the complete local TEST-scoring record from
+  2026-08-12, including the two failed protocol attempts, the owner-approved
+  Windows fsync deviation, two sealed cross-hardware results
+  (`cnnrand-f100-s0` 0.8124, `beS2-f100-s0` 0.7948), and the owner's stop
+  directive that moved TEST scoring to the H100 node.
 
-The committed public log contains campaign progress. It contains no
-acceptance-test evidence. A future submission may include acceptance artifacts
-after the importer verifies a result handback.
+## Operator status snapshot
 
-Never copy a value from a running cell, backfill a missing H100 value with a
-V100 diagnostic, or combine hardware classes. The 50-scene human-verified set
-remains sealed; public F1 values, when available, are corrected
-development-selection metrics.
+`h100_campaign_snapshot.json` is the sanitized deadline status record
+(13 done / 8 started / 11 pending at capture). It is historical: the campaign
+subsequently finished all 32 training cells, which is what the evidence tree
+records. `python -m src.analysis.h100_results generate` still renders it, and
+its `import-complete` / `import-deadline` machinery remains available for a
+fully receipted reverse handback.
+
+Never copy a value from a running cell, backfill an H100 value from another
+hardware class, or mix hardware classes in one comparison. Published F1
+values are corrected development-selection metrics until the held-out results
+land through the fail-closed path above.
