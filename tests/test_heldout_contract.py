@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import copy
 from types import SimpleNamespace
 
 import pandas as pd
@@ -25,6 +26,7 @@ from src.eval.heldout_contract import (
     write_test_result,
 )
 from src.eval.result_contract import atomic_write_json, sha256_file
+from src.eval.scorer import GroundTruthPoint
 
 
 SCENES = tuple(f"test-{index:02d}" for index in range(16))
@@ -220,15 +222,16 @@ def test_final_eval_checkpoint_revalidation_checks_hash_and_epoch(tmp_path):
 
 
 def test_final_eval_revalidates_checkpoints_before_lock_and_model_load():
-    source = inspect.getsource(final_eval.main)
-    preflight = source.index("selected_records: dict")
-    lock = source.index("_write_once_lock(")
-    label_read = source.index("labels = pd.read_csv(")
-    immediate = source.rindex("checkpoint = _validated_final_checkpoint(")
-    model_load = source.index("module = HeatmapLitModule.load_from_checkpoint(")
+    controller = inspect.getsource(final_eval.main)
+    worker = inspect.getsource(final_eval.score_final_cell)
+    preflight = controller.index("selected_records: dict")
+    lock = controller.index("_write_once_lock(")
+    label_read = controller.index("labels = pd.read_csv(")
+    immediate = worker.index("checkpoint = _validated_final_checkpoint(")
+    model_load = worker.index("module = HeatmapLitModule.load_from_checkpoint(")
     assert preflight < lock < label_read
     assert immediate < model_load
-    assert "pd.read_csv" not in source[immediate:model_load]
+    assert "pd.read_csv" not in worker
 
 
 def test_per_cell_cohort_validation_hashes_only_requested_checkpoint(
@@ -751,3 +754,256 @@ def test_curves_and_legacy_entrypoint_have_no_partial_or_mutating_fallback():
     assert 'payload.get("last_dev")' not in source
     assert "atomic_write_json" not in source
     assert "score_test_cohort" in source
+
+
+def _final_cell_payload_fixture():
+    cell = SimpleNamespace(
+        exp_id="beS1-f50-s0", init="bigearthnet_s1", fraction=0.5, seed=0
+    )
+    checkpoint = {
+        "relative_path": "beS1-f50-s0/checkpoints/best.ckpt",
+        "sha256": "1" * 64,
+        "epoch": 7,
+    }
+    record = {
+        "best_checkpoint": checkpoint,
+        "best_dev": {"threshold": 0.6, "epoch": 7, "f1": 0.8},
+    }
+    aggregate = point_metric(1, 0, 0)
+    zero = point_metric(0, 0, 0)
+    scene = "eval-scene"
+    payload = {
+        "final_result_schema": 1,
+        "created_utc": "2026-08-13T06:00:00+00:00",
+        "exp_id": cell.exp_id,
+        "init": cell.init,
+        "label_frac": cell.fraction,
+        "seed": 0,
+        "study_design": final_eval.FINAL_STUDY_DESIGN,
+        "interpretation": final_eval.AMENDED_FINAL_INTERPRETATION,
+        "threshold": 0.6,
+        "threshold_source": "best-dev-checkpoint-bound",
+        "dev_epoch": 7,
+        "checkpoint": dict(checkpoint),
+        "campaign_git_sha": "a" * 40,
+        "evaluator_git_sha": "b" * 40,
+        "detector_sha256": "c" * 64,
+        "cohort_sha256": "d" * 64,
+        "test_result_sha256": "e" * 64,
+        "owner_authorization_sha256": "f" * 64,
+        "final_access": {
+            "lock_sha256": "2" * 64,
+            "consumption_sha256": "3" * 64,
+            "data_view_sha256": "4" * 64,
+        },
+        "test_monotonicity": {
+            "ok": False,
+            "tolerance": 0.02,
+            "violations": [
+                {
+                    "init": "beS1",
+                    "from_fraction": 0.5,
+                    "to_fraction": 1.0,
+                    "from_test_f1": 0.8521,
+                    "to_test_f1": 0.8221,
+                    "drop": 0.03,
+                }
+            ],
+        },
+        "inference_precision": "32-true",
+        "strict_fp32": dict(final_eval._STRICT_FP32_BACKEND),
+        "eval_scene_ids": [scene],
+        "metrics": {
+            **aggregate,
+            "dark_recall": 1.0,
+            "dark_support": 1,
+            "near_shore_f1": 0.0,
+            "near_shore_support": 0,
+        },
+        "per_scene": {
+            scene: {
+                "aggregate": aggregate,
+                "slices": {"dark": aggregate, "near_shore": zero},
+                "matches": [
+                    {
+                        "prediction_index": 0,
+                        "ground_truth_index": 0,
+                        "distance_m": 0.0,
+                        "outcome": "tp",
+                    }
+                ],
+            }
+        },
+        "thresholded_predictions": {
+            scene: [
+                {
+                    "x_m": 10.0,
+                    "y_m": 20.0,
+                    "score": 0.7,
+                    "distance_from_shore_km": 5.0,
+                }
+            ]
+        },
+    }
+    kwargs = {
+        "cell": cell,
+        "record": record,
+        "eval_scene_ids": (scene,),
+        "campaign_git_sha": "a" * 40,
+        "evaluator_git_sha": "b" * 40,
+        "detector_sha256": "c" * 64,
+        "cohort_sha256": "d" * 64,
+        "test_result_sha256": "e" * 64,
+        "grid_audit": {
+            "monotonicity_ok": False,
+            "monotonicity_tolerance": 0.02,
+            "violations": payload["test_monotonicity"]["violations"],
+        },
+        "authorization_sha256": "f" * 64,
+        "final_access": dict(payload["final_access"]),
+        "ground_truth_by_scene": {
+            scene: [
+                GroundTruthPoint(
+                    x_m=10.0,
+                    y_m=20.0,
+                    confidence="HIGH",
+                    source="Manual",
+                    distance_from_shore_km=5.0,
+                )
+            ]
+        },
+    }
+    return payload, kwargs
+
+
+def test_final_cell_payload_validator_accepts_exact_bound_scene_evidence():
+    payload, kwargs = _final_cell_payload_fixture()
+    assert final_eval._validate_final_cell_payload(payload, **kwargs) == payload
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        lambda value: value["checkpoint"].update({"sha256": "9" * 64}),
+        lambda value: value["strict_fp32"].update(
+            {"cuda_matmul_fp32_precision": "tf32"}
+        ),
+        lambda value: value["final_access"].update({"lock_sha256": "9" * 64}),
+        lambda value: value["per_scene"]["eval-scene"]["aggregate"].update(
+            {"tp": 2}
+        ),
+        lambda value: value["per_scene"]["eval-scene"]["matches"].clear(),
+        lambda value: value["thresholded_predictions"]["eval-scene"][0].update(
+            {"score": 0.59}
+        ),
+    ),
+)
+def test_final_cell_payload_validator_rejects_tampered_evidence(mutation):
+    payload, kwargs = _final_cell_payload_fixture()
+    kwargs = copy.deepcopy(kwargs)
+    mutation(payload)
+    with pytest.raises(HeldoutContractError):
+        final_eval._validate_final_cell_payload(payload, **kwargs)
+
+
+def test_final_cell_payload_rejects_zero_fn_for_consumed_positive_gt():
+    payload, kwargs = _final_cell_payload_fixture()
+    zero = point_metric(0, 0, 0)
+    payload["thresholded_predictions"]["eval-scene"] = []
+    payload["per_scene"]["eval-scene"] = {
+        "aggregate": dict(zero),
+        "slices": {"dark": dict(zero), "near_shore": dict(zero)},
+        "matches": [],
+    }
+    payload["metrics"] = {
+        **zero,
+        "dark_recall": 0.0,
+        "dark_support": 0,
+        "near_shore_f1": 0.0,
+        "near_shore_support": 0,
+    }
+    with pytest.raises(HeldoutContractError, match="frozen-scorer pass"):
+        final_eval._validate_final_cell_payload(payload, **kwargs)
+
+
+def test_final_cell_payload_rejects_duplicate_tp_ground_truth_index():
+    payload, kwargs = _final_cell_payload_fixture()
+    payload["thresholded_predictions"]["eval-scene"].append(
+        {
+            "x_m": 10.0,
+            "y_m": 20.0,
+            "score": 0.65,
+            "distance_from_shore_km": 5.0,
+        }
+    )
+    payload["per_scene"]["eval-scene"]["matches"].append(
+        {
+            "prediction_index": 1,
+            "ground_truth_index": 0,
+            "distance_m": 0.0,
+            "outcome": "tp",
+        }
+    )
+    duplicate = point_metric(2, 0, 0)
+    payload["per_scene"]["eval-scene"]["aggregate"] = dict(duplicate)
+    payload["metrics"].update(duplicate)
+    with pytest.raises(HeldoutContractError, match="match evidence is invalid"):
+        final_eval._validate_final_cell_payload(payload, **kwargs)
+
+
+def test_final_cell_payload_accepts_multiple_ignores_for_one_low_gt():
+    payload, kwargs = _final_cell_payload_fixture()
+    scene = "eval-scene"
+    kwargs["ground_truth_by_scene"] = {
+        scene: [
+            GroundTruthPoint(
+                x_m=10.0,
+                y_m=20.0,
+                confidence="LOW",
+                source="Manual",
+                distance_from_shore_km=5.0,
+            )
+        ]
+    }
+    payload["thresholded_predictions"][scene] = [
+        {
+            "x_m": 10.0,
+            "y_m": 20.0,
+            "score": 0.7,
+            "distance_from_shore_km": 5.0,
+        },
+        {
+            "x_m": 11.0,
+            "y_m": 20.0,
+            "score": 0.65,
+            "distance_from_shore_km": 5.0,
+        },
+    ]
+    ignored = point_metric(0, 0, 0, ignored=2)
+    zero = point_metric(0, 0, 0)
+    payload["per_scene"][scene] = {
+        "aggregate": ignored,
+        "slices": {"dark": zero, "near_shore": zero},
+        "matches": [
+            {
+                "prediction_index": 0,
+                "ground_truth_index": 0,
+                "distance_m": 0.0,
+                "outcome": "ignored",
+            },
+            {
+                "prediction_index": 1,
+                "ground_truth_index": 0,
+                "distance_m": 1.0,
+                "outcome": "ignored",
+            },
+        ],
+    }
+    payload["metrics"] = {
+        **ignored,
+        "dark_recall": 0.0,
+        "dark_support": 0,
+        "near_shore_f1": 0.0,
+        "near_shore_support": 0,
+    }
+    assert final_eval._validate_final_cell_payload(payload, **kwargs) == payload

@@ -12,6 +12,8 @@ from scripts.h100.lightning_contract import (
     SINGLE_DEVICE_STRATEGY,
 )
 from scripts.h100.strict_fp32_probe import bind_child_probes
+from src.eval.final_eval import _validated_h100_hardware_class
+from src.eval.heldout_contract import HeldoutContractError
 
 
 BACKEND = {
@@ -102,6 +104,33 @@ def test_child_probes_bind_each_visible_device_to_requested_parent_gpu():
     assert [item["device"]["uuid"] for item in bound] == [
         device["uuid"] for device in inventory
     ]
+
+
+def test_final_eval_hardware_gate_requires_exact_bound_strict_h100_receipt():
+    inventory = _inventory()
+    hardware = {
+        "torch": "2.11.0+cu126",
+        "cuda_build": "12.6",
+        "driver_version": "590.1",
+        "backend": dict(BACKEND),
+        "devices": inventory,
+        "child_probes": bind_child_probes(
+            inventory, _children(inventory), expected_backend=BACKEND
+        ),
+    }
+    assert _validated_h100_hardware_class(hardware) == {
+        "gpu_name": "NVIDIA H100 80GB HBM3",
+        "total_memory_bytes": 85_000_000_000,
+        "compute_capability": [9, 0],
+        "driver_version": "590.1",
+        "torch": "2.11.0+cu126",
+        "cuda_build": "12.6",
+    }
+
+    tampered = copy.deepcopy(hardware)
+    tampered["child_probes"][3]["expected_parent_uuid"] = "GPU-WRONG"
+    with pytest.raises(HeldoutContractError, match="strict-FP32 H100"):
+        _validated_h100_hardware_class(tampered)
 
 
 @pytest.mark.parametrize(
