@@ -18,42 +18,43 @@ Development plan for a coding agent (Claude Code or similar). Execute phases in 
 
 ### Branch model (as actually built — this overrides the "main" phrasing elsewhere)
 - The integration / default branch is **`dev`** (GitHub `HEAD → dev`), **not `main`**; `main` currently lags `dev`. Everywhere this plan or AGENTS.md says "land on `main`" / "no direct commits to `main`," read **`dev`**: open each sprint branch off `dev` and PR back into `dev`.
-- Current work belongs on `sprint-7f-eval-contract`, stacked on the
-  owner-accepted Sprint-7e commit
-  `26bece168cd3b9b262ffec5939b836df21b352cd`; the immutable Sprint-7d base
-  remains `2726199efcebbebc89156e708b89df2a3415468a`. Cross-DGX probes on
-  `dgx09` and `dgx18` matched runtime closure `a4af214a...`. Compute job
-  541574 then built and verified the sealed Python-3.11.13/Torch-2.11.0+cu126
-  venv at tree `d1237904...` with receipt `d84d60c8...`. Runtime commit
-  `b49db0ca` passed full external-signal/requeue smoke as Judy job 542536.
-  Acceptance job 542596 then verified and staged every authorized archive and
-  passed the host slice plus 406 sealed-venv tests, but failed one
-  environment-sensitive assertion because Git materialized a tracked
-  executable as mode `0770` under Judy's umask while the test required exactly
-  `0755`. Its EXIT cleanup also could not remove intentionally sealed fixture
-  venv directories. It wrote no `H100_READY.json`; no numerical/model gate or
-  H100 training ran. The portable executable-bit assertion and guarded
-  owner-traversal cleanup are now the current runtime correction. Repackage it
-  into a fresh namespace, rerun smoke and acceptance, then launch only from
-  canonical `H100_READY.json`. External
-  V100/reference/cutover/isolation controls are deferred to Phase-5
-  completion/export/reporting; V100 remains untouched.
+- Current work belongs on `sprint-8-final-eval-amendment`, branched from
+  `dev` at `322dea0`. The corrected Judy H100 campaign
+  `xview3-h100-fp32-20260806` at
+  `1a82d508fbeb9fdf6868a9637611e9018952fb43` completed training and immutable
+  16-scene TEST scoring for all 32 core cells. Its predeclared grid validation
+  then failed: `beS1-f50-s0` TEST F1 0.8521 fell to 0.8221 at
+  `beS1-f100-s0`, a 0.0300 drop greater than the 0.02 tolerance. Preserve the
+  campaign's failed terminal state and complete TEST evidence. On 2026-08-13
+  the owner authorized a separate, hash-bound amendment to evaluate all 32
+  cells together once on the 50 human-verified scenes for descriptive,
+  exploratory transfer analysis. That authorization does not make the grid
+  monotone or Phase 5 complete. Corrected R2/R3, current V100 context,
+  `CUTOVER_READY.json`, and `V100_DIAGNOSTIC_ISOLATION.json` remain mandatory;
+  no final-scene result or completed lock is claimed by this source revision.
 - CI must trigger on `dev` (see the CI-trigger fix in §1b) or it never runs on the active branch.
 
 ### Status ledger (ground truth as of this revision)
 | Phase | Sprint branch | State | Evidence | Missing to reach DONE |
 |---|---|---|---|---|
-| 0 Env/scaffold | `sprint-0-env` + `sprint-7c-fp32-grid` + `sprint-7d-h100-fp32` + `sprint-7e-judy-venv` + `sprint-7f-eval-contract` | **PARTIAL — base payload and compute-qualified Judy venv verified; portable runtime cleanup repackage pending** | base package `xview3-h100-fp32-2726199efcebbebc89156e708b89df2a3415468a` is verified; `dgx09`/`dgx18` matched runtime `a4af214a...`; job 541574 built/verified venv tree `d1237904...` and receipt `d84d60c8...`; `b49db0ca` smoke 542536 passed; acceptance 542596 staged successfully and passed 406/407 sealed-venv tests before the umask-sensitive shim-mode assertion, publishing no `H100_READY.json` | package/upload/pull the portable executable-bit and sealed-fixture cleanup correction into a fresh namespace, then pass fresh Slurm smoke and every Judy-local H100 probe/throughput gate; external reference/isolation evidence is deferred to the Phase-5 completion/export barrier |
+| 0 Env/scaffold | `sprint-0-env` + `sprint-7c-fp32-grid` + `sprint-7d-h100-fp32` + `sprint-7e-judy-venv` + `sprint-7f-eval-contract` | **H100 RUNTIME ACCEPTED AND USED** | the corrected campaign provenance binds the accepted native sealed venv, strict-IEEE-FP32 runtime, and one uniform H100 hardware/environment class for all 32 cells | retain all immutable runtime/readiness evidence; this row does not satisfy the separate Phase-5 scientific or external-control gates |
 | 1 Data/splits | `sprint-1-data` + `sprint-1b/1c` freeze branches | **DONE — all three artifacts frozen** | all P1 code + tests green; labels acquired and profiled (BLOCKER-4); **`data/splits.json` FROZEN** (150 scenes: 111/23/16 + 50 eval_final, seed 0) pinned by `test_splits_immutable`; **`data/lsssdd_split.json` FROZEN** (8,100/900 over the verified 9,000 sub-images) pinned by `test_lsssdd_split_immutable`; **`data/stats.json` FROZEN** (105,408 train chips, 111 scenes, 150/150 chipped with zero failures: VH −26.448/5.951, VV −16.599/6.062 dB) pinned by `test_stats_immutable`; label projection visually verified (QA gallery) | tag `phase-1-done` at the sprint-1c merge |
 | 2 Scorer/decode/threshold | `sprint-2-scorer` + `sprint-2b-eval-hardening` | **DONE — scorer re-frozen after eval hardening; tagged `phase-2-done`** | `scorer.py` counts near-shore FPs and exposes per-scene aggregation; `threshold.py` owns dev threshold selection; `decode.py` rejects non-finite heatmaps; Phase-2 tests pass | — |
 | 3 Detector | `sprint-3-detector` + `sprint-3b` + `sprint-3c-optimizer-fix` | **DONE — detector frozen + tagged `phase-3-done`; P3.6 PASSED** | the optimizer fix and Option-B plan-literal 50-epoch/early-stop budget decision are merged; historical P3.6 dev F1: ViT floor 0.788 < SatDINO 0.835 < SARMAE 0.858; CNN floor 0.677 < BigEarthNet-S2 0.726 < BigEarthNet-S1 0.819 (`runs/p36_summary.json`) | — |
-| 4 FM+floor arms+refs | `sprint-4/5/6` + `sprint-7c-fp32-grid` + `sprint-7d-h100-fp32` + `sprint-7e-judy-venv` + `sprint-7f-eval-contract` | **CORRECTED RELAUNCH PENDING — uniform H100 core restart; corrected V100 references** | the live V100 core campaign continues untouched only as non-reportable diagnostics; R2 preserves its exact weight and is rescored, while R3 requires a corrected-contract rerun | pass every Judy-local H100 launch gate, then rerun the 24 Phase-4 core cells from scratch; corrected R2/R3 evidence remains mandatory before Phase-5 completion/export/reporting |
-| 5 ImageNet arms+grid | `sprint-7-grid` + `sprint-7b-imagenet-arms` + `sprint-7c-fp32-grid` + `sprint-7d-h100-fp32` + `sprint-7e-judy-venv` + `sprint-7f-eval-contract` | **OWNER APPROVED, NOT LAUNCHED — corrected H100 strict-FP32 campaign gated** | strict evaluation-GT and exact schema-2 checkpoint binding are implemented; smoke 542536 passed, while acceptance 542596 completed staging and 406/407 sealed-venv tests before the portable-mode gate, so no `H100_READY.json`, GPU probe, or training exists | package/upload/pull the current runtime-only correction into a fresh namespace, pass fresh smoke plus all Judy-local numerical gates, run all 32 cells, then complete corrected references/cutover/isolation before Phase-5 completion, reverse export, analysis, or reporting |
-| 6 Final eval | `sprint-8-final-eval` | NOT STARTED | once-only tripwire and frozen 50 eval IDs exist; no lockfile has been written | the 50 eval-final raster scenes are not present on this node and must be acquired/extracted before the one allowed evaluation |
+| 4 FM+floor arms+refs | `sprint-4/5/6` + `sprint-7c-fp32-grid` + `sprint-7d-h100-fp32` + `sprint-7e-judy-venv` + `sprint-7f-eval-contract` | **CORE COMPLETE; REFERENCE/CONTROL BARRIER RETAINED** | all corresponding corrected H100 core cells trained and were TEST-scored as part of the immutable 32-cell cohort; V100 core work remains non-reportable diagnostics | corrected R2/R3 and the external control evidence remain mandatory before final evaluation, reverse export, analysis, or reporting |
+| 5 ImageNet arms+grid | `sprint-7-grid` + `sprint-7b-imagenet-arms` + `sprint-7c-fp32-grid` + `sprint-7d-h100-fp32` + `sprint-7e-judy-venv` + `sprint-7f-eval-contract` | **STOPPED — PREDECLARED MONOTONICITY GATE FAILED** | one immutable 32-cell training cohort and all 32 TEST results exist; the recorded `beS1` f50→f100 F1 drop is 0.0300, exceeding the 0.02 tolerance, and the campaign truthfully terminates failed | never mark `monotonicity_ok` true or tag `phase-5-done`; preserve and disclose the failure. The 2026-08-13 amendment permits only the bounded all-32 descriptive final transfer evaluation after every retained external control validates |
+| 6 Final eval | `sprint-8-final-eval-amendment` | **OWNER AUTHORIZED, NOT YET EXECUTED** | the owner explicitly selected one symmetric pass over all 32 cohort cells; implementation must bind the failed grid, exact TEST/cohort evidence, retained controls, and a clean evaluator SHA before final access | acquire and verify the 50 final rasters and labels without semantic access, publish the immutable owner authorization, then run the single no-requeue all-32 allocation; no result or completed lock is claimed yet |
 | 7 Analysis | `sprint-9-analysis` | NOT STARTED | — | — |
 | 8 Contingent ref | — | **REMOVED** | former R1 ImageNet-ConvNeXt role is now represented symmetrically by core Arms 4/8 | — |
 
 ### Known blockers — resolve before the affected phase (do not skip)
+
+The dated prelaunch narratives in BLOCKER-9 through BLOCKER-16 remain
+historical provenance. Where they say the corrected H100 campaign had not
+launched, the 2026-08-13 branch/state ledger above supersedes only that
+execution-status wording; their scientific, provenance, isolation, and
+deferred-control requirements remain in force.
+
 - **BLOCKER-1 — scorer freeze pin (RESOLVED).** The original pin in `tests/test_scorer_immutable.py` was mis-recorded at birth; `sprint-2b-eval-hardening` intentionally re-pinned the scorer after the BLOCKER-3 metric fix. Future scorer changes require human sign-off and a new pin.
 - **BLOCKER-2 (RESOLVED).** Dev-tuned threshold selection lives in non-frozen `src/eval/threshold.py`; `scorer.py` stays pure scoring.
 - **BLOCKER-3 (RESOLVED).** Near-shore F1 now counts unmatched FP predictions with `PredictionPoint.distance_from_shore_km <= 2.0`; missing shore distance on an unmatched FP raises. Dark-vessel remains a GT-defined recall slice, not a precision/F1 slice.
@@ -72,6 +73,7 @@ Development plan for a coding agent (Claude Code or similar). Execute phases in 
 - **BLOCKER-14 — H100 READINESS-RECEIPT INTEGRATION CORRECTION IN SOURCE; REPACKAGE PENDING (2026-08-05).** A pre-smoke source audit found that acceptance correctly published the phase-isolated `venv.staged_data_view`, while cutover still required the retired `venv.staged_base_extraction`; reverse-result export also attempted to recover a persistent base-extraction path that readiness intentionally removes. No H100 smoke, acceptance, held-out access, cutover, or training occurred under this mismatch. Sprint 7f now validates the canonical phase data-view receipt end to end, recovers the path-bearing extraction record only from the sealed venv build receipt, binds the immutable evaluation-GT receipt at cutover, and tightens the strict-FP32 backend contract. Package/upload/pull this correction and pass a fresh complete smoke before acceptance.
 - **BLOCKER-15 — RESOLVED IN SOURCE AND CONFIRMED ON JUDY 2026-08-06: ACCEPTANCE TEST-ENVIRONMENT SPLIT.** Runtime commit `b49db0ca` passed smoke 542536; acceptance 542596 then passed the exact transfer-Python host slice and collected all remaining tests under the sealed venv. It progressed through data staging and 406 passing sealed-venv tests before the independent BLOCKER-16 portability assertion. No Torch-dependent test remains in the transfer environment.
 - **BLOCKER-16 — JUDY GIT-MODE AND SEALED-SCRATCH CLEANUP CORRECTION; REPACKAGE PENDING (2026-08-06).** Acceptance 542596 received every authorized archive, passed its host gate, and ran 407 sealed-venv tests; only `test_h100_child_requeue.py` failed because Judy's umask materialized the Git-tracked executable shim as `0770` while the test incorrectly required exactly `0755`. Git versions executability, not the complete permission mask. The job then exposed a separate EXIT-cleanup defect when intentionally sealed `0555` fixture venv directories prevented plain depth deletion. The correction requires a regular non-symlink owner-executable shim and, only after the existing exact canonical-path/non-symlink/owner guard, restores owner traversal on allocation-local directories before deletion. Preserve job 542596 and its namespace as diagnostics; publish no readiness, reuse no partial marker, and rerun a fresh content-addressed smoke plus acceptance. This changes no scientific or frozen artifact.
+- **BLOCKER-17 — PREDECLARED TEST MONOTONICITY STOP TRIGGERED; BOUNDED OWNER AMENDMENT 2026-08-13.** The corrected H100 campaign completed all 32 training cells and all 32 immutable TEST scores, then failed grid validation because `beS1` dropped from 0.8521 at f50 to 0.8221 at f100 (0.0300 > 0.02). The failed campaign state, violation list, and `monotonicity_ok == false` are permanent evidence; Phase 5 is not complete and may not be tagged done. After that outcome was known, the owner explicitly authorized exactly one symmetric evaluation of all 32 frozen cells on all 50 human-verified scenes. This is a descriptive/exploratory transfer analysis, not a repair, override, or retrospective validation of the label-efficiency curve. It authorizes no retraining, new checkpoint or threshold selection, tuning, selective omission, selective retry, requeue, or second final access. Corrected R2/R3, current V100 context, `CUTOVER_READY.json`, and `V100_DIAGNOSTIC_ISOLATION.json` are not waived.
 - **Scene-count decision (human, 2026-07-05): 150 study scenes** of the 554 available, selected stratified at seed 0 and frozen as 111 train / 23 dev / 16 test; all 50 verified IDs form `eval_final`. This split remains immutable. Current V100 execution continues only as a non-reportable diagnostic while corrected H100 gates are pending; R2/R3 remain separate V100 references. The accepted canonical core grid is all-H100 and never a hardware mixture.
 - **Expected CI color.** All freeze/split/parity guards exist and must be green. On this amendment branch, `test_fm_checkpoints_load` must cover six exact pretrained checkpoints; a failure or a still-four-checkpoint manifest is a STOP, not an expected skip.
 
@@ -132,7 +134,7 @@ The two tracks are matched by *role*: floor (1,5), optical remote-sensing pretra
 1. **The eval scorer is sacred.** Written first (Phase 2), unit-tested, never modified after Phase 3 begins. Every reported number in the project flows through `src/eval/scorer.py`.
 2. **Initialization is the only variable *within* a track; architecture is the only variable *across* matched roles.** Two backbone definitions only: ViT-B/16 (arms 1–4) and ConvNeXt-V2-Base (arms 5–8). Within each track, one head, one optimizer config, one augmentation policy, one decode config, one fine-tuning schedule, and the single seed 0 — every arm fine-tunes end-to-end, with no frozen/fine-tuned asymmetry. The head/optimizer/schedule are shared across *both* tracks too (only the backbone and its family adapter differ), so ViT-vs-CNN is fair. If you are tempted to tune something per-arm, stop — that breaks the study. All six pretrained initializations are downloaded and encoder-only; no LS-SSDD or other backbone training remains active.
 3. **Scene-level splits only.** No chip from a dev/test/eval scene may appear in any training or pretraining corpus. Membership is keyed on `scene_id`, recorded once in `data/splits.json`; every dataloader asserts membership at construction.
-4. **The ~50 human-verified xView3 validation scenes are touched exactly once,** by `src/eval/final_eval.py`, after the grid is complete. Tripwire: the script refuses to run without `--i-am-sure` and writes a timestamped lockfile on first use.
+4. **The ~50 human-verified xView3 validation scenes are touched exactly once,** by `src/eval/final_eval.py`, after the grid is complete. Tripwire: the script refuses to run without `--i-am-sure` and writes a timestamped lockfile before semantic access. Under the 2026-08-13 owner amendment, that single access evaluates all 32 frozen cohort cells symmetrically in one no-requeue allocation; there are no selective retries or second access after the lock.
 5. **Execution hardware is a recipe-preserving, all-or-none choice.** The accepted canonical core grid contains all 32 cells on one uniformly recorded H100 hardware/environment class, each restarted from scratch with one process/GPU, no DDP, micro-batch 16, accumulation 1, effective batch 16, and strict-IEEE-FP32 Lightning `32-true` training plus model-forward inference. Strict FP32 on H100 requires CUDA-matmul TF32 and cuDNN TF32 both disabled and recorded. The V100 full-fp32 campaign may continue untouched only as isolated, non-reportable diagnostic evidence; it is not a reportable fallback, and its markers/checkpoints can never satisfy, suppress, or resume an H100 cell. R2/R3 remain separate V100 references. Never combine V100 and H100 core cells in one curve or completion namespace.
 6. **Core arms vs. references are reported separately.** The eight core arms (1–8) go in the study tables and the two-track label-efficiency figure. R2 YOLO26 and R3 LocateAnything go in a separate references section for context; they are not on the controlled curves. There is no R1 and no challenge/leaderboard arm.
 7. **Determinism.** Every run takes `--seed`; seed torch, numpy, random, and dataloader workers (Lightning's `seed_everything(workers=True)`). Log the resolved config (full YAML), git SHA, and an environment hash into the run directory.
@@ -281,7 +283,7 @@ Each sprint branch carries a short `SPRINT.md` stating its goal, its acceptance 
 | `sprint-7d-h100-fp32` | Phase 5 | Spine | stacked H100 strict-IEEE-FP32 handoff/cutover amendment; all 32 core cells restart uniformly, while R2/R3 remain V100 references |
 | `sprint-7e-judy-venv` | Phase 5 | Spine | sealed native Judy Python-3.11.13 venv and separate-filesystem runtime contract |
 | `sprint-7f-eval-contract` | Phase 5 | **Foundation** | correct scorer inputs, checkpoint-bound operating points, immutable held-out cohort barrier, and Box control evidence |
-| `sprint-8-final-eval` | Phase 6 | **Foundation** | touches the once-only verified-scene eval |
+| `sprint-8-final-eval-amendment` | Phase 6 | **Foundation** | hash-binds the post-TEST owner exception and touches the once-only all-32 verified-scene eval |
 | `sprint-9-analysis` | Phase 7 | Leaf | ViT-vs-CNN figures/slices; read the output, trust the code |
 
 - **Foundation tier** — review every line; slow, careful merge. These define or consume ground truth.
@@ -526,34 +528,87 @@ Owner: detector owner. Jul 15–28. By owner decision on 2026-08-04, the V100 fu
 Owner: detector owner. Jul 29–Aug 11. Arms 4/8 load exact downloaded ImageNet checkpoints; this project performs no backbone pretraining.
 
 - **P5.1 — DONE 2026-07-22.** Arm 4 `vit_imagenet` is pinned to `timm/vit_base_patch16_224.augreg_in1k`; Arm 8 `cnn_imagenet` is pinned to `timm/convnextv2_base.fcmae_ft_in1k`. Only classification heads are dropped; both are included in the six-checkpoint structural/value-sensitive guard with exact source/license provenance.
-- **P5.2 — CORRECTED H100 RELAUNCH APPROVED, GATES PENDING, NOT LAUNCHED.** Sprint 7c established the uniform shared-`32-true` recipe and intentionally re-pinned the detector. Sprint 7d changes only canonical core hardware; Sprint 7e supplies the native Judy venv contract, now compute-qualified under resolved BLOCKER-13; Sprint 7f corrects evaluation GT, exact checkpoint/threshold binding, held-out cohort isolation, separate-filesystem Box controls, and readiness integration. After the corrected runtime is transferred and every Judy-local payload/source/GT/venv/test/checkpoint/strict-FP32/model-family/200-step/requeue/namespace gate passes, launch all 32 H100 core cells from scratch from the canonical H100-ready receipt at micro/effective batch 16, one process/GPU, no DDP. Corrected references, remaining-V100 context, cutover, and diagnostic isolation are deferred to the mandatory Phase-5 completion/export/reporting barrier. The V100 queue stays untouched and non-reportable.
+- **P5.2 — EXECUTED; GRID GATE FAILED AFTER TEST.** Sprint 7c established the uniform shared-`32-true` recipe and intentionally re-pinned the detector; Sprints 7d–7f established the accepted Judy runtime, corrected evaluation GT, checkpoint/threshold binding, cohort isolation, and control contracts. The corrected H100 campaign trained all 32 cells from scratch and scored all 32 on TEST at micro/effective batch 16, one process/GPU, no DDP. Its subsequent monotonicity failure is recorded below. Corrected references, remaining-V100 context, cutover, and diagnostic isolation remain the mandatory completion/export/analysis/reporting barrier. The V100 core namespace remains isolated and non-reportable.
 - **P5.3** Use **seed 0 only** for every cell. Do not schedule seeds 1/2 and do not report seed bands, variance, confidence intervals, or error bars. Archive the superseded `vitsup-f10-s0`, `cnnsup-f10-s0`, `vitsup-lsssdd`, and `cnnsup-lsssdd` artifacts outside the active run-ID namespace; never delete or mix them into current summaries. After H100 launch, all 32 core rows and checkpoints must carry the same accepted H100 environment/hardware provenance; a V100 core row is stale even if its experiment ID matches.
 - **P5.4** After all 32 exact-schema training markers exist, atomically freeze one immutable `TRAINING_COHORT.json` binding every best-dev threshold to its verified best-checkpoint SHA/epoch and shared provenance. Only then score the 16-scene test split, writing a separate immutable `test_metrics.json` per run without modifying `final_metrics.json`. Require all 16 scene IDs plus exact support counts (1,165 vessel positives, zero dark-vessel positives, two near-shore positives). Build `runs/summary/grid.csv` only from the complete frozen cohort and separate test results, then render eight seed-0 curves (solid ViT, dashed CNN; colors for floor, optical RS, SAR, and ImageNet/generic). No uncertainty shading.
-- **P5.5** Headline computations: (a) within-track ordering at 10% (floor vs generic ImageNet vs optical RS vs SAR); (b) within-track generic-vs-RS and optical-vs-SAR gaps; (c) cross-track matched-role gaps with the ImageNet training-history caveat; (d) interpolated label budgets. Describe seed-0 results as point estimates, not uncertainty-aware estimates.
+- **P5.5** The predeclared computations were: (a) within-track ordering at 10% (floor vs generic ImageNet vs optical RS vs SAR); (b) within-track generic-vs-RS and optical-vs-SAR gaps; (c) cross-track matched-role gaps with the ImageNet training-history caveat; and (d) interpolated label budgets. Because the monotonicity gate failed, retain these only as explicitly labeled seed-0 descriptive point estimates. Do not present interpolated budgets or label-savings claims as validated headline conclusions.
+
+**Recorded outcome (2026-08-13):** the corrected H100 campaign completed all
+32 training cells and all 32 immutable 16-scene TEST scores, but the
+predeclared monotonicity gate failed. `beS1-f50-s0` scored 0.8521 and
+`beS1-f100-s0` scored 0.8221, a 0.0300 drop greater than the 0.02 tolerance.
+The campaign therefore remains failed with its exact violation evidence;
+Phase 5 is not complete and the label-efficiency curve is not retrospectively
+validated.
 
 **Acceptance:** `grid.csv` has exactly 32 active rows (8 arms × 4 fractions × seed 0), no superseded IDs, no NaNs, and populated per-fraction scene/vessel/dark-proxy/near-shore counts. The eight-curve point-estimate figure renders without bands. `monotonicity_ok` uses the predeclared 0.02 F1 drop tolerance and must be true for every arm; false is a STOP.
 
 **Entry preconditions (Phase 5 / H100 launch):** frozen split/stats/scorer/detector guards green; centralized evaluation GT audit matches dev8 517/107/118, dev23 1,479/804/441, and test16 1,165/420/325 without reading final labels; `src/eval/threshold.py` and exact result schema 2 are enforced; the immutable Sprint-7d payload and committed Sprint-7f runtime amendment match their manifests and `SHA256SUMS`; at least two eligible DGX nodes report the same full base-Python runtime fingerprint and the compute-built final-path Python 3.11.13 venv passes tree/build/base-Python verification; the external-signal Slurm smoke passes; all six checkpoints and notes pass structural and H100 value-sensitive checks; both families pass finite strict-fp32 batch-16 train and full-scene inference probes with TF32 off; the finite positive 200-step H100 projection is accepted; the H100 core namespace and cohort path are empty; and the committed launch SHA/worktree are clean. No V100/reference/cutover path is a launch input. The historical LS split and all eval-final material are not H100 inputs.
 
-**Definition of Done — machine-checkable (Phase 5):** one immutable `TRAINING_COHORT.json` contains exactly the 32 manifest IDs and validates every schema-2 checkpoint-bound marker; 32 separate immutable `test_metrics.json` files carry exact test support and cohort provenance; `grid.csv` contains exactly those IDs, seed 0, zero NaNs, populated count columns, no `vitsup`/`cnnsup` rows, and `monotonicity_ok == true` for all arms; the eight-curve figure renders. Corrected `yolo26-f100` and `locateanything-zs`, current V100 diagnostic context, `CUTOVER_READY.json`, and `V100_DIAGNOSTIC_ISOLATION.json` independently validate before reverse export, analysis, or reporting. Exactly 34 total experiment records then exist. Tag `phase-5-done` only after this deferred barrier passes.
+**Definition of Done — machine-checkable (Phase 5):** one immutable `TRAINING_COHORT.json` contains exactly the 32 manifest IDs and validates every schema-2 checkpoint-bound marker; 32 separate immutable `test_metrics.json` files carry exact test support and cohort provenance; `grid.csv` contains exactly those IDs, seed 0, zero NaNs, populated count columns, no `vitsup`/`cnnsup` rows, and `monotonicity_ok == true` for all arms; the eight-curve figure renders. Corrected `yolo26-f100` and `locateanything-zs`, current V100 diagnostic context, `CUTOVER_READY.json`, and `V100_DIAGNOSTIC_ISOLATION.json` independently validate before reverse export, analysis, or reporting. Exactly 34 total experiment records then exist. Because the recorded grid is false, this canonical DoD was not met: do not mutate the evidence or tag `phase-5-done`. The bounded Phase-6 amendment below does not change that conclusion.
 
 ## 8. Phase 6 — Final eval
 
-- **P6.1** FINAL EVAL (once): best config per study arm at 10%, 25%, and 100% scored on the verified scenes via `final_eval.py --i-am-sure`. These are the study's headline numbers; nothing is tuned after this.
+- **P6.1 — POST-TEST OWNER AMENDMENT (2026-08-13).** Evaluate every frozen
+  core cell—eight arms × f10/f25/f50/f100 × seed 0, exactly 32 cells—once on
+  all 50 human-verified scenes. Use each cohort-bound best checkpoint and its
+  already frozen best-dev threshold. The all-32 scope is deliberately
+  symmetric: no arm or fraction may be omitted, substituted, or selected
+  using TEST/final performance. These results are descriptive/exploratory
+  transfer evidence. They are not headline confirmation of the
+  label-efficiency curve and cannot repair or retroactively validate the
+  failed Phase-5 monotonicity check.
 
-**Entry preconditions (Phase 6):** Phase 5 complete (`TRAINING_COHORT.json`, 32 immutable `test_metrics.json` files, full `grid.csv`, and monotonicity green); every dev-tuned threshold remains bound to its exact best checkpoint; explicit owner confirmation is recorded; the verified-scene lockfile does **not** yet exist (this eval runs exactly once).
+**Entry preconditions (Phase 6, amended failed-grid path):** preserve the exact
+failed campaign terminal record, immutable 32-cell `TRAINING_COHORT.json`, all
+32 immutable `test_metrics.json` files, the full `grid.csv`,
+`monotonicity_ok == false`, and every recorded violation. Validate corrected
+`yolo26-f100` and `locateanything-zs`, current V100 diagnostic context,
+`CUTOVER_READY.json`, and `V100_DIAGNOSTIC_ISOLATION.json`; none of these
+Phase-5 controls is waived. Every dev threshold must remain bound to the exact
+best checkpoint and SHA used for TEST. Before any semantic read of final
+labels or rasters, record the owner's explicit authorization in one immutable,
+content-addressed receipt binding the campaign SHA, cohort, all 32 TEST result
+hashes, failed grid and violations, retained controls, exact 32-cell order,
+and clean final-evaluator SHA. The verified-scene lock and every final output
+must be absent.
 
-**Acceptance / Definition of Done — machine-checkable (Phase 6):** `test -f runs/summary/final_verified.csv` and the verified-eval lockfile exists. This is the once-only eval — nothing is tuned after it. Tag `phase-6-done`.
+**Execution contract:** use one dedicated eight-GPU strict-IEEE-FP32 Slurm
+allocation with requeue disabled. Write the once-only lock before parsing
+`validation.csv` or reading any final raster, then score all 32 cells during
+that single access event. No training or checkpoint mutation is permitted; no
+threshold selection, calibration, hyperparameter adjustment, model/fraction
+selection, tuning, or use of final labels for any decision is permitted. A
+cell may be launched only once. There is no automatic retry, selective retry,
+requeue, or resubmission after the lock; any interruption or incomplete cell
+is a STOP requiring a new explicit owner decision, never implied recovery
+authority.
+
+**Acceptance / Definition of Done — machine-checkable (Phase 6):** the
+verified-eval lock and immutable owner authorization exist; all 32 immutable
+per-cell final records validate against that authorization, their exact TEST
+record, checkpoint, and threshold; and `runs/summary/final_verified.csv`
+contains exactly the same 32 cells with no NaNs, duplicates, omissions, or
+extra rows. The summary and every report must carry the failed monotonicity
+state and descriptive/exploratory interpretation. Nothing is tuned afterward.
+`phase-6-done` records completion of this bounded evaluation only and must not
+be described as Phase-5 completion or monotonicity acceptance.
 
 ## 9. Phase 7 — Error analysis and figures (study)
 
 Owner: detector owner. Aug 12–25 (begin writeup in parallel).
 
-- **P7.1** `error_slices.py`: per-arm dark-vessel recall and near-shore F1 vs label fraction, for **both tracks**; FP taxonomy on ~200 sampled FPs (shoreline clutter / fixed infrastructure / sea clutter / sidelobe). Two headline slices: the **SAR-vs-optical dark-vessel-recall gap within each track**, and the **ViT-vs-CNN gap at matched pretraining roles** (does the SAR-domain advantage generalize across architectures?).
-- **P7.2** `qualitative.py`: a fixed gallery of 24 chips (8 dark-vessel hits, 8 misses, 8 FPs) rendered identically for all eight study arms — the money figure beside the two-track curve.
+- **P7.1** `error_slices.py`: per-arm dark-vessel recall and near-shore F1 vs label fraction, for **both tracks**; FP taxonomy on ~200 sampled FPs (shoreline clutter / fixed infrastructure / sea clutter / sidelobe). Two descriptive slices: the **SAR-vs-optical dark-vessel-recall gap within each track**, and the **ViT-vs-CNN gap at matched pretraining roles** (does the observed SAR-domain difference generalize across architectures?).
+- **P7.2** `qualitative.py`: a fixed gallery of 24 chips (8 dark-vessel hits, 8 misses, 8 FPs) rendered identically for all eight study arms as descriptive evidence beside the two-track curve.
 - **P7.3** `architecture_comparison.py`: the cross-track summary — for each of the four pretraining roles, ViT vs CNN F1 across fractions, with the BigEarthNet-S1-vs-S2 contrast (cleanest domain comparison) called out.
 
-**Entry preconditions (Phase 7):** Phase 6 final numbers written (`runs/summary/final_verified.csv`).
+**Entry preconditions (Phase 7):** Phase 6 final numbers written
+(`runs/summary/final_verified.csv`) with all 32 rows, immutable authorization,
+once-only lock, and retained Phase-5 controls validated. Analysis must preserve
+and prominently disclose the failed predeclared monotonicity check, one-seed
+point-estimate limitation, and descriptive/exploratory status of the
+human-verified transfer results; it may not present them as retrospective
+validation of the label-efficiency curve.
 
 **Definition of Done — machine-checkable (Phase 7):** `make qa` plus `curves.py` / `error_slices.py` / `architecture_comparison.py` produce the two-track figure, the dark-vessel / near-shore slice tables, and the 24-chip gallery without error. Tag `phase-7-done`.
 

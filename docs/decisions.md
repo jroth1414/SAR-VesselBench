@@ -768,3 +768,56 @@ start; all scientific and deferred-reporting controls remain in force.
   split, statistics, labels, evaluation contract, model, optimizer, schedule,
   seed, strict-FP32 setting, batch, checkpoint rule, held-out barrier, or
   32-cell campaign grid.
+
+## Post-TEST all-32 verified-scene evaluation amendment (human decision, 2026-08-13)
+
+- **Narrow supersession:** this decision supersedes the earlier requirement
+  that Phase 5 be monotonicity-green before any final-scene access, solely for
+  the bounded all-32 evaluation below. It does not declare Phase 5 complete or
+  waive its external controls, evidence, disclosure, export, analysis, or
+  reporting barriers.
+- **Observed predeclared STOP:** the corrected Judy H100 campaign
+  `xview3-h100-fp32-20260806` at
+  `1a82d508fbeb9fdf6868a9637611e9018952fb43` completed all 32 training cells
+  and all 32 immutable 16-scene TEST scores. Grid validation then failed the
+  predeclared 0.02 tolerance: `beS1-f50-s0` TEST F1 was 0.8521 and
+  `beS1-f100-s0` was 0.8221, a 0.0300 decline. Preserve the campaign's failed
+  terminal state, `monotonicity_ok == false`, and complete violation evidence.
+  Phase 5 is not complete and must not receive `phase-5-done`.
+- **Owner decision after seeing TEST:** proceed with one evaluation of all 32
+  frozen cohort cells—eight arms × f10/f25/f50/f100 × seed 0—on all 50
+  human-verified scenes. The symmetric all-32 scope prevents post-TEST
+  selection of arms or fractions. This is descriptive/exploratory evidence
+  about transfer to the human-verified distribution, not a waiver of the
+  monotonicity STOP, a repaired curve, or retrospective confirmation of the
+  study's label-efficiency claim.
+- **Exact operating points:** every cell uses only its immutable
+  cohort-bound best checkpoint and already frozen best-dev threshold, with
+  the same strict-IEEE-FP32 model-forward contract. This amendment authorizes
+  no retraining, checkpoint replacement, threshold selection or calibration,
+  tuning, model selection, selective omission, or decision based on final
+  labels or scores.
+- **Retained controls:** corrected R2/R3, the current V100 diagnostic context,
+  `CUTOVER_READY.json`, and `V100_DIAGNOSTIC_ISOLATION.json` remain mandatory
+  before final access, reverse export, analysis, or reporting. An immutable
+  owner-authorization receipt must bind those controls plus the failed grid
+  and violations, campaign and evaluator SHAs, frozen cohort, exact hashes of
+  all 32 TEST records, and exact 32-cell order before final data is opened.
+- **Once-only execution:** transfer and byte-level verification may stage the
+  final assets without interpreting them. One dedicated eight-GPU
+  strict-IEEE-FP32 Slurm allocation, submitted with requeue disabled, writes
+  the verified-scene lock before parsing `validation.csv` or reading a final
+  raster and scores all 32 cells within that single access event. A cell is
+  launched at most once. There is no automatic retry, selective retry,
+  requeue, or resubmission after the lock; an interruption or incomplete cell
+  is a STOP requiring another explicit owner decision.
+- **Reporting discipline:** every final per-cell record, summary, analysis,
+  and report must disclose the failed predeclared monotonicity check, the
+  single-seed point-estimate design, the post-TEST timing of this owner
+  amendment, and the descriptive/exploratory interpretation. Completing this
+  bounded final evaluation does not change the Phase-5 outcome or establish a
+  monotone label-efficiency curve.
+- **Status discipline:** this source amendment and its tests do not claim that
+  final labels or rasters were opened, that the lock exists, that the Slurm
+  allocation ran, or that any human-verified result exists. Record those facts
+  only from immutable Judy artifacts after execution.
