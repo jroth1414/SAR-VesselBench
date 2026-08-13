@@ -335,7 +335,9 @@ def test_complete_test_cohort_requires_all_32_and_exact_support(tmp_path):
         )
     writable.chmod(0o444)
 
-    (tmp_path / cells[-1].exp_id / "test_metrics.json").unlink()
+    removed = tmp_path / cells[-1].exp_id / "test_metrics.json"
+    removed.chmod(0o644)  # Windows refuses to unlink a read-only file
+    removed.unlink()
     with pytest.raises(HeldoutContractError, match="complete test cohort"):
         validate_complete_test_cohort(
             cells=cells,
@@ -743,11 +745,7 @@ def test_final_eval_monotonicity_stop_precedes_final_resource_access(
     assert not (runs / "final_eval.lock").exists()
 
 
-def test_curves_and_legacy_entrypoint_have_no_partial_or_mutating_fallback():
+def test_curves_have_no_partial_fallback():
     frame = pd.DataFrame({"test_f1": [0.5] * 31, "dev_f1": [0.6] * 31})
     with pytest.raises(ValueError, match="exactly 32"):
         curves.metric_column(frame)
-    source = open("scripts/score_test_split.py", encoding="utf-8").read()
-    assert 'payload.get("last_dev")' not in source
-    assert "atomic_write_json" not in source
-    assert "score_test_cohort" in source

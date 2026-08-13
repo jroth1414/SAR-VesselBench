@@ -469,11 +469,15 @@ def atomic_write_json(path: str | Path, payload: Mapping[str, object]) -> None:
             os.fsync(handle.fileno())
         os.replace(temp_path, destination)
         temp_path = None
-        directory_fd = os.open(destination.parent, os.O_RDONLY)
-        try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
+        # The parent-directory flush is a POSIX-only durability step; Windows
+        # cannot open a directory descriptor and the written bytes are already
+        # fsynced above, so the guard changes no recorded value.
+        if os.name != "nt":
+            directory_fd = os.open(destination.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
     except (OSError, TypeError, ValueError) as exc:
         raise ResultContractError(f"could not atomically write JSON: {destination}") from exc
     finally:
