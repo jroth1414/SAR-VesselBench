@@ -5,6 +5,9 @@ data/*
 !data/splits.json
 !data/stats.json
 runs/
+# Regenerable build artifact of `python -m src.analysis.h100_results
+# generate` (default --progress-log path); not committed.
+results/h100/logs/campaign_status.txt
 *.pt
 *.pth
 *.ckpt

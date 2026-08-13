@@ -34,14 +34,11 @@ Until those artifacts exist the report shows dashes, never substitutes.
 
 ## Logs (`logs/`)
 
-- `campaign_status.txt` — the sanitized operator status transcript.
-- `h100_excerpts/<exp_id>.log` — head/tail excerpts of each training log
-  (full-log SHA-256 recorded in each header; site paths redacted).
-- `test_scoring_rtx5070ti.log` — the complete local TEST-scoring record from
-  2026-08-12, including the two failed protocol attempts, the owner-approved
-  Windows fsync deviation, two sealed cross-hardware results
-  (`cnnrand-f100-s0` 0.8124, `beS2-f100-s0` 0.7948), and the owner's stop
-  directive that moved TEST scoring to the H100 node.
+- `h100_excerpts/<exp_id>.log` — head/tail excerpts of each cell's raw H100
+  training log (full-log SHA-256 recorded in each header; site paths
+  redacted). This is the only committed log content; operator-status
+  transcripts and local scoring-attempt logs are regenerable build
+  artifacts and are not committed.
 
 ## Operator status snapshot
 
