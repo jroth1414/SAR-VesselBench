@@ -310,7 +310,152 @@ bash -n slurm/h100/smoke.sbatch
 python -m pytest -q tests/test_h100_runtime.py
 ```
 
-## 6. Return results
+## 6. Owner-amended all-32 final evaluation
+
+The 2026-08-13 campaign completed all 32 immutable TEST scores and then
+truthfully stopped at the predeclared monotonicity gate.  The owner amendment
+does not turn that failed diagnostic green.  It authorizes one symmetric,
+descriptive evaluation of all 32 frozen cells on the 50 human-verified scenes.
+The final job is a separate one-node/eight-H100 allocation with requeue
+disabled; it never invokes the training campaign controller.
+
+Before packaging, require all retained reporting controls to exist on Judy:
+the corrected R2/R3 evidence in `CUTOVER_READY.json`, the current V100
+diagnostic context, and the returned human-authored
+`V100_DIAGNOSTIC_ISOLATION.json`.  Do not build or submit from a dirty checkout.
+The source archive directory must contain exactly the 50 frozen files
+`<eval_final_scene_id>.tar.gz`; every original DIU archive must contain the
+scene's `VH_dB.tif`, `VV_dB.tif`, and `bathymetry.tif`.  The final package
+builder copies and hashes `validation.csv` as opaque bytes but never parses it
+or decodes a final raster.
+
+Build the package from a clean checkout of the amendment branch.  Keep the
+package and bootstrap outside every repository worktree.  `train_view` is the
+already verified 13,911-row TRAIN+fixed-DEV8 view, not the original full
+training CSV.  Obtain `MAX_PART_BYTES` from the Box preflight for the dedicated
+empty final-evaluation folder.
+
+```bash
+set -euo pipefail
+PYTHON=/path/to/repository-python-3.11
+repo=/path/to/clean/sprint-8-final-eval-amendment
+train_view=/path/to/corrected-runtime/data/training-view/labels/train.csv
+validation_labels=/path/to/original/validation.csv
+final_archives=/path/to/exact-50-diu-scene-archives
+package_parent=/path/to/final-eval-packages
+bootstrap=/path/to/outgoing/xview3-final-eval-bootstrap.sh
+MAX_PART_BYTES=REPLACE_WITH_PREFLIGHT_INTEGER
+
+mkdir -p "$package_parent" "$(dirname -- "$bootstrap")"
+cd "$repo"
+"$PYTHON" -B -m scripts.handoff.final_eval_package build \
+  --repo "$repo" \
+  --training-labels "$train_view" \
+  --validation-labels "$validation_labels" \
+  --archive-dir "$final_archives" \
+  --output-dir "$package_parent" \
+  --max-part-bytes "$MAX_PART_BYTES"
+
+package=/path/printed/as/package_root
+"$PYTHON" -B -m scripts.handoff.final_eval_package verify \
+  --package-root "$package"
+"$PYTHON" -B -m scripts.handoff.final_eval_package build-bootstrap \
+  --repo "$repo" \
+  --package-root "$package" \
+  --output "$bootstrap"
+```
+
+Upload `package` to its own initially empty Box child folder with the
+`final_eval_package upload` command:
+
+```bash
+set -euo pipefail
+export BOX_JWT_CONFIG=/path/to/mode-0600/xview3-jwt.json
+export BOX_FOLDER_ID=REPLACE_WITH_DEDICATED_EMPTY_FINAL_FOLDER_ID
+TRANSFER_PYTHON=/path/to/isolated/boxsdk-v4/bin/python
+upload_receipt=/path/to/outgoing/FINAL_EVAL_UPLOAD.json
+cd "$repo"
+"$TRANSFER_PYTHON" -B -m scripts.handoff.final_eval_package upload \
+  --repo "$repo" \
+  --package-root "$package" \
+  --receipt "$upload_receipt"
+```
+
+Transfer the generated mode-`0700` bootstrap to Judy separately; do **not**
+add it to the dedicated Box folder, whose exact tree is embedded in the
+bootstrap.  On Judy, use the isolated boxsdk-v4 transfer environment only for
+this download:
+
+```bash
+set -euo pipefail
+export TRANSFER_PYTHON=/projects/geofam/jroth/envs/xview3-box-transfer/bin/python
+export XVIEW3_TARGET_ROOT=/projects/geofam/jroth/xview3-final-handoff
+export BOX_JWT_CONFIG=/path/to/mode-0600/xview3-jwt.json
+export BOX_FOLDER_ID=REPLACE_WITH_DEDICATED_FINAL_FOLDER_ID
+export H100_BASE_PYTHON_LIB_DIR=/cm/shared/mitre-apps/python/3.11.13/build/lib
+/path/to/xview3-final-eval-bootstrap.sh
+```
+
+The bootstrap prints the exact `checkout`, `package_root`, package ID, source
+SHA, and three control hashes.  Record those values out of band.  From that
+new clean checkout, stage only the corrected TRAIN+DEV8 labels before creating
+the owner receipt; this operation cannot open the final labels or rasters:
+
+```bash
+set -euo pipefail
+checkout=/path/printed/as/checkout
+package=/path/printed/as/package_root
+package_id=REPLACE_WITH_PRINTED_PACKAGE_ID
+ready_sha256=REPLACE_WITH_PRINTED_READY_SHA256
+manifest_sha256=REPLACE_WITH_PRINTED_MANIFEST_SHA256
+sha256sums_sha256=REPLACE_WITH_PRINTED_SHA256SUMS_SHA256
+runs=/projects/geofam/jroth/xview3-h100-runs-1a82d508
+venv=/projects/geofam/jroth/envs/xview3-h100-fp32-dgx-a4af214a
+
+cd "$checkout"
+export LD_LIBRARY_PATH=/cm/shared/mitre-apps/python/3.11.13/build/lib
+mkdir -p "$checkout/data/raw/xview3/labels"
+"$venv/bin/python" -B -m scripts.handoff.final_eval_package \
+  stage-training-labels \
+  --package-root "$package" \
+  --output "$checkout/data/raw/xview3/labels/train.csv" \
+  --expected-package-id "$package_id" \
+  --expected-ready-sha256 "$ready_sha256" \
+  --expected-manifest-sha256 "$manifest_sha256" \
+  --expected-sha256sums-sha256 "$sha256sums_sha256"
+
+"$venv/bin/python" -B -m scripts.authorize_final_eval \
+  --repo "$checkout" \
+  --runs-root "$runs" \
+  --owner johnroth \
+  --confirm I_AUTHORIZE_POST_TEST_ALL_32_FINAL_ONCE
+```
+
+Create a new untracked final site file rather than mutating the historical
+campaign or score-test site file.  Populate the `H100_FINAL_*` fields shown in
+`site.env.example` from the bootstrap output, point
+`H100_FINAL_OWNER_AMENDMENT` at the canonical immutable receipt under
+`$H100_RUNS_ROOT/.h100`, and use the sealed compute interpreter for
+`H100_TRANSFER_PYTHON`.  Submit only after `reporting-check` has passed and no
+xView3 H100 job is active:
+
+```bash
+cd "$checkout"
+H100_SITE_ENV=/path/to/untracked/final-eval-site.env \
+  ./slurm/h100/submit_final_eval.sh
+```
+
+Submission rejects an existing final lock or data-view receipt.  The compute
+job revalidates the complete package in allocation-private scratch, proves
+eight identical H100s with strict IEEE FP32/TF32 disabled, publishes the
+once-only lock, reads the 50-scene labels once, and schedules exactly four
+waves of eight cells.  Each cell writes one immutable result and is never
+relaunched.  If the job fails after `final_eval.lock` exists, do not requeue or
+resubmit; that is a human STOP.  A failure before the lock archives only that
+job's staged data-view receipt and also requires review before a new explicit
+submission.
+
+## 7. Return results
 
 After the complete 32-cell H100 cohort and its separate test results validate:
 
@@ -323,6 +468,7 @@ After the complete 32-cell H100 cohort and its separate test results validate:
   --repo /path/to/repo \
   --runs-root /persistent/h100-runs \
   --campaign-manifest /persistent/h100-runs/.h100/campaign_manifest.json \
+  --owner-amendment /persistent/h100-runs/.h100/FINAL_EVAL_OWNER_AMENDMENT.json \
   --output-dir /path/to/outgoing \
   --max-part-bytes "$H100_MAX_PART_BYTES"
 ```
