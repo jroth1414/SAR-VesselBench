@@ -1,5 +1,5 @@
 # Excerpt of the full H100 training log for satdino-f10-s0.
-# Full log: 70379 lines, sha256 cda24989b8167bd0abf392054d521815ea67bedca8ae869167a039be129ae669 (operator archive).
+# Full log: 70383 lines, sha256 70be55d22f195b420584425c10d9f9d28bbafa07e0f07801124868c0e60bffcb (operator archive).
 # Site paths redacted: /projects/geofam -> /cluster-site-redacted.
 [rank: 0] Seed set to 0
 GPU available: True (cuda), used: True
@@ -61,11 +61,7 @@ Epoch 0:   2%|▏         | 15/701 [00:05<04:02,  2.82it/s, v_num=rics, train_lo
 Epoch 0:   2%|▏         | 16/701 [00:05<03:51,  2.95it/s, v_num=rics, train_loss=3.460]
 Epoch 0:   2%|▏         | 16/701 [00:05<03:59,  2.86it/s, v_num=rics, train_loss=3.550]
 Epoch 0:   2%|▏         | 17/701 [00:05<03:49,  2.98it/s, v_num=rics, train_loss=3.550]
-[... 70199 lines elided ...]
-Epoch 49:  98%|█████████▊| 690/701 [03:21<00:03,  3.42it/s, v_num=rics, train_loss=0.00138, dev_f1=0.887]
-Epoch 49:  98%|█████████▊| 690/701 [03:21<00:03,  3.42it/s, v_num=rics, train_loss=0.000752, dev_f1=0.887]
-Epoch 49:  99%|█████████▊| 691/701 [03:21<00:02,  3.42it/s, v_num=rics, train_loss=0.000752, dev_f1=0.887]
-Epoch 49:  99%|█████████▊| 691/701 [03:22<00:02,  3.42it/s, v_num=rics, train_loss=0.000932, dev_f1=0.887]
+[... 70203 lines elided ...]
 Epoch 49:  99%|█████████▊| 692/701 [03:22<00:02,  3.42it/s, v_num=rics, train_loss=0.000932, dev_f1=0.887]
 Epoch 49:  99%|█████████▊| 692/701 [03:22<00:02,  3.42it/s, v_num=rics, train_loss=0.000764, dev_f1=0.887]
 Epoch 49:  99%|█████████▉| 693/701 [03:22<00:02,  3.42it/s, v_num=rics, train_loss=0.000764, dev_f1=0.887]
@@ -182,3 +178,7 @@ Epoch 49: 100%|██████████| 701/701 [10:32<00:00,  1.11it/s, 
   }
  }
 }
+[2026-08-13T00:20:46] satdino-f10-s0: scoring frozen TEST with cohort-bound best-dev threshold
+[satdino_b] matched=150 missing=0 unexpected=0
+[2026-08-13T00:33:53] satdino-f10-s0: test F1 0.8198; near-shore F1 0.1667 on 2 GT
+[2026-08-13T00:33:53] scored 1 runs

@@ -15,13 +15,17 @@
 \setlist{nosep,leftmargin=*}
 \setlength{\parindent}{1em}
 \setlength{\parskip}{0pt}
-\setlength{\textfloatsep}{7pt plus 2pt minus 2pt}
-\setlength{\floatsep}{6pt plus 2pt minus 2pt}
-\setlength{\abovecaptionskip}{4pt}
-\setlength{\belowcaptionskip}{3pt}
+\setlength{\textfloatsep}{5pt plus 2pt minus 2pt}
+\setlength{\floatsep}{4pt plus 2pt minus 2pt}
+\setlength{\abovecaptionskip}{3pt}
+\setlength{\belowcaptionskip}{2pt}
 \renewcommand{\topfraction}{0.95}
 \renewcommand{\textfraction}{0.05}
 \renewcommand{\floatpagefraction}{0.8}
+\usepackage{titlesec}
+\titlespacing*{\section}{0pt}{8pt plus 2pt minus 1pt}{4pt plus 1pt}
+\titlespacing*{\paragraph}{0pt}{6pt plus 1pt}{4pt}
+\raggedbottom
 \input{../results/generated/h100_results}
 \input{../results/generated/heldout_results}
 \graphicspath{{../results/generated/}{figures/}}
@@ -53,10 +57,13 @@ cells completed on H100 GPUs in strict FP32, and the build re-derives every
 published value from hash-bound evidence. Transfer helps most when labels
 are scarce. The SAR-versus-optical contrast depends on the architecture:
 SAR pretraining beats optical in the CNN track at every budget, but optical
-leads in the ViT track below half data. Generic ImageNet initialization
-leads both tracks at full data. Reported values are corrected
-development-selection F1\ifHevTestComplete{} alongside once-scored held-out
-test results\fi.\ifHevFinalEval\else{} The 50-scene human-verified
+leads in the ViT track below half data\ifHevTestComplete; the held-out test
+split confirms this sign at every budget\fi. Development selection favors
+generic ImageNet at full data in both tracks\ifHevTestComplete, but the
+held-out test split instead favors SAR in the ViT track\fi. Reported values
+are corrected development-selection F1\ifHevTestComplete{} alongside
+once-scored held-out test results\fi.\ifHevFinalEval\else{} The 50-scene
+human-verified
 evaluation remains sealed for follow-on work.\fi
 \end{abstract}
 \label{mainbody:start}

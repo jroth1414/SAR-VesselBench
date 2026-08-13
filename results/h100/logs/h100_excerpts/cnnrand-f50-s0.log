@@ -1,5 +1,5 @@
 # Excerpt of the full H100 training log for cnnrand-f50-s0.
-# Full log: 331467 lines, sha256 572723ae1617ca94c070ece1afbc800e4ba6c9dde97f4dad22abaf9de0dbbf1d (operator archive).
+# Full log: 331470 lines, sha256 0ad05f01bff1d0c4970b3006597e74aa356360c9078f488775a74c25fc9a45a1 (operator archive).
 # Site paths redacted: /projects/geofam -> /cluster-site-redacted.
 [rank: 0] Seed set to 0
 GPU available: True (cuda), used: True
@@ -61,10 +61,7 @@ Epoch 0:   0%|          | 16/3310 [00:11<40:19,  1.36it/s, v_num=rics, train_los
 Epoch 0:   0%|          | 16/3310 [00:12<41:15,  1.33it/s, v_num=rics, train_loss=4.500]
 Epoch 0:   1%|          | 17/3310 [00:12<39:42,  1.38it/s, v_num=rics, train_loss=4.500]
 Epoch 0:   1%|          | 17/3310 [00:12<40:34,  1.35it/s, v_num=rics, train_loss=4.390]
-[... 331287 lines elided ...]
-Epoch 49: 100%|█████████▉| 3299/3310 [29:50<00:05,  1.84it/s, v_num=rics, train_loss=0.00764, dev_f1=0.866]
-Epoch 49: 100%|█████████▉| 3299/3310 [29:51<00:05,  1.84it/s, v_num=rics, train_loss=0.00669, dev_f1=0.866]
-Epoch 49: 100%|█████████▉| 3300/3310 [29:51<00:05,  1.84it/s, v_num=rics, train_loss=0.00669, dev_f1=0.866]
+[... 331290 lines elided ...]
 Epoch 49: 100%|█████████▉| 3300/3310 [29:51<00:05,  1.84it/s, v_num=rics, train_loss=0.00994, dev_f1=0.866]
 Epoch 49: 100%|█████████▉| 3301/3310 [29:51<00:04,  1.84it/s, v_num=rics, train_loss=0.00994, dev_f1=0.866]
 Epoch 49: 100%|█████████▉| 3301/3310 [29:52<00:04,  1.84it/s, v_num=rics, train_loss=0.00413, dev_f1=0.866]
@@ -182,3 +179,6 @@ Epoch 49: 100%|██████████| 3310/3310 [37:04<00:00,  1.49it/s
   }
  }
 }
+[2026-08-12T23:52:20] cnnrand-f50-s0: scoring frozen TEST with cohort-bound best-dev threshold
+[2026-08-13T00:05:32] cnnrand-f50-s0: test F1 0.7807; near-shore F1 0.0000 on 2 GT
+[2026-08-13T00:05:32] scored 1 runs

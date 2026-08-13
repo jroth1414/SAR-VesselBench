@@ -23,17 +23,26 @@ REPO = Path(__file__).resolve().parents[1]
 EVIDENCE = REPO / "results/h100/evidence"
 ARMS = REPO / "configs/arms.yaml"
 DETECTOR = REPO / "configs/detector.yaml"
+SPLITS = REPO / "data/splits.json"
 GENERATED = REPO / "docs/results/generated"
 
 
 def _validated() -> dict:
-    return validate_evidence(EVIDENCE, arms_config=ARMS, detector_config=DETECTOR)
+    return validate_evidence(
+        EVIDENCE, arms_config=ARMS, detector_config=DETECTOR, splits_config=SPLITS
+    )
 
 
 def _copy_evidence(tmp_path: Path) -> Path:
     destination = tmp_path / "evidence"
     shutil.copytree(EVIDENCE, destination)
     return destination
+
+
+def _revalidate(evidence: Path) -> dict:
+    return validate_evidence(
+        evidence, arms_config=ARMS, detector_config=DETECTOR, splits_config=SPLITS
+    )
 
 
 def test_committed_evidence_validates_and_reproduces_the_committed_tex() -> None:
@@ -68,7 +77,7 @@ def test_tampered_marker_byte_refuses_to_generate(tmp_path: Path) -> None:
     payload["best_dev"]["f1"] = 0.999
     marker.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(EvidenceError, match="cohort binding"):
-        validate_evidence(evidence, arms_config=ARMS, detector_config=DETECTOR)
+        _revalidate(evidence)
 
 
 def test_tampered_training_curve_refuses_to_generate(tmp_path: Path) -> None:
@@ -86,23 +95,36 @@ def test_tampered_training_curve_refuses_to_generate(tmp_path: Path) -> None:
             break
     curve.write_text("\n".join(lines) + "\n", encoding="utf-8")
     with pytest.raises(EvidenceError, match="training curve"):
-        validate_evidence(evidence, arms_config=ARMS, detector_config=DETECTOR)
+        _revalidate(evidence)
 
 
 def test_missing_cell_refuses_to_generate(tmp_path: Path) -> None:
     evidence = _copy_evidence(tmp_path)
     shutil.rmtree(evidence / "sarmae-f50-s0")
     with pytest.raises(EvidenceError):
-        validate_evidence(evidence, arms_config=ARMS, detector_config=DETECTOR)
+        _revalidate(evidence)
 
 
 def test_partial_or_unbound_test_results_refuse_to_generate(tmp_path: Path) -> None:
     evidence = _copy_evidence(tmp_path)
     bogus = {
+        "test_result_schema": 1,
+        "status": "test-complete",
+        "scored_utc": "2026-01-01T00:00:00+00:00",
         "exp_id": "vitrand-f10-s0",
         "cohort_sha256": "0" * 64,
         "completion_marker_sha256": "0" * 64,
+        "git_sha": "0" * 40,
         "detector_sha256": "0" * 64,
+        "inference_precision": "32-true",
+        "threshold_source": {
+            "kind": "best-dev-checkpoint-bound",
+            "threshold": 0.5,
+            "dev_epoch": 0,
+            "checkpoint_relative_path": "vitrand-f10-s0/checkpoints/best.ckpt",
+            "checkpoint_sha256": "0" * 64,
+            "checkpoint_epoch": 0,
+        },
         "metrics": {},
         "per_scene": {},
     }
@@ -110,13 +132,32 @@ def test_partial_or_unbound_test_results_refuse_to_generate(tmp_path: Path) -> N
         json.dumps(bogus), encoding="utf-8"
     )
     with pytest.raises(EvidenceError):
-        validate_evidence(evidence, arms_config=ARMS, detector_config=DETECTOR)
+        _revalidate(evidence)
 
 
-def test_dev_macros_flip_to_dashes_never_silently(tmp_path: Path) -> None:
+def test_tampered_test_threshold_refuses_to_generate(tmp_path: Path) -> None:
+    """A test result claiming a threshold other than the cohort-bound one
+    must fail even though its own metrics are internally TP/FP/FN-consistent."""
+
+    evidence = _copy_evidence(tmp_path)
+    result_path = evidence / "vitrand-f10-s0" / "test_metrics.json"
+    payload = json.loads(result_path.read_text(encoding="utf-8"))
+    payload["threshold_source"]["threshold"] = 0.01
+    result_path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(EvidenceError, match="binding mismatch"):
+        _revalidate(evidence)
+
+
+def test_committed_test_results_are_all_present_and_bound() -> None:
+    validated = _validated()
+    assert len(validated["test_results"]) == 32
+    for exp_id, test in validated["test_results"].items():
+        assert 0.0 < test["f1"] < 1.0, exp_id
+        assert test["inference_precision"] == "32-true", exp_id
+
+
+def test_dev_to_test_macros_render_with_real_values() -> None:
     validated = _validated()
     tex = render_tex(validated)
-    assert "\\HevTestCompletefalse" in tex
-    assert tex.count("\\textemdash") >= 32
-    assert "\\HevDevFViTImageNetHundred{0.9399}" in tex
-    assert "\\HevDevFCNNImageNetHundred{0.9387}" in tex
+    assert "\\HevTestCompletetrue" in tex
+    assert "\\HevTestFViTRandomTen{0.7042" in tex or "\\HevTestFViTRandomTen{0.70" in tex

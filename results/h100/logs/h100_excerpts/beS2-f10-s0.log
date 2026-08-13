@@ -1,5 +1,5 @@
 # Excerpt of the full H100 training log for beS2-f10-s0.
-# Full log: 70379 lines, sha256 6e526b0e45d1bb412f3c2c801a5e14de922b072d501a9a6a75cdde4df5c6d360 (operator archive).
+# Full log: 70383 lines, sha256 74f46f7e384b8f32b7accf5a8049e92ee3f1dc48f6d4479779a384a8dada8b79 (operator archive).
 # Site paths redacted: /projects/geofam -> /cluster-site-redacted.
 [rank: 0] Seed set to 0
 GPU available: True (cuda), used: True
@@ -61,11 +61,7 @@ Epoch 0:   2%|▏         | 15/701 [00:11<08:43,  1.31it/s, v_num=rics, train_lo
 Epoch 0:   2%|▏         | 16/701 [00:11<08:21,  1.36it/s, v_num=rics, train_loss=4.270]
 Epoch 0:   2%|▏         | 16/701 [00:11<08:33,  1.33it/s, v_num=rics, train_loss=4.190]
 Epoch 0:   2%|▏         | 17/701 [00:12<08:13,  1.39it/s, v_num=rics, train_loss=4.190]
-[... 70199 lines elided ...]
-Epoch 49:  98%|█████████▊| 690/701 [06:17<00:06,  1.83it/s, v_num=rics, train_loss=0.0299, dev_f1=0.792]
-Epoch 49:  98%|█████████▊| 690/701 [06:17<00:06,  1.83it/s, v_num=rics, train_loss=0.00532, dev_f1=0.792]
-Epoch 49:  99%|█████████▊| 691/701 [06:18<00:05,  1.83it/s, v_num=rics, train_loss=0.00532, dev_f1=0.792]
-Epoch 49:  99%|█████████▊| 691/701 [06:18<00:05,  1.83it/s, v_num=rics, train_loss=1.060, dev_f1=0.792]  
+[... 70203 lines elided ...]
 Epoch 49:  99%|█████████▊| 692/701 [06:18<00:04,  1.83it/s, v_num=rics, train_loss=1.060, dev_f1=0.792]
 Epoch 49:  99%|█████████▊| 692/701 [06:18<00:04,  1.83it/s, v_num=rics, train_loss=0.0058, dev_f1=0.792]
 Epoch 49:  99%|█████████▉| 693/701 [06:19<00:04,  1.83it/s, v_num=rics, train_loss=0.0058, dev_f1=0.792]
@@ -182,3 +178,7 @@ Epoch 49: 100%|██████████| 701/701 [12:53<00:00,  0.91it/s, 
   }
  }
 }
+[2026-08-13T00:19:59] beS2-f10-s0: scoring frozen TEST with cohort-bound best-dev threshold
+[bigearthnet_s2] matched=378 missing=0 unexpected=0
+[2026-08-13T00:32:43] beS2-f10-s0: test F1 0.6712; near-shore F1 0.0000 on 2 GT
+[2026-08-13T00:32:43] scored 1 runs

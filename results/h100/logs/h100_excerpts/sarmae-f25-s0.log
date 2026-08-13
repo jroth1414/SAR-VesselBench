@@ -1,5 +1,5 @@
 # Excerpt of the full H100 training log for sarmae-f25-s0.
-# Full log: 83298 lines, sha256 2817ae7476cacfd82975d13353047702cf3891602beee8cb7754a82e573e2e43 (operator archive).
+# Full log: 83302 lines, sha256 9bfdc1953a88f4136fc684b2009ab0b5d88aa6b4a3617802c3e95beb300c03ae (operator archive).
 # Site paths redacted: /projects/geofam -> /cluster-site-redacted.
 [rank: 0] Seed set to 0
 GPU available: True (cuda), used: True
@@ -61,11 +61,7 @@ Epoch 0:   1%|          | 15/1662 [00:05<10:53,  2.52it/s, v_num=rics, train_los
 Epoch 0:   1%|          | 16/1662 [00:06<10:23,  2.64it/s, v_num=rics, train_loss=4.930]
 Epoch 0:   1%|          | 16/1662 [00:06<10:42,  2.56it/s, v_num=rics, train_loss=3.800]
 Epoch 0:   1%|          | 17/1662 [00:06<10:14,  2.68it/s, v_num=rics, train_loss=3.800]
-[... 83118 lines elided ...]
-Epoch 24:  99%|█████████▉| 1650/1662 [08:00<00:03,  3.43it/s, v_num=rics, train_loss=0.00289, dev_f1=0.845]
-Epoch 24:  99%|█████████▉| 1651/1662 [08:00<00:03,  3.43it/s, v_num=rics, train_loss=0.00289, dev_f1=0.845]
-Epoch 24:  99%|█████████▉| 1651/1662 [08:01<00:03,  3.43it/s, v_num=rics, train_loss=0.000882, dev_f1=0.845]
-Epoch 24:  99%|█████████▉| 1652/1662 [08:01<00:02,  3.43it/s, v_num=rics, train_loss=0.000882, dev_f1=0.845]
+[... 83122 lines elided ...]
 Epoch 24:  99%|█████████▉| 1652/1662 [08:01<00:02,  3.43it/s, v_num=rics, train_loss=0.0019, dev_f1=0.845]  
 Epoch 24:  99%|█████████▉| 1653/1662 [08:01<00:02,  3.43it/s, v_num=rics, train_loss=0.0019, dev_f1=0.845]
 Epoch 24:  99%|█████████▉| 1653/1662 [08:01<00:02,  3.43it/s, v_num=rics, train_loss=0.00615, dev_f1=0.845]
@@ -182,3 +178,7 @@ Epoch 24: 100%|██████████| 1662/1662 [14:19<00:00,  1.93it/s
   }
  }
 }
+[2026-08-13T00:06:57] sarmae-f25-s0: scoring frozen TEST with cohort-bound best-dev threshold
+[sarmae_b] matched=150 missing=0 unexpected=0
+[2026-08-13T00:19:37] sarmae-f25-s0: test F1 0.7715; near-shore F1 0.0000 on 2 GT
+[2026-08-13T00:19:37] scored 1 runs

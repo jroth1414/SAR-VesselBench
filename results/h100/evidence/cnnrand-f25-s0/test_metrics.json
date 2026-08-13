@@ -1,0 +1,530 @@
+{
+ "test_result_schema": 1,
+ "status": "test-complete",
+ "scored_utc": "2026-08-13T04:19:06+00:00",
+ "exp_id": "cnnrand-f25-s0",
+ "cohort_sha256": "9b1ba03e3893a35cd1d0f4d3b63c994afb8e84219c8db28113c9bf6de62e7138",
+ "completion_marker_sha256": "b5ee8e7608ea4bf836c80d10980bbf4bb0efea5824b37cd20ed9028aa44eb43f",
+ "git_sha": "1a82d508fbeb9fdf6868a9637611e9018952fb43",
+ "detector_sha256": "c42ae65bf9045cc93f0d73ae1437b2f6a1300670cb49d8e93f83a39d58a62a12",
+ "inference_precision": "32-true",
+ "threshold_source": {
+  "kind": "best-dev-checkpoint-bound",
+  "threshold": 0.8193359375,
+  "dev_epoch": 44,
+  "checkpoint_relative_path": "cnnrand-f25-s0/checkpoints/best.ckpt",
+  "checkpoint_sha256": "da72713b5b32609d380fcc334852ac633ee886d66c957be0870551c6bdaa9f7a",
+  "checkpoint_epoch": 44
+ },
+ "metrics": {
+  "f1": 0.7064544650751547,
+  "precision": 0.7283500455788514,
+  "recall": 0.6858369098712447,
+  "tp": 799,
+  "fp": 298,
+  "fn": 366,
+  "ignored_predictions": 169,
+  "dark_recall": 0.0,
+  "dark_support": 0,
+  "near_shore_f1": 0.0,
+  "near_shore_support": 2
+ },
+ "per_scene": {
+  "156845d347e67d21t": {
+   "aggregate": {
+    "f1": 0.9448818897637795,
+    "precision": 0.9375,
+    "recall": 0.9523809523809523,
+    "tp": 60,
+    "fp": 4,
+    "fn": 3,
+    "ignored_predictions": 12
+   },
+   "slices": {
+    "dark": {
+     "f1": 0.0,
+     "precision": 0.0,
+     "recall": 0.0,
+     "tp": 0,
+     "fp": 0,
+     "fn": 0,
+     "ignored_predictions": 0
+    },
+    "near_shore": {
+     "f1": 0.0,
+     "precision": 0.0,
+     "recall": 0.0,
+     "tp": 0,
+     "fp": 0,
+     "fn": 0,
+     "ignored_predictions": 0
+    }
+   }
+  },
+  "395dcf560a56ff39t": {
+   "aggregate": {
+    "f1": 0.588235294117647,
+    "precision": 0.7407407407407407,
+    "recall": 0.4878048780487805,
+    "tp": 20,
+    "fp": 7,
+    "fn": 21,
+    "ignored_predictions": 4
+   },
+   "slices": {
+    "dark": {
+     "f1": 0.0,
+     "precision": 0.0,
+     "recall": 0.0,
+     "tp": 0,
+     "fp": 0,
+     "fn": 0,
+     "ignored_predictions": 0
+    },
+    "near_shore": {
+     "f1": 0.0,
+     "precision": 0.0,
+     "recall": 0.0,
+     "tp": 0,
+     "fp": 0,
+     "fn": 0,
+     "ignored_predictions": 0
+    }
+   }
+  },
+  "4cb65eef4af658c0t": {
+   "aggregate": {
+    "f1": 0.7524752475247525,
+    "precision": 0.9047619047619048,
+    "recall": 0.6440677966101694,
+    "tp": 76,
+    "fp": 8,
+    "fn": 42,
+    "ignored_predictions": 3
+   },
+   "slices": {
+    "dark": {
+     "f1": 0.0,
+     "precision": 0.0,
+     "recall": 0.0,
+     "tp": 0,
+     "fp": 0,
+     "fn": 0,
+     "ignored_predictions": 0
+    },
+    "near_shore": {
+     "f1": 0.0,
+     "precision": 0.0,
+     "recall": 0.0,
+     "tp": 0,
+     "fp": 2,
+     "fn": 1,
+     "ignored_predictions": 0
+    }
+   }
+  },
+  "5d45cb2dc3c48d8bt": {
+   "aggregate": {
+    "f1": 0.6666666666666667,
+    "precision": 0.7346938775510204,
+    "recall": 0.6101694915254238,
+    "tp": 36,
+    "fp": 13,
+    "fn": 23,
+    "ignored_predictions": 11
+   },
+   "slices": {
+    "dark": {
+     "f1": 0.0,
+     "precision": 0.0,
+     "recall": 0.0,
+     "tp": 0,
+     "fp": 0,
+     "fn": 0,
+     "ignored_predictions": 0
+    },
+    "near_shore": {
+     "f1": 0.0,
+     "precision": 0.0,
+     "recall": 0.0,
+     "tp": 0,
+     "fp": 1,
+     "fn": 0,
+     "ignored_predictions": 0
+    }
+   }
+  },
+  "78fde272efeb9d56t": {
+   "aggregate": {
+    "f1": 0.8819875776397516,
+    "precision": 0.8352941176470589,
+    "recall": 0.9342105263157895,
+    "tp": 71,
+    "fp": 14,
+    "fn": 5,
+    "ignored_predictions": 6
+   },
+   "slices": {
+    "dark": {
+     "f1": 0.0,
+     "precision": 0.0,
+     "recall": 0.0,
+     "tp": 0,
+     "fp": 0,
+     "fn": 0,
+     "ignored_predictions": 0
+    },
+    "near_shore": {
+     "f1": 0.0,
+     "precision": 0.0,
+     "recall": 0.0,
+     "tp": 0,
+     "fp": 1,
+     "fn": 0,
+     "ignored_predictions": 0
+    }
+   }
+  },
+  "821593907c14c5c2t": {
+   "aggregate": {
+    "f1": 0.8682170542635659,
+    "precision": 0.8888888888888888,
+    "recall": 0.8484848484848485,
+    "tp": 56,
+    "fp": 7,
+    "fn": 10,
+    "ignored_predictions": 7
+   },
+   "slices": {
+    "dark": {
+     "f1": 0.0,
+     "precision": 0.0,
+     "recall": 0.0,
+     "tp": 0,
+     "fp": 0,
+     "fn": 0,
+     "ignored_predictions": 0
+    },
+    "near_shore": {
+     "f1": 0.0,
+     "precision": 0.0,
+     "recall": 0.0,
+     "tp": 0,
+     "fp": 0,
+     "fn": 0,
+     "ignored_predictions": 0
+    }
+   }
+  },
+  "835f7629c3a3a9abt": {
+   "aggregate": {
+    "f1": 0.6178861788617885,
+    "precision": 0.6129032258064516,
+    "recall": 0.6229508196721312,
+    "tp": 38,
+    "fp": 24,
+    "fn": 23,
+    "ignored_predictions": 7
+   },
+   "slices": {
+    "dark": {
+     "f1": 0.0,
+     "precision": 0.0,
+     "recall": 0.0,
+     "tp": 0,
+     "fp": 0,
+     "fn": 0,
+     "ignored_predictions": 0
+    },
+    "near_shore": {
+     "f1": 0.0,
+     "precision": 0.0,
+     "recall": 0.0,
+     "tp": 0,
+     "fp": 5,
+     "fn": 0,
+     "ignored_predictions": 0
+    }
+   }
+  },
+  "83bf47e54523fc40t": {
+   "aggregate": {
+    "f1": 0.7096774193548386,
+    "precision": 0.7333333333333333,
+    "recall": 0.6875,
+    "tp": 33,
+    "fp": 12,
+    "fn": 15,
+    "ignored_predictions": 6
+   },
+   "slices": {
+    "dark": {
+     "f1": 0.0,
+     "precision": 0.0,
+     "recall": 0.0,
+     "tp": 0,
+     "fp": 0,
+     "fn": 0,
+     "ignored_predictions": 0
+    },
+    "near_shore": {
+     "f1": 0.0,
+     "precision": 0.0,
+     "recall": 0.0,
+     "tp": 0,
+     "fp": 0,
+     "fn": 0,
+     "ignored_predictions": 0
+    }
+   }
+  },
+  "8a6781613364d055t": {
+   "aggregate": {
+    "f1": 0.7945205479452055,
+    "precision": 0.8207547169811321,
+    "recall": 0.7699115044247787,
+    "tp": 87,
+    "fp": 19,
+    "fn": 26,
+    "ignored_predictions": 16
+   },
+   "slices": {
+    "dark": {
+     "f1": 0.0,
+     "precision": 0.0,
+     "recall": 0.0,
+     "tp": 0,
+     "fp": 0,
+     "fn": 0,
+     "ignored_predictions": 0
+    },
+    "near_shore": {
+     "f1": 0.0,
+     "precision": 0.0,
+     "recall": 0.0,
+     "tp": 0,
+     "fp": 0,
+     "fn": 0,
+     "ignored_predictions": 0
+    }
+   }
+  },
+  "968b06adcd8ba6ect": {
+   "aggregate": {
+    "f1": 0.7238095238095238,
+    "precision": 0.6785714285714286,
+    "recall": 0.7755102040816326,
+    "tp": 38,
+    "fp": 18,
+    "fn": 11,
+    "ignored_predictions": 5
+   },
+   "slices": {
+    "dark": {
+     "f1": 0.0,
+     "precision": 0.0,
+     "recall": 0.0,
+     "tp": 0,
+     "fp": 0,
+     "fn": 0,
+     "ignored_predictions": 0
+    },
+    "near_shore": {
+     "f1": 0.0,
+     "precision": 0.0,
+     "recall": 0.0,
+     "tp": 0,
+     "fp": 1,
+     "fn": 1,
+     "ignored_predictions": 0
+    }
+   }
+  },
+  "994a95128e83814et": {
+   "aggregate": {
+    "f1": 0.7938931297709922,
+    "precision": 0.9122807017543859,
+    "recall": 0.7027027027027027,
+    "tp": 52,
+    "fp": 5,
+    "fn": 22,
+    "ignored_predictions": 11
+   },
+   "slices": {
+    "dark": {
+     "f1": 0.0,
+     "precision": 0.0,
+     "recall": 0.0,
+     "tp": 0,
+     "fp": 0,
+     "fn": 0,
+     "ignored_predictions": 0
+    },
+    "near_shore": {
+     "f1": 0.0,
+     "precision": 0.0,
+     "recall": 0.0,
+     "tp": 0,
+     "fp": 0,
+     "fn": 0,
+     "ignored_predictions": 0
+    }
+   }
+  },
+  "9c4703bf071fc332t": {
+   "aggregate": {
+    "f1": 0.9411764705882353,
+    "precision": 0.9411764705882353,
+    "recall": 0.9411764705882353,
+    "tp": 48,
+    "fp": 3,
+    "fn": 3,
+    "ignored_predictions": 5
+   },
+   "slices": {
+    "dark": {
+     "f1": 0.0,
+     "precision": 0.0,
+     "recall": 0.0,
+     "tp": 0,
+     "fp": 0,
+     "fn": 0,
+     "ignored_predictions": 0
+    },
+    "near_shore": {
+     "f1": 0.0,
+     "precision": 0.0,
+     "recall": 0.0,
+     "tp": 0,
+     "fp": 0,
+     "fn": 0,
+     "ignored_predictions": 0
+    }
+   }
+  },
+  "a45bc46512eb61f8t": {
+   "aggregate": {
+    "f1": 0.5870307167235496,
+    "precision": 0.5548387096774193,
+    "recall": 0.6231884057971014,
+    "tp": 86,
+    "fp": 69,
+    "fn": 52,
+    "ignored_predictions": 35
+   },
+   "slices": {
+    "dark": {
+     "f1": 0.0,
+     "precision": 0.0,
+     "recall": 0.0,
+     "tp": 0,
+     "fp": 0,
+     "fn": 0,
+     "ignored_predictions": 0
+    },
+    "near_shore": {
+     "f1": 0.0,
+     "precision": 0.0,
+     "recall": 0.0,
+     "tp": 0,
+     "fp": 1,
+     "fn": 0,
+     "ignored_predictions": 0
+    }
+   }
+  },
+  "aec08a1bed9de27at": {
+   "aggregate": {
+    "f1": 0.8153846153846154,
+    "precision": 0.7571428571428571,
+    "recall": 0.8833333333333333,
+    "tp": 53,
+    "fp": 17,
+    "fn": 7,
+    "ignored_predictions": 8
+   },
+   "slices": {
+    "dark": {
+     "f1": 0.0,
+     "precision": 0.0,
+     "recall": 0.0,
+     "tp": 0,
+     "fp": 0,
+     "fn": 0,
+     "ignored_predictions": 0
+    },
+    "near_shore": {
+     "f1": 0.0,
+     "precision": 0.0,
+     "recall": 0.0,
+     "tp": 0,
+     "fp": 1,
+     "fn": 0,
+     "ignored_predictions": 0
+    }
+   }
+  },
+  "cb63265c445495d3t": {
+   "aggregate": {
+    "f1": 0.3297872340425532,
+    "precision": 0.5081967213114754,
+    "recall": 0.2440944881889764,
+    "tp": 31,
+    "fp": 30,
+    "fn": 96,
+    "ignored_predictions": 18
+   },
+   "slices": {
+    "dark": {
+     "f1": 0.0,
+     "precision": 0.0,
+     "recall": 0.0,
+     "tp": 0,
+     "fp": 0,
+     "fn": 0,
+     "ignored_predictions": 0
+    },
+    "near_shore": {
+     "f1": 0.0,
+     "precision": 0.0,
+     "recall": 0.0,
+     "tp": 0,
+     "fp": 0,
+     "fn": 0,
+     "ignored_predictions": 0
+    }
+   }
+  },
+  "efe75c178f7117a7t": {
+   "aggregate": {
+    "f1": 0.3373493975903614,
+    "precision": 0.22580645161290322,
+    "recall": 0.6666666666666666,
+    "tp": 14,
+    "fp": 48,
+    "fn": 7,
+    "ignored_predictions": 15
+   },
+   "slices": {
+    "dark": {
+     "f1": 0.0,
+     "precision": 0.0,
+     "recall": 0.0,
+     "tp": 0,
+     "fp": 0,
+     "fn": 0,
+     "ignored_predictions": 0
+    },
+    "near_shore": {
+     "f1": 0.0,
+     "precision": 0.0,
+     "recall": 0.0,
+     "tp": 0,
+     "fp": 0,
+     "fn": 0,
+     "ignored_predictions": 0
+    }
+   }
+  }
+ }
+}

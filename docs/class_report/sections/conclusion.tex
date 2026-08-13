@@ -10,14 +10,18 @@ pretrained arm except CNN-optical clears its random floor, and the best
 sensing modality is not always the right scarce-label choice. SAR
 pretraining beats optical in the CNN track at every budget, but optical
 leads in the ViT track below half data, so the contrast's sign depends on
-the architecture. Third, generic ImageNet initialization wins both tracks
-at full data. These remain corrected development-selection results from one
-seed and support no variance claim.
+the architecture\ifHevTestComplete{} (the held-out test split confirms this
+sign at every budget)\fi. Third, generic ImageNet initialization wins both
+tracks in development selection at full data\ifHevTestComplete{}, though
+held-out scoring instead favors SAR in the ViT track\fi. These remain
+corrected development-selection results from one seed and support no
+variance claim.
 
 \ifHevTestComplete
-The once-scored 16-scene test column bounds development-selection optimism
-at a mean change of \HevTestMeanGap{} F1 without altering the within-track
-ordering conclusions.
+The once-scored 16-scene test column (mean change \HevTestMeanGap{} F1;
+Sect.~\ref{sec:results}) confirms the scarcity and SAR-versus-optical
+conclusions but reverses the full-data ImageNet-versus-SAR ranking in the
+ViT track: development selection alone would have missed that reversal.
 \else
 The next step scores the frozen 16-scene test split under the held-out
 contract, which applies each cell's development-bound threshold verbatim.

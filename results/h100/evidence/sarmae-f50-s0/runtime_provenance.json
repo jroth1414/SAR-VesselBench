@@ -11,7 +11,7 @@
     "torch": "2.11.0+cu126",
     "total_memory_bytes": 85017493504
   },
-  "accumulated_active_seconds": 52299.011568012065,
+  "accumulated_active_seconds": 53129.699071849,
   "attempts": [
     {
       "active_seconds": 52299.011568012065,
@@ -34,6 +34,28 @@
       "started_utc": "2026-08-11T22:01:37.930514+00:00",
       "torch": "2.11.0+cu126",
       "training_cohort_sha256": null
+    },
+    {
+      "active_seconds": 830.6875038369326,
+      "attempt": 2,
+      "compute_capability": [
+        9,
+        0
+      ],
+      "cuda_build": "12.6",
+      "driver_version": "580.173.02",
+      "exit_code": 0,
+      "finished_utc": "2026-08-13T04:06:15.958845+00:00",
+      "gpu_local_index": 1,
+      "gpu_name": "NVIDIA H100 80GB HBM3",
+      "gpu_total_memory_bytes": 85017493504,
+      "gpu_uuid": "d73d6d8b-2bdd-6502-cede-e68fc0b64dfb",
+      "phase": "score-test",
+      "resumed_from_last_ckpt": false,
+      "slurm_job_id": "552766",
+      "started_utc": "2026-08-13T03:52:23.676014+00:00",
+      "torch": "2.11.0+cu126",
+      "training_cohort_sha256": "9b1ba03e3893a35cd1d0f4d3b63c994afb8e84219c8db28113c9bf6de62e7138"
     }
   ],
   "base_payload": {
@@ -199,6 +221,7 @@
   },
   "best_dev_f1": 0.9161168708765316,
   "campaign_id": "xview3-h100-fp32-20260806",
+  "completed_utc": "2026-08-13T04:06:15.958845+00:00",
   "compute_capability": [
     9,
     0
@@ -207,15 +230,16 @@
   "detector_sha256": "c42ae65bf9045cc93f0d73ae1437b2f6a1300670cb49d8e93f83a39d58a62a12",
   "driver_version": "580.173.02",
   "effective_batch": 16,
+  "elapsed_hours": 14.758249742180277,
   "epochs_run": 50,
   "evaluation_ground_truth_sha256": "89c592ade848bfabf376f2ab04e769a2a6de2db951a969fbfa2958c18fca55a5",
   "exp_id": "sarmae-f50-s0",
   "external_controls_policy": "owner-approved-h100-only-launch;external-controls-required-before-phase5-completion-export-analysis-reporting",
   "git_sha": "1a82d508fbeb9fdf6868a9637611e9018952fb43",
-  "gpu_local_index": 3,
+  "gpu_local_index": 1,
   "gpu_name": "NVIDIA H100 80GB HBM3",
   "gpu_total_memory_bytes": 85017493504,
-  "gpu_uuid": "f822d8a0-2698-b782-fc93-0d6f8619c6db",
+  "gpu_uuid": "d73d6d8b-2bdd-6502-cede-e68fc0b64dfb",
   "gradient_accumulation": 1,
   "h100_ready_sha256": "6dc4a77ff57e2a21a8e3aa39eda5a6e12e500ef759e4ff34a1ee2fa6df1c8f4e",
   "h100_runtime_contract": {
@@ -270,8 +294,17 @@
   },
   "host": "dgx10",
   "micro_batch": 16,
-  "phase": "train",
+  "phase": "score-test",
   "phase_runtime": {
+    "score-test": {
+      "active_seconds": 830.6875038369326,
+      "attempts": 1,
+      "completed_utc": "2026-08-13T04:06:15.958845+00:00",
+      "elapsed_hours": 0.2307465288435924,
+      "test_f1": 0.8672064777327934,
+      "test_metrics_sha256": "514676916b8cddabe0667d970389ea14304415cb40bfa1bb07a73834605b27fe",
+      "training_cohort_sha256": "9b1ba03e3893a35cd1d0f4d3b63c994afb8e84219c8db28113c9bf6de62e7138"
+    },
     "train": {
       "active_seconds": 52299.011568012065,
       "attempts": 1,
@@ -294,7 +327,7 @@
     "sha256sums_sha256": "3c2a077e3b98cb6a6f1c33513f25b5d0f86071cb9a2b8cb43a8260b44fed610f"
   },
   "schema": 2,
-  "slurm_job_id": "550204",
+  "slurm_job_id": "552766",
   "source_validation_sha256": "2bd145518652dbe7cf80c158ef62e066a26c8b61214817cb2a6d2272d35891d4",
   "started_utc": "2026-08-11T22:01:37.930514+00:00",
   "strict_fp32": {
@@ -302,8 +335,13 @@
     "cudnn_conv_fp32_precision": "ieee",
     "cudnn_rnn_fp32_precision": "ieee"
   },
+  "test_f1": 0.8672064777327934,
+  "test_scored_at": "2026-08-13T04:06:03+00:00",
   "torch": "2.11.0+cu126",
-  "training_cohort": null,
+  "training_cohort": {
+    "path": "/cluster-site-redacted/jroth/xview3-h100-runs-1a82d508/.h100/TRAINING_COHORT.json",
+    "sha256": "9b1ba03e3893a35cd1d0f4d3b63c994afb8e84219c8db28113c9bf6de62e7138"
+  },
   "training_completed_utc": "2026-08-12T12:33:17.882513+00:00",
   "venv_build_sha256": "d84d60c8ecce9138bdd68042d7c5b999aca154b049db1d15b0bc196972b15c3c",
   "venv_sha256": "d1237904ba04e602aa05e693074d4466b50a3f9c2cd6969692684e415838a200",

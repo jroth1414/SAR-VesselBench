@@ -7,15 +7,15 @@
  },
  "outputs": {
   "heldout_label_efficiency.pdf": "84cad7972fdfbe1cff4e80d2466f513cbf5363510c46db06ebdb602a663199e9",
-  "heldout_operating_points.pdf": "f6fad27997574b48f88d097b306091b86d5b19809560bc2ba00dc7b2ef0dc092",
-  "heldout_results.tex": "c6fca3cd96040d842e6004670846f78fa632a144db396bb1ffa2e374c965f1e9",
+  "heldout_operating_points.pdf": "e7c5bebc72219c53457021a3b5233246846936e325a9ecbdb0fd291db081c968",
+  "heldout_results.tex": "3c12ea41592208406a89bfc5acf901402951ebf8f383d5db033207083d18512c",
   "heldout_training_dynamics.pdf": "78db50e6442d9ff32fc1709ca1c3666b21a09f771374d7e54e48c1ddf80ed5a8",
   "heldout_transfer_gains.pdf": "059712efd882509dceb0990507aa46e10701a280a8bfa5754f053c05c69a87dc"
  },
  "summary": {
   "cells": 32,
   "final_eval_rows": 0,
-  "gpu_hours": 548.4,
-  "test_results": 0
+  "gpu_hours": 555.8,
+  "test_results": 32
  }
 }

@@ -1,5 +1,5 @@
 # Excerpt of the full H100 training log for cnnin1k-f25-s0.
-# Full log: 166479 lines, sha256 4a8a8932eff01d82f932534b31f830c8ef20bf08cf1b2d71d01bffe460ccc474 (operator archive).
+# Full log: 166483 lines, sha256 7c466cc38ec76126320d60dbd42571c5ecfdbf8f7a8f7a777eedb2d5adf8e1b1 (operator archive).
 # Site paths redacted: /projects/geofam -> /cluster-site-redacted.
 [rank: 0] Seed set to 0
 GPU available: True (cuda), used: True
@@ -61,11 +61,7 @@ Epoch 0:   1%|          | 15/1662 [00:11<21:49,  1.26it/s, v_num=rics, train_los
 Epoch 0:   1%|          | 16/1662 [00:12<20:55,  1.31it/s, v_num=rics, train_loss=5.620]
 Epoch 0:   1%|          | 16/1662 [00:12<21:22,  1.28it/s, v_num=rics, train_loss=4.540]
 Epoch 0:   1%|          | 17/1662 [00:12<20:34,  1.33it/s, v_num=rics, train_loss=4.540]
-[... 166299 lines elided ...]
-Epoch 49:  99%|█████████▉| 1651/1662 [14:59<00:05,  1.83it/s, v_num=rics, train_loss=0.00141, dev_f1=0.893]
-Epoch 49:  99%|█████████▉| 1651/1662 [15:00<00:05,  1.83it/s, v_num=rics, train_loss=0.000304, dev_f1=0.893]
-Epoch 49:  99%|█████████▉| 1652/1662 [15:00<00:05,  1.83it/s, v_num=rics, train_loss=0.000304, dev_f1=0.893]
-Epoch 49:  99%|█████████▉| 1652/1662 [15:00<00:05,  1.83it/s, v_num=rics, train_loss=0.000191, dev_f1=0.893]
+[... 166303 lines elided ...]
 Epoch 49:  99%|█████████▉| 1653/1662 [15:01<00:04,  1.83it/s, v_num=rics, train_loss=0.000191, dev_f1=0.893]
 Epoch 49:  99%|█████████▉| 1653/1662 [15:01<00:04,  1.83it/s, v_num=rics, train_loss=0.000376, dev_f1=0.893]
 Epoch 49: 100%|█████████▉| 1654/1662 [15:01<00:04,  1.83it/s, v_num=rics, train_loss=0.000376, dev_f1=0.893]
@@ -182,3 +178,7 @@ Epoch 49: 100%|██████████| 1662/1662 [22:00<00:00,  1.26it/s
   }
  }
 }
+[2026-08-13T00:06:39] cnnin1k-f25-s0: scoring frozen TEST with cohort-bound best-dev threshold
+[cnn_imagenet] matched=378 missing=0 unexpected=0
+[2026-08-13T00:19:49] cnnin1k-f25-s0: test F1 0.8481; near-shore F1 0.2222 on 2 GT
+[2026-08-13T00:19:49] scored 1 runs

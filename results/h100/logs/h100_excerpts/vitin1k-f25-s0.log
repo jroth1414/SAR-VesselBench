@@ -1,5 +1,5 @@
 # Excerpt of the full H100 training log for vitin1k-f25-s0.
-# Full log: 166479 lines, sha256 fa2024128c10dbdd3f56c285642eb9b23b851224fa74fd104b78a9773da517f1 (operator archive).
+# Full log: 166483 lines, sha256 1793e47b97a51f24107e6abdacd876fd6f226e70b7dbb266aa0dd7dade483245 (operator archive).
 # Site paths redacted: /projects/geofam -> /cluster-site-redacted.
 [rank: 0] Seed set to 0
 GPU available: True (cuda), used: True
@@ -61,11 +61,7 @@ Epoch 0:   1%|          | 15/1662 [00:05<09:57,  2.76it/s, v_num=rics, train_los
 Epoch 0:   1%|          | 16/1662 [00:05<09:30,  2.88it/s, v_num=rics, train_loss=4.560]
 Epoch 0:   1%|          | 16/1662 [00:05<09:49,  2.79it/s, v_num=rics, train_loss=3.800]
 Epoch 0:   1%|          | 17/1662 [00:05<09:24,  2.91it/s, v_num=rics, train_loss=3.800]
-[... 166299 lines elided ...]
-Epoch 49:  99%|█████████▉| 1651/1662 [08:03<00:03,  3.42it/s, v_num=rics, train_loss=0.00159, dev_f1=0.865]
-Epoch 49:  99%|█████████▉| 1651/1662 [08:03<00:03,  3.42it/s, v_num=rics, train_loss=0.00172, dev_f1=0.865]
-Epoch 49:  99%|█████████▉| 1652/1662 [08:03<00:02,  3.42it/s, v_num=rics, train_loss=0.00172, dev_f1=0.865]
-Epoch 49:  99%|█████████▉| 1652/1662 [08:03<00:02,  3.42it/s, v_num=rics, train_loss=0.00139, dev_f1=0.865]
+[... 166303 lines elided ...]
 Epoch 49:  99%|█████████▉| 1653/1662 [08:03<00:02,  3.42it/s, v_num=rics, train_loss=0.00139, dev_f1=0.865]
 Epoch 49:  99%|█████████▉| 1653/1662 [08:03<00:02,  3.42it/s, v_num=rics, train_loss=0.000353, dev_f1=0.865]
 Epoch 49: 100%|█████████▉| 1654/1662 [08:03<00:02,  3.42it/s, v_num=rics, train_loss=0.000353, dev_f1=0.865]
@@ -182,3 +178,7 @@ Epoch 49: 100%|██████████| 1662/1662 [14:23<00:00,  1.92it/s
   }
  }
 }
+[2026-08-13T00:06:56] vitin1k-f25-s0: scoring frozen TEST with cohort-bound best-dev threshold
+[vit_imagenet] matched=150 missing=0 unexpected=0
+[2026-08-13T00:20:16] vitin1k-f25-s0: test F1 0.8051; near-shore F1 0.0000 on 2 GT
+[2026-08-13T00:20:16] scored 1 runs

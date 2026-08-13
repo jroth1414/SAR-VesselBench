@@ -1,5 +1,5 @@
 # Excerpt of the full H100 training log for vitrand-f100-s0.
-# Full log: 461389 lines, sha256 e375859cb71c1b39273b0c887a85287089e95ba860ef7880248feb2557ad6af3 (operator archive).
+# Full log: 461392 lines, sha256 d9e1629d5bd75eebb73bfc458eef56022e796636c85a1a1c73bf6245c206de92 (operator archive).
 # Site paths redacted: /projects/geofam -> /cluster-site-redacted.
 [rank: 0] Seed set to 0
 GPU available: True (cuda), used: True
@@ -61,10 +61,7 @@ Epoch 0:   0%|          | 16/6588 [00:07<49:20,  2.22it/s, v_num=rics, train_los
 Epoch 0:   0%|          | 16/6588 [00:07<50:35,  2.17it/s, v_num=rics, train_loss=4.230]
 Epoch 0:   0%|          | 17/6588 [00:07<48:17,  2.27it/s, v_num=rics, train_loss=4.230]
 Epoch 0:   0%|          | 17/6588 [00:07<49:28,  2.21it/s, v_num=rics, train_loss=3.820]
-[... 461209 lines elided ...]
-Epoch 34: 100%|█████████▉| 6576/6588 [31:55<00:03,  3.43it/s, v_num=rics, train_loss=0.095, dev_f1=0.893] 
-Epoch 34: 100%|█████████▉| 6577/6588 [31:56<00:03,  3.43it/s, v_num=rics, train_loss=0.095, dev_f1=0.893]
-Epoch 34: 100%|█████████▉| 6577/6588 [31:56<00:03,  3.43it/s, v_num=rics, train_loss=0.019, dev_f1=0.893]
+[... 461212 lines elided ...]
 Epoch 34: 100%|█████████▉| 6578/6588 [31:56<00:02,  3.43it/s, v_num=rics, train_loss=0.019, dev_f1=0.893]
 Epoch 34: 100%|█████████▉| 6578/6588 [31:56<00:02,  3.43it/s, v_num=rics, train_loss=0.0115, dev_f1=0.893]
 Epoch 34: 100%|█████████▉| 6579/6588 [31:56<00:02,  3.43it/s, v_num=rics, train_loss=0.0115, dev_f1=0.893]
@@ -182,3 +179,6 @@ Epoch 34: 100%|██████████| 6588/6588 [38:59<00:00,  2.82it/s
   }
  }
 }
+[2026-08-12T23:38:27] vitrand-f100-s0: scoring frozen TEST with cohort-bound best-dev threshold
+[2026-08-12T23:51:27] vitrand-f100-s0: test F1 0.8101; near-shore F1 0.0000 on 2 GT
+[2026-08-12T23:51:27] scored 1 runs

@@ -112,11 +112,28 @@ generic visual structure plus full fine-tuning closes the domain gap.
 \ifHevTestComplete
 All 32 cells were scored once on the frozen 16-scene test split with their
 cohort-bound development thresholds (inference precision
-\HevTestInferencePrecision). The mean development-to-test F1 change is
-\HevTestMeanGap; the full test column appears in
-Appendix~\ref{app:inventory}. Development selection carries optimism from
-choosing both checkpoint and threshold on eight scenes, so the test column
-is the honest operating estimate.
+\HevTestInferencePrecision), and the generator admits the test column only
+because all 32 results validated against the cohort. Every cell's test F1
+sits below its development F1; the shrinkage ranges from 0.041 to 0.142 F1
+and averages \HevTestMeanGap, consistent with development-selection
+optimism (both checkpoint and threshold are chosen on eight scenes) rather
+than a threshold-transfer failure. The SAR--optical sign holds at every
+budget in both tracks, including the reversed ViT order below half data.
+One ranking changes: development selection favors ImageNet at full data in
+both tracks, but held-out scoring instead favors SAR in the ViT track
+(\HevTestFViTSarHundred{} versus ImageNet's \HevTestFViTImageNetHundred);
+the CNN track's ImageNet lead survives (\HevTestFCNNImageNetHundred).
+
+The campaign's grid-validation gate stopped on two non-monotonic test-F1
+curves, both in the SAR role. ViT-SAR repeats the dev-side drop reported
+above: \HevTestFViTSarTen{} at 10\% falls to \HevTestFViTSarTwentyFive{} at
+25\%. CNN-SAR shows a violation development selection never revealed: its
+development curve rises from 50\% to 100\% (\HevDevFCNNSarFifty{} to
+\HevDevFCNNSarHundred), but its test curve falls (\HevTestFCNNSarFifty{} to
+\HevTestFCNNSarHundred), the study's clearest case of development selection
+missing a real instability. Appendix~\ref{app:inventory} lists the full
+test column; the node's sanitized transcript is committed alongside the
+evidence.
 \else
 We did not score the 16-scene test split before this build. The held-out
 contract freezes the 32-cell cohort first, applies each cell's

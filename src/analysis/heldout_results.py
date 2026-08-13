@@ -31,6 +31,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from src.analysis.h100_results import expected_cells
+from src.eval.heldout_contract import build_test_result, cohort_record
 
 FRACTIONS = (10, 25, 50, 100)
 FRACTION_MACRO = {10: "Ten", 25: "TwentyFive", 50: "Fifty", 100: "Hundred"}
@@ -136,32 +137,50 @@ def _validate_test_result(
     path: Path,
     *,
     exp_id: str,
+    cohort: Mapping[str, object],
     cohort_sha256: str,
-    marker_sha256: str,
-    detector_sha256: str,
-    threshold: float,
+    test_scene_ids: Sequence[str],
 ) -> dict[str, float]:
+    """Validate by rebuilding the expected payload from the cohort and diffing.
+
+    Mirrors ``src.eval.heldout_contract.validate_test_result`` exactly (same
+    ``build_test_result`` reconstruction, every key but ``scored_utc``
+    compared for equality) but omits its live-filesystem immutability check:
+    a committed evidence file's immutability is git history, not a chmod bit
+    that survives a fresh clone.
+    """
+
     payload = _load_json(path, f"{exp_id} test result")
+    expected_keys = {
+        "test_result_schema", "status", "scored_utc", "exp_id", "cohort_sha256",
+        "completion_marker_sha256", "git_sha", "detector_sha256",
+        "inference_precision", "threshold_source", "metrics", "per_scene",
+    }
     if (
-        payload.get("exp_id") != exp_id
+        set(payload) != expected_keys
+        or payload.get("test_result_schema") != 1
+        or payload.get("status") != "test-complete"
+        or payload.get("exp_id") != exp_id
         or payload.get("cohort_sha256") != cohort_sha256
-        or payload.get("completion_marker_sha256") != marker_sha256
-        or payload.get("detector_sha256") != detector_sha256
     ):
-        raise EvidenceError(f"{exp_id}: test result bindings do not match the cohort")
-    metrics = payload.get("metrics")
-    if not isinstance(metrics, Mapping):
-        raise EvidenceError(f"{exp_id}: test metrics are absent")
-    _consistent_prf(metrics, f"{exp_id}.test")
-    tp, fn = int(metrics["tp"]), int(metrics["fn"])
-    if tp + fn != EXPECTED_TEST_POSITIVES:
-        raise EvidenceError(f"{exp_id}: test positive support must equal {EXPECTED_TEST_POSITIVES}")
-    per_scene = payload.get("per_scene")
-    if not isinstance(per_scene, Mapping) or len(per_scene) != EXPECTED_TEST_SCENES:
-        raise EvidenceError(f"{exp_id}: test result must cover exactly {EXPECTED_TEST_SCENES} scenes")
-    applied = payload.get("threshold_applied", payload.get("threshold", threshold))
-    if not math.isclose(_finite(applied, f"{exp_id}.test threshold"), threshold, abs_tol=1e-12):
-        raise EvidenceError(f"{exp_id}: test threshold differs from the cohort-bound dev threshold")
+        raise EvidenceError(f"{exp_id}: test result identity is invalid")
+    record = cohort_record(cohort, exp_id)
+    try:
+        rebuilt = build_test_result(
+            exp_id=exp_id,
+            cohort_sha256=cohort_sha256,
+            cohort_cell=record,
+            inference_precision=str(payload.get("inference_precision", "")),
+            metrics=payload.get("metrics") if isinstance(payload.get("metrics"), Mapping) else {},
+            per_scene=payload.get("per_scene") if isinstance(payload.get("per_scene"), Mapping) else {},
+            test_scene_ids=test_scene_ids,
+        )
+    except Exception as exc:  # noqa: BLE001 - re-raise as EvidenceError uniformly
+        raise EvidenceError(f"{exp_id}: test result does not rebuild from the cohort: {exc}") from exc
+    for key in expected_keys - {"scored_utc"}:
+        if payload.get(key) != rebuilt.get(key):
+            raise EvidenceError(f"{exp_id}: test result binding mismatch at {key}")
+    metrics = payload["metrics"]
     return {
         "f1": _finite(metrics.get("f1"), f"{exp_id}.test.f1"),
         "precision": _finite(metrics.get("precision"), f"{exp_id}.test.precision"),
@@ -175,9 +194,14 @@ def validate_evidence(
     *,
     arms_config: str | Path,
     detector_config: str | Path,
+    splits_config: str | Path = Path("data/splits.json"),
 ) -> dict[str, object]:
     root = Path(evidence_root)
     detector_path = Path(detector_config)
+    splits_payload = _load_json(Path(splits_config), "frozen splits")
+    test_scene_ids = tuple(sorted(map(str, splits_payload["splits"]["test"])))
+    if len(test_scene_ids) != EXPECTED_TEST_SCENES:
+        raise EvidenceError(f"frozen test partition must contain exactly {EXPECTED_TEST_SCENES} scenes")
     import yaml
 
     try:
@@ -270,10 +294,9 @@ def validate_evidence(
             test_results[exp_id] = _validate_test_result(
                 test_path,
                 exp_id=exp_id,
+                cohort=cohort,
                 cohort_sha256=cohort_sha256,
-                marker_sha256=marker_sha256,
-                detector_sha256=detector_sha256,
-                threshold=threshold,
+                test_scene_ids=test_scene_ids,
             )
         else:
             missing_tests.append(exp_id)
@@ -704,6 +727,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--evidence-root", type=Path, default=Path("results/h100/evidence"))
     parser.add_argument("--arms-config", type=Path, default=Path("configs/arms.yaml"))
     parser.add_argument("--detector-config", type=Path, default=Path("configs/detector.yaml"))
+    parser.add_argument("--splits-config", type=Path, default=Path("data/splits.json"))
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--validate-only", action="store_true")
     args = parser.parse_args(argv)
@@ -712,6 +736,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.evidence_root,
         arms_config=args.arms_config,
         detector_config=args.detector_config,
+        splits_config=args.splits_config,
     )
     summary = {
         "cells": len(validated["cells"]),  # type: ignore[arg-type]
