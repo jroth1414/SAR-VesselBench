@@ -38,7 +38,7 @@ ROOT_FILES = (
 )
 TREES = (
     "configs", "locks", ".github/workflows", "src", "scripts", "tests", "tools", "docs/class_report",
-    "docs/aipr2026", "docs/results/generated", "results/h100",
+    "docs/results/generated", "results/h100",
 )
 CANVAS_EXCLUDED_TESTS = frozenset(
     {
@@ -84,7 +84,7 @@ def select(repo: Path, tracked_paths: set[str]) -> list[Path]:
                 chosen.add(candidate)
 
     # Built PDFs may be untracked; all source members come from the Git index.
-    for rel in ("docs/class_report/final_report.pdf", "docs/aipr2026/paper.pdf"):
+    for rel in ("docs/class_report/final_report.pdf",):
         path = repo / rel
         if not path.is_file() or path.is_symlink():
             raise SystemExit(f"build the required PDF before packaging: {rel}")

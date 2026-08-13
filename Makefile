@@ -6,7 +6,7 @@ TRAIN_ARGS ?=
 REFERENCE ?=
 REFERENCE_ARGS ?=
 
-.PHONY: test guards data-check train-cell references results class-paper aipr-paper papers submission final-eval
+.PHONY: test guards data-check train-cell references results class-paper submission final-eval
 
 test:
 	$(PYTHON) -m pytest -q
@@ -52,12 +52,7 @@ class-paper: results
 	$(PYTHON) tools/check_report.py docs/class_report/final_report.pdf \
 		--aux docs/class_report/final_report.aux
 
-aipr-paper: results
-	cd docs/aipr2026 && $(TECTONIC) -X compile --keep-intermediates paper.tex
-
-papers: class-paper aipr-paper
-
-submission: papers
+submission: class-paper
 	$(PYTHON) tools/build_submission.py
 
 # The final evaluator has a once-only confirmation gate. It remains outside

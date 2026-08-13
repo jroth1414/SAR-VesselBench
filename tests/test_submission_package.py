@@ -76,9 +76,6 @@ def test_submission_allowlist_excludes_data_and_build_debris(tmp_path: Path) -> 
     build_debris.write_text("aux\n", encoding="utf-8")
     class_pdf = build_debris.with_suffix(".pdf")
     class_pdf.write_bytes(b"pdf")
-    aipr_pdf = tmp_path / "docs" / "aipr2026" / "paper.pdf"
-    aipr_pdf.parent.mkdir(parents=True)
-    aipr_pdf.write_bytes(b"pdf")
 
     names = {path.relative_to(tmp_path).as_posix() for path in select(tmp_path, tracked)}
     assert "configs/arms.yaml" in names
@@ -97,7 +94,6 @@ def test_submission_allowlist_excludes_data_and_build_debris(tmp_path: Path) -> 
     assert "tests/test_result_snapshot.py" in CANVAS_EXCLUDED_TESTS
     assert "tests/test_result_snapshot.py" not in names
     assert "docs/class_report/final_report.pdf" in names
-    assert "docs/aipr2026/paper.pdf" in names
     assert "docs/class_report/final_report.aux" not in names
     assert not any(name.startswith("data/") for name in names)
 
