@@ -9,37 +9,65 @@ stay fixed. Encoder initialization changes within two architecture tracks:
   Sentinel-1 SAR, and ImageNet-1K FCMAE followed by supervised fine-tuning.
 
 Each arm uses seed `0` and four nested scene budgets: 10%, 25%, 50%, and 100%.
-The matrix contains 32 core runs.
+The matrix contains 32 core cells, all trained on H100 GPUs in strict FP32 and
+all scored once on a frozen 16-scene held-out test split. Headline findings:
+transfer concentrates its value under label scarcity; the SAR-versus-optical
+contrast is architecture-dependent (SAR wins the CNN track at every budget,
+optical leads the ViT track below half data, and the held-out split confirms
+the sign at every budget); and held-out scoring reverses one
+development-selection conclusion, the full-data ViT winner.
 
-## Evidence status
+## Evidence and results
 
-`results/h100/evidence/` carries the frozen 32-cell training cohort, each
-cell's byte-exact completion marker, and each cell's training curve from the
-completed H100 campaign (all 32 cells trained; strict FP32; one seed). The
-held-out generator re-derives every published number from those bytes and
-fails closed on any inconsistency:
+`results/h100/evidence/` is the single source for every published number. It
+carries, from the completed campaign (code `1a82d508`, strict IEEE FP32,
+seed 0):
+
+- `TRAINING_COHORT.json` — the frozen 32-cell cohort, byte-exact. It binds
+  the committed `configs/detector.yaml` by SHA-256 and records each cell's
+  completion-marker hash, best-checkpoint hash and epoch, and dev-selected
+  operating threshold.
+- `<exp_id>/final_metrics.json` — each cell's completion marker, byte-exact;
+  its SHA-256 must equal the cohort binding.
+- `<exp_id>/test_metrics.json` — each cell's immutable held-out test result,
+  scored once on the node with the cohort-bound threshold; each must rebuild
+  exactly from the frozen cohort.
+- `<exp_id>/metrics.csv` — each cell's full training curve.
+- `<exp_id>/runtime_provenance.json` — sanitized runtime receipt (hardware
+  class, attempt history, active seconds; private cluster paths replaced,
+  with originals hashed in `REDACTIONS.json`).
+- `EVAL_GROUND_TRUTH_VALIDATED.json` — the audit receipt that binds every
+  annotation-support count to the frozen split file by SHA-256.
+- `grid.csv` — the node's 32-row summary of the completed grid.
+
+Checkpoint bytes stay outside the repository; their SHA-256 bindings are
+published so the operator archive can re-verify them. The generator
+re-derives every published value from these bytes and fails closed on any
+inconsistency (marker-to-cohort hashes, TP/FP/FN consistency, best-dev
+versus training-curve agreement, all-or-nothing test admission):
 
 ```bash
 python -m src.analysis.heldout_results --output-dir docs/results/generated
 ```
 
-Published values are corrected development-selection F1 alongside
-once-scored held-out TEST results: all 32 immutable `test_metrics.json`
-results are committed in the evidence tree and revalidate against the
-cohort on every build (the TEST column renders all-or-nothing). The
-separate 50-scene human-verified set remains sealed until
+The separate 50-scene human-verified set remains sealed until
 `final_verified.csv` exists; dark-vessel recall is defined only there.
 
 `src/analysis/analysis.ipynb` is an executed, in-depth analysis notebook
-over the same validated evidence (dev-versus-test contrasts, shrinkage
-structure, monotonicity, operating-point movement, cost-performance, and
-training-curve timing). It reads only through the fail-closed validator and
+over the same validated evidence: dev-versus-test matrices and contrasts
+with a programmatic sign-agreement check, shrinkage structure, monotonicity
+under the grid gate's tolerance, operating-point movement, cost-performance,
+training-curve timing, and full per-arm training and loss curves (including
+the verified explanation of the mid-campaign Slurm preemption visible in
+eight cells' curves). It reads only through the fail-closed validator and
 runs from the repository root with `jupyter`/`nbclient` installed.
 
 `results/h100/h100_campaign_snapshot.json` remains the sanitized operator
 status record from the campaign deadline, rendered by
 `python -m src.analysis.h100_results generate`; its import machinery stays
-available for a fully receipted reverse handback.
+available for a fully receipted reverse handback. `results/h100/logs/`
+carries head/tail excerpts of each cell's raw H100 training log with
+full-log hashes.
 
 ## Study controls
 
@@ -61,15 +89,15 @@ configuration, training statistics, and scorer hash.
 configs/                 experiment and detector configuration
 data/                    frozen split/statistics metadata only
 docs/class_report/       class report source
-docs/results/generated/  generated H100 tables, macros, and figures
+docs/results/generated/  generated tables, macros, and figures
 results/h100/            H100 evidence tree, sanitized snapshot, and logs
 locks/                   normalized H100 and CPU/test/paper locks
 src/                     data, models, training, evaluation, and analysis
 tests/                   unit, contract, and anti-drift tests
 ```
 
-The repository contains no imagery, labels, weights, checkpoints, or virtual
-environment. The Canvas archive excludes the whole `data/` directory.
+The repository contains no imagery, labels, weights, checkpoints,
+credentials, or virtual environment.
 
 ## Environment and tests
 
@@ -88,12 +116,15 @@ python -m pip install -e . --no-deps
 python -m pytest -q
 ```
 
-The H100 lock records the campaign environment rather than a portable CPU
-installation recipe; training itself needs only a Python 3.11 environment
-with a CUDA build of PyTorch and one GPU with enough memory for batch 16.
-Reproduce value-sensitive checkpoint and GPU tests in a Python 3.11/CUDA
-environment that matches the lock as closely as practical. Downloaded
-checkpoints retain their upstream licenses.
+The full suite runs on any fresh clone; nothing it needs lives outside Git.
+Two test groups degrade gracefully by environment: the value-sensitive
+checkpoint-loading checks skip when the six downloaded weight files are
+absent, and three symlink-behavior tests skip where creating symlinks needs
+privilege (default on Windows). The H100 lock records the campaign
+environment rather than a portable CPU installation recipe; training itself
+needs only a Python 3.11 environment with a CUDA build of PyTorch and one
+GPU with enough memory for batch 16. Downloaded checkpoints retain their
+upstream licenses.
 
 ## Checkpoint sourcing
 
@@ -150,11 +181,11 @@ python -m src.data.splits --help
 python -m pytest tests/test_split_disjoint.py -q
 ```
 
-The three committed JSON files under `data/` preserve frozen split and
+The two committed JSON files under `data/` preserve frozen split and
 aggregate-statistics metadata. Editing them changes the study.
 `data/splits.json` also retains one legacy Windows source-label string from the
 original split receipt. It is immutable provenance, not an executable path or
-public setup default. The Canvas archive excludes the entire `data/` tree.
+public setup default.
 
 ## Training and evaluation
 
@@ -177,8 +208,10 @@ An editable install provides the equivalent `xview3-train` command.
 
 Run `python -m src.runtime.train --help` for the initialization names. A real
 run also needs the recorded strict-FP32 runtime contract and six downloaded
-checkpoint files. The final 50-scene evaluator has an explicit confirmation
-gate and remains unused until the study freezes its cohort and analysis code.
+checkpoint files. Held-out scoring is contract-gated: the cohort and all 32
+test results are already frozen in the evidence tree, and the once-only
+50-scene evaluator (`python -m src.eval.final_eval`) refuses to run without
+an explicit `--i-am-sure` confirmation.
 
 ## Building the report
 
@@ -190,12 +223,6 @@ tectonic -X compile --keep-intermediates final_report.tex
 
 Use Tectonic 0.17.0. The class report limits Introduction through Conclusion
 to five pages; references and appendices start on later pages.
-
-The full Git checkout runs the public test suite plus six expected
-weight-dependent skips. Four modules take their only inputs from the frozen
-metadata under `data/` (two immutable-hash guards and the two H100
-snapshot-import suites); a checkout without that metadata skips or fails
-only those.
 
 ## Contributions
 
