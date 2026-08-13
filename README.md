@@ -152,14 +152,8 @@ hf download strakajk/satdino-vit_base-16 --revision 22b7a253 \
 ```
 
 Create `LICENSE.note` beside each local checkpoint after reviewing its model
-card and recording the repository, revision, source filename, retrieval date,
-license, and file SHA-256. The loader refuses a directory without this note.
-The two ImageNet artifacts have an additional byte-level lock:
-
-```text
-678a1ce471be7da9822fe2508497a5bcf6da4c6802053151b232ba88a42c21a2  imagenet_vit_augreg_in1k/model.safetensors
-ec152f1e375edc2b3dfac7a81155a449b4c5cbb7c5cf0b9494838f6c87518d73  imagenet_cnn_fcmae_ft_in1k/model.safetensors
-```
+card and recording the repository, revision, source filename, retrieval
+date, and license. The loader refuses a directory without this note.
 
 The committed key manifests in `tests/manifests/` define structural coverage.
 Run `python -m pytest tests/test_fm_checkpoints_load.py -q` with all six files

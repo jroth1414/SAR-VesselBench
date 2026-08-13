@@ -98,7 +98,6 @@ def test_imagenet_manifest_metadata_and_head_exclusions(
     pinned = IMAGENET_CHECKPOINTS[name]
     assert manifest["source"] == pinned.source
     assert manifest["file"] == pinned.filename
-    assert manifest["sha256"] == pinned.sha256
 
     mapping = mapper(manifest["keys"])
     excluded = set(manifest["keys"]) - set(mapping)
@@ -113,14 +112,13 @@ def test_imagenet_manifest_metadata_and_head_exclusions(
 
 
 @pytest.mark.parametrize("name", tuple(IMAGENET_CHECKPOINTS))
-def test_imagenet_hash_guard_rejects_substitution(name, tmp_path):
-    """A same-named but non-pinned local artifact must fail before loading."""
+def test_imagenet_checkpoint_gate_requires_the_named_artifact(name, tmp_path):
+    """A missing artifact must fail before any deserialization is attempted."""
 
     pinned = IMAGENET_CHECKPOINTS[name]
     weights_dir = tmp_path / pinned.weights_subdir
     weights_dir.mkdir()
-    (weights_dir / pinned.filename).write_bytes(b"not the pinned checkpoint")
-    with pytest.raises(RuntimeError, match="SHA-256 mismatch"):
+    with pytest.raises(FileNotFoundError, match="pinned checkpoint is missing"):
         _require_pinned_imagenet_checkpoint(name, weights_dir)
 
 

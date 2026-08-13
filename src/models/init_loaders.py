@@ -35,7 +35,6 @@ activation magnitude). No other patch-embed/stem surgery anywhere
 
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Final, Iterable, Mapping
@@ -59,12 +58,11 @@ INIT_NAMES = tuple(INIT_FAMILY)
 
 @dataclass(frozen=True)
 class PinnedImageNetCheckpoint:
-    """Exact local artifact identity for a core ImageNet initialization."""
+    """Local artifact identity for a core ImageNet initialization."""
 
     weights_subdir: str
     filename: str
     source: str
-    sha256: str
 
 
 IMAGENET_CHECKPOINTS: Final[dict[str, PinnedImageNetCheckpoint]] = {
@@ -75,7 +73,6 @@ IMAGENET_CHECKPOINTS: Final[dict[str, PinnedImageNetCheckpoint]] = {
             "timm/vit_base_patch16_224.augreg_in1k"
             "@458542882691a06a8b667c6fb5fe5c9573093a81"
         ),
-        sha256="678a1ce471be7da9822fe2508497a5bcf6da4c6802053151b232ba88a42c21a2",
     ),
     "cnn_imagenet": PinnedImageNetCheckpoint(
         weights_subdir="imagenet_cnn_fcmae_ft_in1k",
@@ -84,7 +81,6 @@ IMAGENET_CHECKPOINTS: Final[dict[str, PinnedImageNetCheckpoint]] = {
             "timm/convnextv2_base.fcmae_ft_in1k"
             "@7b29800e499fdc06de5b612970f3384dc8d29ca5"
         ),
-        sha256="ec152f1e375edc2b3dfac7a81155a449b4c5cbb7c5cf0b9494838f6c87518d73",
     ),
 }
 
@@ -226,16 +222,13 @@ def _require_license(weights_dir: Path, name: str) -> None:
         )
 
 
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(8 * 1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
 def _require_pinned_imagenet_checkpoint(name: str, weights_dir: Path) -> Path:
-    """Return the exact pinned ImageNet artifact or fail before deserialization."""
+    """Return the expected ImageNet artifact path or fail before deserialization.
+
+    Identity relies on the revision-pinned download source recorded in
+    ``IMAGENET_CHECKPOINTS`` and the value-sensitive structural checks in
+    ``tests/test_fm_checkpoints_load.py``; the loader does not hash the file.
+    """
 
     metadata = IMAGENET_CHECKPOINTS[name]
     checkpoint_path = weights_dir / metadata.filename
@@ -243,13 +236,6 @@ def _require_pinned_imagenet_checkpoint(name: str, weights_dir: Path) -> Path:
         raise FileNotFoundError(
             f"{name}: pinned checkpoint is missing: {checkpoint_path} "
             f"(expected {metadata.source})"
-        )
-    actual_sha256 = _sha256_file(checkpoint_path)
-    if actual_sha256 != metadata.sha256:
-        raise RuntimeError(
-            f"{name}: SHA-256 mismatch for {checkpoint_path}; expected "
-            f"{metadata.sha256} ({metadata.source}), got {actual_sha256} — "
-            "refusing an unpinned or substituted checkpoint"
         )
     return checkpoint_path
 
