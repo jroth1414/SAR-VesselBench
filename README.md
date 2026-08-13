@@ -1,5 +1,8 @@
 # xView3 label-efficient dark-vessel detection
 
+**Code:** [github.com/jroth1414/SAR-VesselBench](https://github.com/jroth1414/SAR-VesselBench)
+ • **Trained checkpoints:** [huggingface.co/roth1414/SAR-VesselBench](https://huggingface.co/roth1414/SAR-VesselBench)
+
 This repository compares pretrained visual encoders for vessel detection in
 Sentinel-1 synthetic-aperture radar (SAR). The detector and fine-tuning recipe
 stay fixed. Encoder initialization changes within two architecture tracks:
