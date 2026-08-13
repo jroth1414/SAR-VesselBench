@@ -81,7 +81,7 @@ def penalty_reduced_focal_loss(
     # the upper clamp bound 1 - 1e-6 rounds to exactly 1.0 (largest half below
     # 1.0 is 1 - 2^-11), so a saturated negative-pixel sigmoid (logit >~ 9)
     # slips through as 1.0 and log(1 - prob) = -inf. Measured: killed
-    # cnnin1k-f10-s0 deterministically at epoch 18 (decisions.md 2026-07-23).
+    # cnnin1k-f10-s0 deterministically at epoch 18 (2026-07-23).
     logits = logits.float()
     target = target.float()
     if mask is not None:

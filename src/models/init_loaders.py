@@ -24,7 +24,7 @@ Checkpoint facts (verified at download, revisions in data/weights/*/SOURCE.note)
   the classification heads are dropped. The former is supervised AugReg;
   the latter is FCMAE followed by supervised ImageNet-1K fine-tuning.
 
-Channel adaptation note (flagged for review, runs/decisions.md): timm's
+Channel adaptation note (flagged for review): timm's
 ``adapt_input_conv`` implements Repeat-with-rescaling only FROM 3-channel
 sources; the BigEarthNet stems need 2->3 and 10->3, so
 ``repeat_with_rescaling`` below generalizes the identical tile-and-rescale

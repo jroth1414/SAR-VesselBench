@@ -1,6 +1,6 @@
 """Regression guard: focal loss stays finite on fp16-saturated logits.
 
-The 2026-07-23 cnnin1k-f10-s0 divergence (decisions.md): under fp16 autocast
+The 2026-07-23 cnnin1k-f10-s0 divergence: under fp16 autocast
 the loss's [eps, 1 - eps] clamp is a no-op on the upper side because
 ``1 - 1e-6`` is not representable in half precision (it rounds to 1.0), so a
 penalty-reduced negative pixel whose sigmoid saturates to fp16 1.0 produces
