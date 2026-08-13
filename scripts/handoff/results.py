@@ -9,6 +9,7 @@ import math
 import os
 import re
 import shutil
+import subprocess
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -54,11 +55,13 @@ from scripts.h100.source_validation import (
     validate_source_receipt,
 )
 from src.analysis.curves import training_fraction_counts
+from src.eval.final_authorization import AUTHORIZATION_FILENAME
 from src.eval.ground_truth_audit import audit_ground_truth_dataset
 from src.eval.heldout_contract import (
     COHORT_FILENAME,
     HeldoutContractError,
     TEST_RESULT_FILENAME,
+    cohort_record,
     validate_complete_test_cohort,
     validate_training_cohort,
 )
@@ -82,6 +85,7 @@ from .package import (
     _physical_record,
     _require_no_symlink_components,
     _source_entries,
+    _validate_amended_final_data_view,
     _write_bytes,
     verify_package,
 )
@@ -126,6 +130,33 @@ _GRID_COUNT_FIELDS = (
     "train_near_shore_vessel_count",
 )
 _MONOTONICITY_TOLERANCE = 0.02
+_FAILED_GRID_EVENT = "grid_validation_failed"
+_FINAL_LOCK_FILENAME = "final_eval.lock"
+_FINAL_DATA_VIEW_FILENAME = "FINAL_DATA_VIEW.json"
+_FINAL_CONSUMPTION_FILENAME = "FINAL_GROUND_TRUTH_CONSUMED.json"
+_FINAL_COMPLETE_FILENAME = "FINAL_EVAL_COMPLETE.json"
+_FINAL_HARDWARE_NAME = re.compile(r"^FINAL_H100_RUNTIME-[0-9]+\.json$")
+_FINAL_NORMALIZED_GT_FILENAME = "FINAL_NORMALIZED_GROUND_TRUTH.json"
+_FINAL_CELL_RESULT_FILENAME = "final_verified_metrics.json"
+_FINAL_SUMMARY_FILENAME = "final_verified.csv"
+_SCIENTIFIC_RUNTIME_PATHS = (
+    "configs",
+    "data/splits.json",
+    "data/stats.json",
+    "data/lsssdd_split.json",
+    "src/data",
+    "src/models",
+    "src/train",
+    "src/eval/decode.py",
+    "src/eval/ground_truth.py",
+    "src/eval/heldout_contract.py",
+    "src/eval/infer_scene.py",
+    "src/eval/result_contract.py",
+    "src/eval/scorer.py",
+    "src/eval/threshold.py",
+    "src/analysis/curves.py",
+    "scripts/h100/contracts.py",
+)
 _RESULT_TEXT_SUFFIXES = frozenset(
     {
         ".cfg",
@@ -171,10 +202,13 @@ def _mapping(value: object, description: str) -> dict[str, object]:
 def _result_identity(
     campaign: Mapping[str, object],
     *,
+    evaluator_git_sha: str | None = None,
     diagnostic_isolation: Mapping[str, object],
     cutover_ready_sha256: str,
     artifacts: Sequence[Mapping[str, object]],
     max_part_bytes: int,
+    amendment: Mapping[str, object] | None = None,
+    final_results: Mapping[str, object] | None = None,
 ) -> tuple[dict[str, object], str]:
     """Bind the recipe, hardware, and complete validated package contents."""
 
@@ -219,6 +253,27 @@ def _result_identity(
         "maximum_physical_file_bytes": max_part_bytes,
         "artifact_digest_index": [dict(artifact) for artifact in artifacts],
     }
+    if amendment is not None:
+        if evaluator_git_sha is None or final_results is None:
+            raise PackageError(
+                "owner amendment lacks its evaluator SHA or complete final results"
+            )
+        final_identity = {
+            key: value
+            for key, value in final_results.items()
+            if key not in {"paths", "cell_paths"}
+        }
+        identity.update(
+            {
+                "schema": 3,
+                "git_commit": evaluator_git_sha,
+                "campaign_git_commit": campaign.get("git_sha"),
+                "evaluator_git_commit": evaluator_git_sha,
+                "campaign_status": campaign.get("status"),
+                "post_test_owner_amendment": dict(amendment),
+                "final_evaluation": final_identity,
+            }
+        )
     digest = hashlib.sha256(_canonical_json(identity)).hexdigest()
     return identity, digest
 
@@ -464,34 +519,20 @@ def _smoke_state_matches(
             raise PackageError(f"Slurm smoke STATE/READY mismatch for {key}")
 
 
-def _validate_campaign(
-    repo: Path,
-    runs_root: Path,
-    campaign_manifest: Path,
-) -> tuple[dict[str, object], list[Cell], dict[str, object]]:
-    campaign = _json(campaign_manifest)
-    cells = load_cells(repo)
-    if len(cells) != 32 or len({cell.exp_id for cell in cells}) != 32:
-        raise PackageError("active repository does not resolve to 32 unique core cells")
-    expected_order = [cell.exp_id for cell in cells]
-    expected_ids = set(expected_order)
-    git_sha = _git_value(repo, "rev-parse", "HEAD")
-    detector_sha256 = sha256_file(repo / "configs/detector.yaml")
+def _validate_campaign_completion_state(
+    campaign: Mapping[str, object],
+    *,
+    expected_order: Sequence[str],
+    amended: bool,
+) -> None:
+    """Validate only the terminal 32-cell state, including truthful failure."""
 
-    _exact_bindings(
-        campaign,
-        {
-            "schema": 2,
-            "status": "complete",
-            "git_sha": git_sha,
-            "detector_sha256": detector_sha256,
-            "precision": EXPECTED_PRECISION,
-            "micro_batch": MICRO_BATCH,
-            "gradient_accumulation": GRADIENT_ACCUMULATION,
-            "effective_batch": EFFECTIVE_BATCH,
-        },
-        "campaign",
-    )
+    expected_status = "failed" if amended else "complete"
+    if campaign.get("status") != expected_status:
+        raise PackageError(
+            f"campaign terminal status is not truthful {expected_status!r}"
+        )
+    expected_ids = set(expected_order)
     complete = campaign.get("complete")
     if (
         not isinstance(complete, list)
@@ -499,7 +540,12 @@ def _validate_campaign(
         or len(set(complete)) != 32
         or set(complete) != expected_ids
     ):
-        raise PackageError("campaign manifest does not complete the exact unique grid")
+        message = (
+            "failed-grid campaign does not preserve its exact completed TEST set"
+            if amended
+            else "campaign manifest does not complete the exact unique grid"
+        )
+        raise PackageError(message)
     if campaign.get("running") != {}:
         raise PackageError("campaign manifest still has running cells")
     for key in ("training_complete", "test_complete"):
@@ -513,8 +559,123 @@ def _validate_campaign(
             raise PackageError(f"campaign {key} is not the exact 32-cell grid")
     if campaign.get("phase") != "score-test":
         raise PackageError("campaign did not complete the separated TEST phase")
-    if campaign.get("cell_order") != expected_order:
+    if campaign.get("cell_order") != list(expected_order):
         raise PackageError("campaign cell_order is not exact expensive-first order")
+    if not amended:
+        return
+    failure = campaign.get("fail_stop")
+    normalized_failure = dict(failure) if isinstance(failure, Mapping) else None
+    if normalized_failure != {
+        "engaged": True,
+        "failed": [],
+        "allowed_to_finish": [],
+    }:
+        raise PackageError(
+            "failed-grid campaign does not preserve the exact scientific STOP state"
+        )
+    events = campaign.get("events")
+    if not isinstance(events, list) or not events:
+        raise PackageError("failed-grid campaign lacks terminal event evidence")
+    terminal = events[-1]
+    if (
+        not isinstance(terminal, Mapping)
+        or terminal.get("event") != _FAILED_GRID_EVENT
+        or not isinstance(terminal.get("error"), str)
+        or "monotonicity STOP" not in str(terminal.get("error"))
+        or not str(terminal.get("utc", "")).strip()
+        or any(
+            isinstance(event, Mapping) and event.get("event") == "grid_validated"
+            for event in events
+        )
+    ):
+        raise PackageError(
+            "campaign did not terminate at the disclosed monotonicity STOP"
+        )
+
+
+def _validate_campaign(
+    repo: Path,
+    runs_root: Path,
+    campaign_manifest: Path,
+    *,
+    campaign_git_sha: str,
+    owner_amendment: Path | None,
+) -> tuple[dict[str, object], list[Cell], dict[str, object]]:
+    campaign = _json(campaign_manifest)
+    cells = load_cells(repo)
+    if len(cells) != 32 or len({cell.exp_id for cell in cells}) != 32:
+        raise PackageError("active repository does not resolve to 32 unique core cells")
+    expected_order = [cell.exp_id for cell in cells]
+    evaluator_git_sha = _git_value(repo, "rev-parse", "HEAD")
+    git_sha = campaign_git_sha
+    amended = owner_amendment is not None
+    if owner_amendment is None and evaluator_git_sha != git_sha:
+        raise PackageError("legacy reverse handback requires the campaign checkout")
+    try:
+        is_ancestor = subprocess.run(
+            [
+                "git",
+                "-c",
+                f"safe.directory={repo}",
+                "merge-base",
+                "--is-ancestor",
+                git_sha,
+                evaluator_git_sha,
+            ],
+            cwd=repo,
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        ).returncode == 0
+    except OSError as exc:
+        raise PackageError("could not inspect evaluator/campaign ancestry") from exc
+    if not is_ancestor:
+        raise PackageError(
+            "reverse handback evaluator is not a descendant of the campaign source"
+        )
+    if amended:
+        scientific_diff = subprocess.run(
+            [
+                "git",
+                "-c",
+                f"safe.directory={repo}",
+                "diff",
+                "--quiet",
+                git_sha,
+                evaluator_git_sha,
+                "--",
+                *_SCIENTIFIC_RUNTIME_PATHS,
+            ],
+            cwd=repo,
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if scientific_diff.returncode != 0:
+            raise PackageError(
+                "reverse handback evaluator changed the campaign scientific runtime"
+            )
+    detector_sha256 = sha256_file(repo / "configs/detector.yaml")
+
+    _exact_bindings(
+        campaign,
+        {
+            "schema": 2,
+            "status": "failed" if amended else "complete",
+            "git_sha": git_sha,
+            "detector_sha256": detector_sha256,
+            "precision": EXPECTED_PRECISION,
+            "micro_batch": MICRO_BATCH,
+            "gradient_accumulation": GRADIENT_ACCUMULATION,
+            "effective_batch": EFFECTIVE_BATCH,
+        },
+        "campaign",
+    )
+    _validate_campaign_completion_state(
+        campaign,
+        expected_order=expected_order,
+        amended=amended,
+    )
 
     meta_root = runs_root / ".h100"
     ready_path = meta_root / "H100_READY.json"
@@ -974,6 +1135,7 @@ def _validate_campaign(
 
     context: dict[str, object] = {
         "repo": repo,
+        "evaluator_git_sha": evaluator_git_sha,
         "meta_root": meta_root,
         "ready_path": ready_path,
         "runtime_path": runtime_path,
@@ -1278,7 +1440,8 @@ def _validate_grid(
     cells: Sequence[Cell],
     campaign: Mapping[str, object],
     markers: Mapping[str, Mapping[str, object]],
-) -> Path:
+    allow_failed_monotonicity: bool = False,
+) -> tuple[Path, dict[str, object]]:
     grid = runs_root / "summary/grid.csv"
     if grid.is_symlink():
         raise PackageError("summary/grid.csv may not be a symlink")
@@ -1317,6 +1480,7 @@ def _validate_grid(
         raise PackageError("summary/grid.csv IDs/order are not the exact 32-cell grid")
     fraction_counts: dict[float, tuple[int, int, int, int]] = {}
     monotonicity_points: dict[str, list[tuple[float, float]]] = {}
+    monotonicity_flags: dict[str, list[str]] = {}
     for row in rows:
         exp_id = row["exp_id"]
         expected = metadata[exp_id]
@@ -1376,35 +1540,605 @@ def _validate_grid(
         monotonicity_points.setdefault(str(expected["init"]), []).append(
             (fraction, test_f1)
         )
-        if row["monotonicity_ok"].strip().casefold() != "true":
-            raise PackageError(f"summary/grid.csv monotonicity STOP for {exp_id}")
+        flag = row["monotonicity_ok"].strip().casefold()
+        if flag not in {"true", "false"}:
+            raise PackageError(
+                f"summary/grid.csv monotonicity flag is invalid for {exp_id}"
+            )
+        monotonicity_flags.setdefault(str(expected["init"]), []).append(flag)
 
+    violations: list[dict[str, object]] = []
+    violating_inits: set[str] = set()
     for init_name, points in monotonicity_points.items():
         ordered = sorted(points)
-        if any(
-            current < previous - _MONOTONICITY_TOLERANCE
-            for (_fraction, previous), (_next_fraction, current) in zip(
-                ordered, ordered[1:]
-            )
+        if [fraction for fraction, _score in ordered] != [0.1, 0.25, 0.5, 1.0]:
+            raise PackageError(f"summary/grid.csv fractions are incomplete for {init_name}")
+        for (from_fraction, previous), (to_fraction, current) in zip(
+            ordered, ordered[1:]
         ):
+            if current < previous - _MONOTONICITY_TOLERANCE:
+                violating_inits.add(init_name)
+                violations.append(
+                    {
+                        "init": init_name,
+                        "from_fraction": from_fraction,
+                        "to_fraction": to_fraction,
+                        "from_test_f1": previous,
+                        "to_test_f1": current,
+                        "drop": previous - current,
+                    }
+                )
+    for init_name, observed in monotonicity_flags.items():
+        expected_flag = "false" if init_name in violating_inits else "true"
+        if len(observed) != 4 or set(observed) != {expected_flag}:
             raise PackageError(
-                "summary/grid.csv independently recomputed monotonicity STOP "
-                f"for {init_name}"
+                "summary/grid.csv independently recomputed monotonicity "
+                f"flags disagree for {init_name}"
             )
+    if violations and not allow_failed_monotonicity:
+        raise PackageError(
+            "summary/grid.csv independently recomputed monotonicity STOP "
+            f"for {violations[0]['init']}"
+        )
+    if not violations and allow_failed_monotonicity:
+        raise PackageError(
+            "owner-amended reverse handback requires a truthfully failed "
+            "monotonicity diagnostic"
+        )
 
     grid_sha256 = sha256_file(grid)
     events = campaign.get("events")
-    matching_events = [
-        event
-        for event in events
-        if isinstance(event, Mapping)
-        and event.get("event") == "grid_validated"
-        and event.get("sha256") == grid_sha256
-        and event.get("rows") == 32
-    ] if isinstance(events, list) else []
-    if len(matching_events) != 1:
-        raise PackageError("campaign manifest does not bind the exact summary/grid.csv")
-    return grid
+    if not allow_failed_monotonicity:
+        matching_events = [
+            event
+            for event in events
+            if isinstance(event, Mapping)
+            and event.get("event") == "grid_validated"
+            and event.get("sha256") == grid_sha256
+            and event.get("rows") == 32
+        ] if isinstance(events, list) else []
+        if len(matching_events) != 1:
+            raise PackageError(
+                "campaign manifest does not bind the exact summary/grid.csv"
+            )
+    return grid, {
+        "relative_path": "summary/grid.csv",
+        "sha256": grid_sha256,
+        "monotonicity_tolerance": _MONOTONICITY_TOLERANCE,
+        "monotonicity_ok": not violations,
+        "violations": violations,
+    }
+
+
+def _hash_binding(
+    value: object,
+    *,
+    relative_path: str,
+    sha256: str,
+    description: str,
+) -> None:
+    if not isinstance(value, Mapping) or dict(value) != {
+        "relative_path": relative_path,
+        "sha256": sha256,
+    }:
+        raise PackageError(f"{description} binding mismatch")
+
+
+def _validate_owner_amendment(
+    path: Path,
+    *,
+    runs_root: Path,
+    campaign: Mapping[str, object],
+    context: Mapping[str, object],
+    cells: Sequence[Cell],
+    grid_audit: Mapping[str, object],
+    test_metrics_sha256: Mapping[str, str],
+) -> dict[str, object]:
+    expected = runs_root / ".h100" / AUTHORIZATION_FILENAME
+    if path != expected:
+        raise PackageError(f"owner amendment must use canonical path {expected}")
+    payload = _immutable_json(path, "owner final-eval amendment")
+    from src.eval.final_authorization import (
+        AUTHORIZATION_POLICY,
+        AUTHORIZATION_SCHEMA,
+        AUTHORIZATION_STATUS,
+        AUTHORIZED_OWNER,
+        CONSTRAINTS,
+        OWNER_DECISION,
+        validate_authorization,
+    )
+    try:
+        validated_payload, amendment_sha256 = validate_authorization(
+            path, expected=payload
+        )
+    except RuntimeError as exc:
+        raise PackageError(f"owner final-eval amendment is invalid: {exc}") from exc
+    if validated_payload != payload:
+        raise PackageError("owner final-eval amendment changed during validation")
+
+    if (
+        payload.get("authorization_schema") != AUTHORIZATION_SCHEMA
+        or payload.get("status") != AUTHORIZATION_STATUS
+        or payload.get("owner") != AUTHORIZED_OWNER
+        or payload.get("decision") != OWNER_DECISION
+        or payload.get("policy") != AUTHORIZATION_POLICY
+        or payload.get("constraints") != CONSTRAINTS
+        or payload.get("evaluator_git_sha") != context["evaluator_git_sha"]
+    ):
+        raise PackageError("owner final-eval amendment policy/source is invalid")
+    selected = [cell.exp_id for cell in cells]
+    if payload.get("selected_cells") != selected:
+        raise PackageError("owner final-eval amendment is not the exact 32-cell grid")
+    _hash_binding(
+        payload.get("cohort"),
+        relative_path=f".h100/{COHORT_FILENAME}",
+        sha256=str(context["cohort_sha256"]),
+        description="owner amendment training cohort",
+    )
+    if payload.get("grid") != dict(grid_audit):
+        raise PackageError("owner amendment failed-grid binding mismatch")
+    controls = payload.get("phase5_controls")
+    if not isinstance(controls, Mapping) or controls.get("status") != (
+        "reporting-controls-persisted"
+    ):
+        raise PackageError("owner amendment Phase-5 controls are invalid")
+    _hash_binding(
+        controls.get("h100_ready"),
+        relative_path=".h100/H100_READY.json",
+        sha256=str(context["h100_ready_sha256"]),
+        description="owner amendment H100_READY",
+    )
+    _hash_binding(
+        controls.get("cutover_ready"),
+        relative_path=".h100/CUTOVER_READY.json",
+        sha256=str(context["cutover_ready_sha256"]),
+        description="owner amendment CUTOVER_READY",
+    )
+    diagnostic = context["diagnostic_isolation"]
+    if not isinstance(diagnostic, Mapping):
+        raise PackageError("validated diagnostic-isolation context is malformed")
+    _hash_binding(
+        controls.get("v100_diagnostic_isolation"),
+        relative_path=".h100/V100_DIAGNOSTIC_ISOLATION.json",
+        sha256=str(diagnostic["sha256"]),
+        description="owner amendment diagnostic isolation",
+    )
+    campaign_binding = payload.get("campaign")
+    events = campaign.get("events")
+    terminal = events[-1] if isinstance(events, list) and events else None
+    if not isinstance(terminal, Mapping):
+        raise PackageError("failed campaign terminal event is absent")
+    expected_campaign = {
+        "campaign_id": campaign.get("campaign_id"),
+        "git_sha": campaign.get("git_sha"),
+        "runs_root": str(runs_root),
+        "manifest": {
+            "relative_path": ".h100/campaign_manifest.json",
+            "sha256": sha256_file(runs_root / ".h100/campaign_manifest.json"),
+        },
+        "terminal_event": {
+            "event": _FAILED_GRID_EVENT,
+            "error": str(terminal.get("error")),
+            "utc": str(terminal.get("utc")),
+        },
+    }
+    if campaign_binding != expected_campaign:
+        raise PackageError("owner amendment failed-campaign binding mismatch")
+    test_bindings = payload.get("test_results")
+    expected_tests = [
+        {
+            "exp_id": cell.exp_id,
+            "relative_path": f"{cell.exp_id}/{TEST_RESULT_FILENAME}",
+            "sha256": test_metrics_sha256[cell.exp_id],
+        }
+        for cell in cells
+    ]
+    if test_bindings != expected_tests:
+        raise PackageError("owner amendment TEST-result bindings mismatch")
+    return {
+        "relative_path": f".h100/{AUTHORIZATION_FILENAME}",
+        "sha256": amendment_sha256,
+        "receipt": payload,
+    }
+
+
+def _validate_optional_final_results(
+    *,
+    runs_root: Path,
+    campaign: Mapping[str, object],
+    context: Mapping[str, object],
+    cells: Sequence[Cell],
+    grid_audit: Mapping[str, object],
+    amendment: Mapping[str, object],
+    test_metrics_sha256: Mapping[str, str],
+) -> dict[str, object] | None:
+    lock_path = runs_root / _FINAL_LOCK_FILENAME
+    meta = runs_root / ".h100"
+    data_view_path = meta / _FINAL_DATA_VIEW_FILENAME
+    consumption_path = meta / _FINAL_CONSUMPTION_FILENAME
+    complete_path = meta / _FINAL_COMPLETE_FILENAME
+    normalized_path = meta / _FINAL_NORMALIZED_GT_FILENAME
+    summary_path = runs_root / "summary" / _FINAL_SUMMARY_FILENAME
+    per_cell_paths = [
+        runs_root / cell.exp_id / _FINAL_CELL_RESULT_FILENAME for cell in cells
+    ]
+    candidates = [
+        lock_path,
+        data_view_path,
+        consumption_path,
+        complete_path,
+        normalized_path,
+        summary_path,
+        *per_cell_paths,
+    ]
+    present = [path for path in candidates if path.exists() or path.is_symlink()]
+    if not present:
+        return None
+    if len(present) != len(candidates):
+        missing = [str(path) for path in candidates if path not in present]
+        raise PackageError(
+            "partial final-evaluation namespace cannot be reverse-exported: "
+            + ", ".join(missing[:5])
+        )
+    lock = _immutable_json(lock_path, "final-evaluation lock")
+    data_view = _immutable_json(data_view_path, "final data-view receipt")
+    consumption = _immutable_json(consumption_path, "final GT-consumption receipt")
+    completion = _immutable_json(complete_path, "final-evaluation completion receipt")
+    for path, description in (
+        (normalized_path, "normalized final ground truth"),
+        (summary_path, "final verified summary"),
+    ):
+        if path.is_symlink() or not path.is_file() or path.stat().st_mode & 0o222:
+            raise PackageError(f"{description} is absent, symlinked, or writable")
+    if data_view_path.read_bytes() != _canonical_json(data_view):
+        raise PackageError("final data-view receipt is not canonical JSON")
+    expected_lock_keys = {
+        "lock_schema",
+        "started_utc",
+        "policy",
+        "campaign_git_sha",
+        "evaluator_git_sha",
+        "detector_sha256",
+        "cohort_sha256",
+        "grid",
+        "owner_amendment",
+        "phase5_controls",
+        "test_results",
+        "selected_cells",
+        "eval_scene_count",
+        "inference_precision",
+        "allocation_hardware",
+        "final_data_view",
+    }
+    if (
+        set(lock) != expected_lock_keys
+        or lock.get("lock_schema") != 3
+        or not str(lock.get("started_utc", "")).strip()
+        or lock.get("policy") != amendment["receipt"]["policy"]
+        or lock.get("campaign_git_sha") != campaign.get("git_sha")
+        or lock.get("evaluator_git_sha") != context["evaluator_git_sha"]
+        or lock.get("detector_sha256") != campaign.get("detector_sha256")
+        or lock.get("cohort_sha256") != context["cohort_sha256"]
+        or lock.get("grid") != dict(grid_audit)
+        or lock.get("phase5_controls") != amendment["receipt"]["phase5_controls"]
+        or lock.get("selected_cells") != [cell.exp_id for cell in cells]
+        or lock.get("eval_scene_count") != 50
+        or lock.get("inference_precision") != "32-true"
+        or lock.get("owner_amendment")
+        != {
+            "relative_path": amendment["relative_path"],
+            "sha256": amendment["sha256"],
+            "owner": amendment["receipt"]["owner"],
+            "decision": amendment["receipt"]["decision"],
+        }
+    ):
+        raise PackageError("final-evaluation lock/amendment binding is invalid")
+    lock_tests = lock.get("test_results")
+    expected_tests = [
+        {
+            "exp_id": cell.exp_id,
+            "relative_path": f"{cell.exp_id}/{TEST_RESULT_FILENAME}",
+            "sha256": test_metrics_sha256[cell.exp_id],
+        }
+        for cell in cells
+    ]
+    if lock_tests != expected_tests:
+        raise PackageError("final-evaluation lock TEST bindings mismatch")
+    package = data_view.get("package")
+    source = data_view.get("source")
+    view = data_view.get("view")
+    staged_scenes = view.get("scenes") if isinstance(view, Mapping) else None
+    expected_data_view_binding = {
+        "relative_path": f".h100/{_FINAL_DATA_VIEW_FILENAME}",
+        "sha256": sha256_file(data_view_path),
+        "package": package,
+        "source": source,
+        "validation_labels": (
+            view.get("validation_labels") if isinstance(view, Mapping) else None
+        ),
+        "scenes": staged_scenes,
+    }
+    if (
+        set(data_view) != {"schema", "status", "package", "source", "view"}
+        or data_view.get("schema") != 1
+        or data_view.get("status") != "final-eval-data-view-staged"
+        or not isinstance(package, Mapping)
+        or not isinstance(source, Mapping)
+        or source.get("git_commit") != context["evaluator_git_sha"]
+        or source.get("required_campaign_commit") != campaign.get("git_sha")
+        or not isinstance(view, Mapping)
+        or not isinstance(staged_scenes, list)
+        or len(staged_scenes) != 50
+        or any(not isinstance(item, Mapping) for item in staged_scenes)
+        or lock.get("final_data_view") != expected_data_view_binding
+    ):
+        raise PackageError("final-evaluation lock data-view binding mismatch")
+    hardware_binding = lock.get("allocation_hardware")
+    if not isinstance(hardware_binding, Mapping) or set(hardware_binding) != {
+        "relative_path",
+        "sha256",
+        "strict_fp32",
+        "hardware_class",
+    }:
+        raise PackageError("final-evaluation allocation-hardware binding is invalid")
+    hardware_relative = str(hardware_binding.get("relative_path", ""))
+    hardware_name = PurePosixPath(hardware_relative).name
+    if (
+        hardware_relative != f".h100/{hardware_name}"
+        or _FINAL_HARDWARE_NAME.fullmatch(hardware_name) is None
+        or not _HEX64.fullmatch(str(hardware_binding.get("sha256", "")))
+    ):
+        raise PackageError("final-evaluation allocation-hardware path is invalid")
+    hardware_path = runs_root / hardware_relative
+    hardware = _immutable_json(hardware_path, "final allocation hardware")
+    if sha256_file(hardware_path) != hardware_binding.get("sha256"):
+        raise PackageError("final allocation hardware digest mismatch")
+    owner_sha = str(amendment["sha256"])
+    if (
+        set(consumption)
+        != {
+            "consumption_schema",
+            "status",
+            "consumed_utc",
+            "lock",
+            "validation_csv",
+            "normalized_ground_truth",
+            "normalized_ground_truth_sha256",
+            "campaign_git_sha",
+            "evaluator_git_sha",
+            "owner_authorization_sha256",
+            "final_data_view",
+        }
+        or consumption.get("consumption_schema") != 1
+        or consumption.get("status") != "verified-final-ground-truth-consumed"
+        or not str(consumption.get("consumed_utc", "")).strip()
+        or consumption.get("campaign_git_sha") != campaign.get("git_sha")
+        or consumption.get("evaluator_git_sha") != context["evaluator_git_sha"]
+        or consumption.get("owner_authorization_sha256") != owner_sha
+        or consumption.get("final_data_view") != expected_data_view_binding
+        or consumption.get("lock")
+        != {
+            "relative_path": _FINAL_LOCK_FILENAME,
+            "sha256": sha256_file(lock_path),
+        }
+    ):
+        raise PackageError("final GT-consumption binding is invalid")
+    normalized = consumption.get("normalized_ground_truth")
+    validation_csv = consumption.get("validation_csv")
+    if (
+        not isinstance(normalized, Mapping)
+        or set(normalized) != {"relative_path", "sha256", "stored_sha256"}
+        or normalized.get("relative_path")
+        != f".h100/{_FINAL_NORMALIZED_GT_FILENAME}"
+        or normalized.get("stored_sha256") != sha256_file(normalized_path)
+        or consumption.get("normalized_ground_truth_sha256")
+        != normalized.get("sha256")
+        or not isinstance(validation_csv, Mapping)
+        or set(validation_csv) != {"row_count", "scene_count", "sha256"}
+        or validation_csv.get("row_count") != 19_224
+        or validation_csv.get("scene_count") != 50
+        or not _HEX64.fullmatch(str(validation_csv.get("sha256", "")))
+    ):
+        raise PackageError("final normalized-GT binding is invalid")
+    normalized_bytes = normalized_path.read_bytes()
+    if (
+        not normalized_bytes.endswith(b"\n")
+        or normalized_bytes.endswith(b"\n\n")
+        or hashlib.sha256(normalized_bytes[:-1]).hexdigest()
+        != normalized.get("sha256")
+    ):
+        raise PackageError("final normalized-GT semantic digest is invalid")
+    try:
+        normalized_ground_truth = json.loads(normalized_bytes[:-1])
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise PackageError("final normalized-GT payload is invalid JSON") from exc
+
+    repo = Path(str(context["repo"]))
+    try:
+        split_payload = json.loads(
+            (repo / "data/splits.json").read_text(encoding="utf-8")
+        )
+        eval_scene_ids = tuple(
+            sorted(map(str, split_payload["splits"]["eval_final"]))
+        )
+    except (KeyError, OSError, TypeError, ValueError) as exc:
+        raise PackageError("could not resolve the frozen final-scene inventory") from exc
+    if len(eval_scene_ids) != 50 or len(set(eval_scene_ids)) != 50:
+        raise PackageError("frozen final-scene inventory is not the exact 50 scenes")
+    _validate_amended_final_data_view(
+        data_view,
+        campaign_git_sha=campaign["git_sha"],
+        evaluator_git_sha=context["evaluator_git_sha"],
+        eval_scene_ids=eval_scene_ids,
+    )
+    if [str(item.get("scene_id", "")) for item in staged_scenes] != list(  # type: ignore[union-attr]
+        eval_scene_ids
+    ):
+        raise PackageError("final data-view scene inventory differs from frozen split")
+    final_access = {
+        "lock_sha256": sha256_file(lock_path),
+        "consumption_sha256": sha256_file(consumption_path),
+        "data_view_sha256": sha256_file(data_view_path),
+    }
+    try:
+        from src.eval.final_eval import (
+            AMENDED_FINAL_INTERPRETATION,
+            FINAL_STUDY_DESIGN,
+            _ground_truth_points_from_normalized,
+            _summary_row,
+            _validate_final_cell_payload,
+            _validated_h100_hardware_class,
+        )
+    except ImportError as exc:  # pragma: no cover - source package is incomplete
+        raise PackageError("final-evaluation validators are unavailable") from exc
+
+    try:
+        ground_truth_by_scene = _ground_truth_points_from_normalized(
+            normalized_ground_truth,
+            expected_scene_ids=eval_scene_ids,
+        )
+        final_hardware_class = _validated_h100_hardware_class(hardware)
+    except HeldoutContractError as exc:
+        raise PackageError(f"final-evaluation provenance is invalid: {exc}") from exc
+    if (
+        hardware.get("backend") != hardware_binding.get("strict_fp32")
+        or hardware_binding.get("strict_fp32") != context["strict_fp32"]
+        or final_hardware_class != hardware_binding.get("hardware_class")
+        or final_hardware_class != context["accepted_hardware_class"]
+    ):
+        raise PackageError(
+            "final allocation hardware differs from H100_READY/lock evidence"
+        )
+
+    result_sha256: dict[str, str] = {}
+    validated_payloads: dict[str, dict[str, object]] = {}
+    for cell, path in zip(cells, per_cell_paths, strict=True):
+        payload = _immutable_json(path, f"{cell.exp_id} final result")
+        try:
+            validated = _validate_final_cell_payload(
+                payload,
+                cell=cell,
+                record=cohort_record(context["cohort"], cell.exp_id),  # type: ignore[arg-type]
+                eval_scene_ids=eval_scene_ids,
+                campaign_git_sha=str(campaign["git_sha"]),
+                evaluator_git_sha=str(context["evaluator_git_sha"]),
+                detector_sha256=str(campaign["detector_sha256"]),
+                cohort_sha256=str(context["cohort_sha256"]),
+                test_result_sha256=test_metrics_sha256[cell.exp_id],
+                grid_audit=grid_audit,
+                authorization_sha256=owner_sha,
+                final_access=final_access,
+                ground_truth_by_scene=ground_truth_by_scene,
+            )
+        except (HeldoutContractError, KeyError, TypeError, ValueError) as exc:
+            raise PackageError(
+                f"{cell.exp_id} final-result binding is invalid: {exc}"
+            ) from exc
+        validated_payloads[cell.exp_id] = validated
+        result_sha256[cell.exp_id] = sha256_file(path)
+
+    try:
+        with summary_path.open(newline="", encoding="utf-8") as stream:
+            summary_rows = list(csv.DictReader(stream))
+    except (OSError, csv.Error) as exc:
+        raise PackageError("final verified summary is unreadable") from exc
+    if len(summary_rows) != 32 or [row.get("exp_id") for row in summary_rows] != [
+        cell.exp_id for cell in cells
+    ]:
+        raise PackageError("final verified summary is not the exact amended 32-cell run")
+    for cell, row in zip(cells, summary_rows, strict=True):
+        expected = _summary_row(
+            cell=cell,
+            payload=validated_payloads[cell.exp_id],
+            grid_audit=grid_audit,
+            campaign_git_sha=str(campaign["git_sha"]),
+            evaluator_git_sha=str(context["evaluator_git_sha"]),
+            detector_sha256=str(campaign["detector_sha256"]),
+            cohort_sha256=str(context["cohort_sha256"]),
+            authorization_sha256=owner_sha,
+            final_result_sha256=result_sha256[cell.exp_id],
+        )
+        if set(row) != set(expected):
+            raise PackageError(f"{cell.exp_id} final summary columns are invalid")
+        for field, wanted in expected.items():
+            raw = row[field]
+            if isinstance(wanted, bool):
+                matches = raw.casefold() == str(wanted).casefold()
+            elif type(wanted) is int:
+                matches = bool(re.fullmatch(r"0|[1-9][0-9]*", raw)) and int(raw) == wanted
+            elif isinstance(wanted, float):
+                try:
+                    matches = math.isfinite(float(raw)) and float(raw) == wanted
+                except ValueError:
+                    matches = False
+            elif wanted is None:
+                matches = raw == ""
+            else:
+                matches = raw == str(wanted)
+            if not matches:
+                raise PackageError(
+                    f"{cell.exp_id} final summary {field} differs from per-cell evidence"
+                )
+    expected_completion = {
+        "completion_schema": 1,
+        "status": "all-32-verified-final-complete",
+        "interpretation": (
+            AMENDED_FINAL_INTERPRETATION
+        ),
+        "seed": 0,
+        "study_design": FINAL_STUDY_DESIGN,
+        "campaign_git_sha": campaign["git_sha"],
+        "evaluator_git_sha": context["evaluator_git_sha"],
+        "owner_authorization_sha256": owner_sha,
+        "lock_sha256": final_access["lock_sha256"],
+        "consumption_sha256": final_access["consumption_sha256"],
+        "data_view_sha256": final_access["data_view_sha256"],
+        "summary": {
+            "relative_path": f"summary/{_FINAL_SUMMARY_FILENAME}",
+            "sha256": sha256_file(summary_path),
+            "row_count": 32,
+        },
+        "final_results": [
+            {
+                "exp_id": cell.exp_id,
+                "relative_path": f"{cell.exp_id}/{_FINAL_CELL_RESULT_FILENAME}",
+                "sha256": result_sha256[cell.exp_id],
+            }
+            for cell in cells
+        ],
+        "allocation_hardware": lock.get("allocation_hardware"),
+        "test_monotonicity": lock.get("grid"),
+    }
+    if set(completion) != {*expected_completion, "completed_utc"} or any(
+        completion.get(key) != value
+        for key, value in expected_completion.items()
+    ) or not str(completion.get("completed_utc", "")).strip():
+        raise PackageError("final-evaluation completion receipt binding is invalid")
+    return {
+        "status": "complete",
+        "lock_sha256": sha256_file(lock_path),
+        "data_view_sha256": sha256_file(data_view_path),
+        "consumption_sha256": sha256_file(consumption_path),
+        "normalized_ground_truth_sha256": str(normalized["sha256"]),
+        "summary_sha256": sha256_file(summary_path),
+        "completion_sha256": sha256_file(complete_path),
+        "allocation_hardware": dict(hardware_binding),
+        "data_view": data_view,
+        "eval_scene_ids": list(eval_scene_ids),
+        "cell_result_sha256": result_sha256,
+        # The normalized human-verified GT bytes remain on Judy. Their exact
+        # digest is bound by the exported consumption receipt, but result
+        # handback continues to exclude label/data payloads.
+        "paths": [
+            lock_path,
+            data_view_path,
+            consumption_path,
+            hardware_path,
+            complete_path,
+            summary_path,
+        ],
+        "cell_paths": per_cell_paths,
+    }
 
 
 def _member_sha256(
@@ -1437,6 +2171,8 @@ def _provenance_entries(
     campaign_manifest: Path,
     grid: Path,
     context: Mapping[str, object],
+    amendment: Mapping[str, object] | None = None,
+    final_results: Mapping[str, object] | None = None,
 ) -> list[tuple[Path, PurePosixPath]]:
     sources: list[tuple[Path, PurePosixPath]] = [
         (
@@ -1507,6 +2243,47 @@ def _provenance_entries(
         ),
         (grid, PurePosixPath("results/provenance/summary/grid.csv")),
     ]
+    if amendment is not None:
+        sources.append(
+            (
+                Path(str(context["meta_root"])) / AUTHORIZATION_FILENAME,
+                PurePosixPath(
+                    f"results/provenance/{AUTHORIZATION_FILENAME}"
+                ),
+            )
+        )
+    if final_results is not None:
+        final_paths = final_results.get("paths")
+        if not isinstance(final_paths, list) or len(final_paths) != 6:
+            raise PackageError("validated final-result path inventory is malformed")
+        destinations = (
+            f"results/provenance/final/{_FINAL_LOCK_FILENAME}",
+            f"results/provenance/final/{_FINAL_DATA_VIEW_FILENAME}",
+            f"results/provenance/final/{_FINAL_CONSUMPTION_FILENAME}",
+            (
+                "results/provenance/final/"
+                f"{Path(final_paths[3]).name}"
+            ),
+            f"results/provenance/final/{_FINAL_COMPLETE_FILENAME}",
+            f"results/provenance/final/{_FINAL_SUMMARY_FILENAME}",
+        )
+        sources.extend(
+            (Path(source), PurePosixPath(destination))
+            for source, destination in zip(final_paths, destinations, strict=True)
+        )
+        final_cell_paths = final_results.get("cell_paths")
+        if not isinstance(final_cell_paths, list) or len(final_cell_paths) != 32:
+            raise PackageError("validated final-cell path inventory is malformed")
+        sources.extend(
+            (
+                Path(source),
+                PurePosixPath(
+                    "results/provenance/final/cells/"
+                    f"{Path(source).parent.name}.json"
+                ),
+            )
+            for source in final_cell_paths
+        )
     for record in context["allocation_records"]:  # type: ignore[union-attr]
         path = record["path"]
         sources.append(
@@ -1545,6 +2322,7 @@ def build_results_package(
     campaign_manifest: Path,
     output_dir: Path,
     max_part_bytes: int,
+    owner_amendment: Path | None = None,
 ) -> Path:
     """Require 32 scored H100 cells, then publish a provenance-bound package."""
 
@@ -1571,15 +2349,29 @@ def build_results_package(
     if not campaign_manifest.is_file():
         raise PackageError(f"campaign manifest is absent: {campaign_manifest}")
     branch = _git_value(repo, "branch", "--show-current")
-    if branch != RUNTIME_BRANCH:
+    expected_branch = (
+        "sprint-8-final-eval-amendment"
+        if owner_amendment is not None
+        else RUNTIME_BRANCH
+    )
+    if branch != expected_branch:
         raise PackageError(
-            f"result package requires clean branch {RUNTIME_BRANCH}, found {branch!r}"
+            f"result package requires clean branch {expected_branch}, found {branch!r}"
         )
     if _git_value(repo, "status", "--porcelain=v1", "--untracked-files=all"):
         raise PackageError("result package requires a clean source worktree")
 
+    campaign_payload = _json(campaign_manifest)
+    campaign_git_sha = str(campaign_payload.get("git_sha", ""))
+    if not re.fullmatch(r"[0-9a-f]{40}", campaign_git_sha):
+        raise PackageError("campaign manifest Git SHA is invalid")
+    resolved_amendment = owner_amendment.absolute() if owner_amendment else None
     campaign, cells, context = _validate_campaign(
-        repo, runs_root, campaign_manifest
+        repo,
+        runs_root,
+        campaign_manifest,
+        campaign_git_sha=campaign_git_sha,
+        owner_amendment=resolved_amendment,
     )
     run_entries: dict[str, list[tuple[Path, PurePosixPath]]] = {}
     markers: dict[str, dict[str, object]] = {}
@@ -1597,17 +2389,46 @@ def build_results_package(
         test_metrics_sha256[cell.exp_id] = sha256_file(
             runs_root / cell.exp_id / TEST_RESULT_FILENAME
         )
-    grid = _validate_grid(
+    grid, grid_audit = _validate_grid(
         repo=repo,
         runs_root=runs_root,
         cells=cells,
         campaign=campaign,
         markers=markers,
+        allow_failed_monotonicity=resolved_amendment is not None,
     )
+    amendment: dict[str, object] | None = None
+    final_results: dict[str, object] | None = None
+    if resolved_amendment is not None:
+        amendment = _validate_owner_amendment(
+            resolved_amendment,
+            runs_root=runs_root,
+            campaign=campaign,
+            context=context,
+            cells=cells,
+            grid_audit=grid_audit,
+            test_metrics_sha256=test_metrics_sha256,
+        )
+        final_results = _validate_optional_final_results(
+            runs_root=runs_root,
+            campaign=campaign,
+            context=context,
+            cells=cells,
+            grid_audit=grid_audit,
+            amendment=amendment,
+            test_metrics_sha256=test_metrics_sha256,
+        )
+        if final_results is None:
+            raise PackageError(
+                "owner-amended reverse handback requires the complete all-32 "
+                "verified-final result namespace"
+            )
     provenance_entries = _provenance_entries(
         campaign_manifest=campaign_manifest,
         grid=grid,
         context=context,
+        amendment=amendment,
+        final_results=final_results,
     )
 
     git_sha = str(campaign["git_sha"])
@@ -1649,13 +2470,21 @@ def build_results_package(
 
         result_identity, result_identity_sha256 = _result_identity(
             campaign,
+            evaluator_git_sha=(
+                str(context["evaluator_git_sha"])
+                if amendment is not None
+                else None
+            ),
             diagnostic_isolation=context["diagnostic_isolation"],
             cutover_ready_sha256=str(context["cutover_ready_sha256"]),
             artifacts=artifacts,
             max_part_bytes=max_part_bytes,
+            amendment=amendment,
+            final_results=final_results,
         )
         package_id = (
-            f"xview3-h100-results-{git_sha}-{result_identity_sha256}"
+            "xview3-h100-results-"
+            f"{context['evaluator_git_sha']}-{result_identity_sha256}"
         )
         output = output_dir / package_id
         if output.exists() or output.is_symlink():
@@ -1670,8 +2499,8 @@ def build_results_package(
             "package_id": package_id,
             "created_at": created,
             "source": {
-                "branch": RUNTIME_BRANCH,
-                "git_commit": git_sha,
+                "branch": expected_branch,
+                "git_commit": str(context["evaluator_git_sha"]),
                 "campaign_id": campaign.get("campaign_id"),
                 "detector_sha256": campaign.get("detector_sha256"),
                 "venv_sha256": campaign.get("venv_sha256"),
@@ -1717,6 +2546,26 @@ def build_results_package(
                 ],
                 "result_identity": result_identity,
                 "result_identity_sha256": result_identity_sha256,
+                **(
+                    {
+                        "campaign_git_commit": git_sha,
+                        "evaluator_git_commit": context["evaluator_git_sha"],
+                        "campaign_status": campaign.get("status"),
+                        "summary_grid_diagnostic": grid_audit,
+                        "post_test_owner_amendment": amendment,
+                        "final_evaluation": (
+                            {
+                                key: value
+                                for key, value in final_results.items()
+                                if key not in {"paths", "cell_paths"}
+                            }
+                            if final_results is not None
+                            else None
+                        ),
+                    }
+                    if amendment is not None
+                    else {}
+                ),
             },
             "contract": {
                 "production": True,
@@ -1754,7 +2603,7 @@ def build_results_package(
             "format_version": FORMAT_VERSION,
             "status": "READY",
             "package_id": package_id,
-            "git_commit": git_sha,
+            "git_commit": str(context["evaluator_git_sha"]),
             "manifest": _physical_record(staging / "manifest.json", staging),
             "checksums": _physical_record(staging / "SHA256SUMS", staging),
         }

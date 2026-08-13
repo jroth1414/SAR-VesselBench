@@ -222,6 +222,14 @@ def _build_parser() -> argparse.ArgumentParser:
     results.add_argument("--runs-root", type=Path, required=True)
     results.add_argument("--campaign-manifest", type=Path, required=True)
     results.add_argument(
+        "--owner-amendment",
+        type=Path,
+        help=(
+            "canonical immutable owner receipt for the truthful failed-grid "
+            "post-TEST amendment; omitted for the legacy green path"
+        ),
+    )
+    results.add_argument(
         "--output-dir",
         type=Path,
         required=True,
@@ -505,6 +513,7 @@ def main(argv: list[str] | None = None) -> int:
                 campaign_manifest=args.campaign_manifest,
                 output_dir=args.output_dir,
                 max_part_bytes=args.max_part_bytes,
+                owner_amendment=args.owner_amendment,
             )
             manifest = json.loads(
                 (package / "manifest.json").read_text(encoding="utf-8")

@@ -1818,6 +1818,448 @@ def _validate_part_names(
         )
 
 
+_AMENDED_RESULT_SOURCE_KEYS = frozenset(
+    {
+        "campaign_git_commit",
+        "evaluator_git_commit",
+        "campaign_status",
+        "summary_grid_diagnostic",
+        "post_test_owner_amendment",
+        "final_evaluation",
+    }
+)
+_AMENDED_RESULT_IDENTITY_KEYS = frozenset(
+    {
+        "campaign_git_commit",
+        "evaluator_git_commit",
+        "campaign_status",
+        "post_test_owner_amendment",
+        "final_evaluation",
+    }
+)
+
+
+def _amended_result_declared(
+    source: Mapping[str, object], result_identity: Mapping[str, object]
+) -> bool:
+    """Detect even a partial amended-result declaration for fail-closed checks."""
+
+    return bool(
+        _AMENDED_RESULT_SOURCE_KEYS.intersection(source)
+        or _AMENDED_RESULT_IDENTITY_KEYS.intersection(result_identity)
+    )
+
+
+def _validate_amended_final_data_view(
+    receipt: object,
+    *,
+    campaign_git_sha: object,
+    evaluator_git_sha: object,
+    eval_scene_ids: Sequence[object],
+) -> None:
+    """Validate the receipt-only three-raster inventory without final data."""
+
+    if (
+        not isinstance(receipt, Mapping)
+        or set(receipt) != {"schema", "status", "package", "source", "view"}
+        or receipt.get("schema") != 1
+        or receipt.get("status") != "final-eval-data-view-staged"
+    ):
+        raise PackageError("amended final data-view schema/status is invalid")
+    package = receipt.get("package")
+    source = receipt.get("source")
+    view = receipt.get("view")
+    if (
+        not isinstance(package, Mapping)
+        or set(package)
+        != {
+            "package_id",
+            "identity_sha256",
+            "ready_sha256",
+            "manifest_sha256",
+            "sha256sums_sha256",
+        }
+        or not str(package.get("package_id", "")).startswith(
+            f"xview3-h100-final-eval-{evaluator_git_sha}-"
+        )
+        or any(
+            re.fullmatch(r"[0-9a-f]{64}", str(package.get(key, ""))) is None
+            for key in (
+                "identity_sha256",
+                "ready_sha256",
+                "manifest_sha256",
+                "sha256sums_sha256",
+            )
+        )
+        or not isinstance(source, Mapping)
+        or set(source)
+        != {
+            "branch",
+            "git_bundle_ref",
+            "git_commit",
+            "required_campaign_commit",
+            "git_bundle_sha256",
+            "splits_sha256",
+        }
+        or source.get("branch") != "sprint-8-final-eval-amendment"
+        or source.get("git_commit") != evaluator_git_sha
+        or source.get("required_campaign_commit") != campaign_git_sha
+        or source.get("git_bundle_ref")
+        != f"refs/heads/{source.get('branch')}"
+        or re.fullmatch(r"[0-9a-f]{64}", str(source.get("git_bundle_sha256", "")))
+        is None
+        or re.fullmatch(r"[0-9a-f]{64}", str(source.get("splits_sha256", "")))
+        is None
+        or not isinstance(view, Mapping)
+        or set(view)
+        != {
+            "root",
+            "repo",
+            "bundle",
+            "training_labels",
+            "validation_labels",
+            "scenes",
+        }
+    ):
+        raise PackageError("amended final data-view package/source is invalid")
+    root = Path(str(view.get("root", "")))
+    if (
+        not root.is_absolute()
+        or root == Path("/")
+        or Path(str(view.get("repo", ""))) != root / "repo"
+        or Path(str(view.get("bundle", "")))
+        != root / "code/xview3-final-eval.bundle"
+    ):
+        raise PackageError("amended final data-view paths are inconsistent")
+    for field, expected_path, access in (
+        ("training_labels", "repo/data/raw/xview3/labels/train.csv", None),
+        (
+            "validation_labels",
+            "repo/data/raw/xview3/labels/validation.csv",
+            "opaque-bytes-staged-not-semantically-read",
+        ),
+    ):
+        binding = view.get(field)
+        expected_keys = {"path", "bytes", "sha256"} | (
+            {"access"} if access is not None else set()
+        )
+        if (
+            not isinstance(binding, Mapping)
+            or set(binding) != expected_keys
+            or binding.get("path") != expected_path
+            or (access is not None and binding.get("access") != access)
+            or type(binding.get("bytes")) is not int
+            or int(binding["bytes"]) <= 0
+            or re.fullmatch(r"[0-9a-f]{64}", str(binding.get("sha256", "")))
+            is None
+        ):
+            raise PackageError(f"amended final data-view {field} binding is invalid")
+
+    if any(not isinstance(scene, str) or not scene for scene in eval_scene_ids):
+        raise PackageError("amended final data-view scene IDs are invalid")
+    scene_ids = list(eval_scene_ids)
+    scenes = view.get("scenes")
+    if (
+        len(scene_ids) != 50
+        or len(set(scene_ids)) != 50
+        or not isinstance(scenes, list)
+        or len(scenes) != 50
+    ):
+        raise PackageError("amended final data-view scene inventory is incomplete")
+    raster_names = ("VH_dB.tif", "VV_dB.tif", "bathymetry.tif")
+    for expected_scene, raw_scene in zip(scene_ids, scenes, strict=True):
+        if (
+            not isinstance(raw_scene, Mapping)
+            or set(raw_scene) != {"scene_id", "source_archive", "rasters"}
+            or raw_scene.get("scene_id") != expected_scene
+        ):
+            raise PackageError("amended final data-view scene ordering is invalid")
+        archive = raw_scene.get("source_archive")
+        rasters = raw_scene.get("rasters")
+        if (
+            not isinstance(archive, Mapping)
+            or set(archive) != {"path", "bytes", "sha256"}
+            or archive.get("path")
+            != f"data/final-inputs/rasters/{expected_scene}.tar.gz"
+            or type(archive.get("bytes")) is not int
+            or int(archive["bytes"]) <= 0
+            or re.fullmatch(r"[0-9a-f]{64}", str(archive.get("sha256", "")))
+            is None
+            or not isinstance(rasters, list)
+            or len(rasters) != len(raster_names)
+        ):
+            raise PackageError(
+                f"amended final data-view scene binding is invalid: {expected_scene}"
+            )
+        for raster, name in zip(rasters, raster_names, strict=True):
+            if (
+                not isinstance(raster, Mapping)
+                or set(raster) != {"path", "bytes", "sha256"}
+                or raster.get("path")
+                != f"data/raw/xview3/GRD/{expected_scene}/{name}"
+                or type(raster.get("bytes")) is not int
+                or int(raster["bytes"]) <= 0
+                or re.fullmatch(
+                    r"[0-9a-f]{64}", str(raster.get("sha256", ""))
+                )
+                is None
+            ):
+                raise PackageError(
+                    "amended final data-view raster binding is invalid: "
+                    f"{expected_scene}/{name}"
+                )
+
+
+def _validate_amended_result_provenance(
+    *,
+    source: Mapping[str, object],
+    result_identity: Mapping[str, object],
+    provenance_members: Mapping[str, object],
+    cells: Sequence[object],
+) -> bool:
+    """Bind the truthful failed-grid amendment to its exact final evidence."""
+
+    amended_members_present = (
+        "results/provenance/FINAL_EVAL_OWNER_AMENDMENT.json"
+        in provenance_members
+        or any(
+            str(path).startswith("results/provenance/final/")
+            for path in provenance_members
+        )
+    )
+    if not _amended_result_declared(source, result_identity) and not (
+        amended_members_present
+    ):
+        return False
+    if not _AMENDED_RESULT_SOURCE_KEYS <= set(source) or not (
+        _AMENDED_RESULT_IDENTITY_KEYS <= set(result_identity)
+    ):
+        raise PackageError("amended result provenance is partial")
+    if (
+        source.get("campaign_status") != "failed"
+        or result_identity.get("campaign_status") != "failed"
+    ):
+        raise PackageError("amended result must preserve campaign status 'failed'")
+
+    campaign_git_sha = source.get("campaign_git_commit")
+    evaluator_git_sha = source.get("evaluator_git_commit")
+    if (
+        not re.fullmatch(r"[0-9a-f]{40}", str(campaign_git_sha or ""))
+        or not re.fullmatch(r"[0-9a-f]{40}", str(evaluator_git_sha or ""))
+        or source.get("git_commit") != evaluator_git_sha
+        or result_identity.get("git_commit") != evaluator_git_sha
+        or result_identity.get("campaign_git_commit") != campaign_git_sha
+        or result_identity.get("evaluator_git_commit") != evaluator_git_sha
+    ):
+        raise PackageError("amended campaign/evaluator Git identities are inconsistent")
+
+    amendment = source.get("post_test_owner_amendment")
+    identity_amendment = result_identity.get("post_test_owner_amendment")
+    if (
+        not isinstance(amendment, Mapping)
+        or dict(amendment) != identity_amendment
+        or set(amendment) != {"relative_path", "sha256", "receipt"}
+        or amendment.get("relative_path")
+        != ".h100/FINAL_EVAL_OWNER_AMENDMENT.json"
+        or not re.fullmatch(r"[0-9a-f]{64}", str(amendment.get("sha256", "")))
+        or provenance_members.get(
+            "results/provenance/FINAL_EVAL_OWNER_AMENDMENT.json"
+        )
+        != amendment.get("sha256")
+    ):
+        raise PackageError("amended result owner receipt is not canonically bound")
+    receipt = amendment.get("receipt")
+    if not isinstance(receipt, Mapping):
+        raise PackageError("amended result owner receipt payload is absent")
+    try:
+        from src.eval.final_authorization import validate_authorization_payload
+        from src.eval.heldout_contract import HeldoutContractError
+
+        validate_authorization_payload(receipt, expected=receipt)
+    except (HeldoutContractError, ImportError, TypeError, ValueError) as exc:
+        raise PackageError(f"amended result owner receipt is invalid: {exc}") from exc
+
+    diagnostic = source.get("summary_grid_diagnostic")
+    violations = (
+        diagnostic.get("violations") if isinstance(diagnostic, Mapping) else None
+    )
+    if (
+        not isinstance(diagnostic, Mapping)
+        or set(diagnostic)
+        != {
+            "relative_path",
+            "sha256",
+            "monotonicity_tolerance",
+            "monotonicity_ok",
+            "violations",
+        }
+        or diagnostic.get("relative_path") != "summary/grid.csv"
+        or diagnostic.get("sha256") != source.get("summary_grid_sha256")
+        or diagnostic.get("monotonicity_tolerance") != 0.02
+        or diagnostic.get("monotonicity_ok") is not False
+        or not isinstance(violations, list)
+        or not violations
+        or receipt.get("grid") != diagnostic
+    ):
+        raise PackageError("amended result failed-grid diagnostic is invalid")
+
+    campaign_receipt = receipt.get("campaign")
+    phase5 = receipt.get("phase5_controls")
+    cohort = receipt.get("cohort")
+    if (
+        not isinstance(campaign_receipt, Mapping)
+        or campaign_receipt.get("git_sha") != campaign_git_sha
+        or campaign_receipt.get("campaign_id") != source.get("campaign_id")
+        or not isinstance(campaign_receipt.get("manifest"), Mapping)
+        or campaign_receipt["manifest"].get("sha256")
+        != source.get("campaign_manifest_sha256")
+        or receipt.get("evaluator_git_sha") != evaluator_git_sha
+        or receipt.get("selected_cells") != list(cells)
+        or not isinstance(cohort, Mapping)
+        or cohort.get("sha256") != source.get("training_cohort_sha256")
+        or not isinstance(phase5, Mapping)
+        or not isinstance(phase5.get("h100_ready"), Mapping)
+        or phase5["h100_ready"].get("sha256")
+        != source.get("h100_ready_sha256")
+        or not isinstance(phase5.get("cutover_ready"), Mapping)
+        or phase5["cutover_ready"].get("sha256")
+        != source.get("cutover_ready_sha256")
+        or not isinstance(phase5.get("v100_diagnostic_isolation"), Mapping)
+        or not isinstance(source.get("v100_diagnostic_isolation"), Mapping)
+        or phase5["v100_diagnostic_isolation"].get("sha256")
+        != source["v100_diagnostic_isolation"].get("sha256")
+    ):
+        raise PackageError("amended owner receipt differs from package provenance")
+    test_digests = source.get("test_metrics_sha256")
+    expected_receipt_tests = (
+        [
+            {
+                "exp_id": str(cell),
+                "relative_path": f"{cell}/test_metrics.json",
+                "sha256": test_digests.get(str(cell)),
+            }
+            for cell in cells
+        ]
+        if isinstance(test_digests, Mapping)
+        else None
+    )
+    if (
+        not isinstance(test_digests, Mapping)
+        or set(test_digests) != set(cells)
+        or receipt.get("test_results") != expected_receipt_tests
+    ):
+        raise PackageError("amended owner receipt TEST bindings are inconsistent")
+
+    final_evaluation = source.get("final_evaluation")
+    if result_identity.get("final_evaluation") != final_evaluation:
+        raise PackageError(
+            "amended final-evaluation source/result identity is inconsistent"
+        )
+    expected_final_keys = {
+        "status",
+        "lock_sha256",
+        "data_view_sha256",
+        "consumption_sha256",
+        "normalized_ground_truth_sha256",
+        "summary_sha256",
+        "completion_sha256",
+        "allocation_hardware",
+        "data_view",
+        "eval_scene_ids",
+        "cell_result_sha256",
+    }
+    if (
+        not isinstance(final_evaluation, Mapping)
+        or set(final_evaluation) != expected_final_keys
+        or final_evaluation.get("status") != "complete"
+    ):
+        raise PackageError("amended final-evaluation identity is incomplete")
+    result_digests = final_evaluation.get("cell_result_sha256")
+    allocation_hardware = final_evaluation.get("allocation_hardware")
+    final_data_view = final_evaluation.get("data_view")
+    eval_scene_ids = final_evaluation.get("eval_scene_ids")
+    if (
+        not isinstance(result_digests, Mapping)
+        or set(result_digests) != set(cells)
+        or not isinstance(allocation_hardware, Mapping)
+        or set(allocation_hardware)
+        != {"relative_path", "sha256", "strict_fp32", "hardware_class"}
+        or not isinstance(eval_scene_ids, list)
+    ):
+        raise PackageError("amended final-result digest index is not the exact grid")
+    _validate_amended_final_data_view(
+        final_data_view,
+        campaign_git_sha=campaign_git_sha,
+        evaluator_git_sha=evaluator_git_sha,
+        eval_scene_ids=eval_scene_ids,
+    )
+    if hashlib.sha256(_canonical_json(final_data_view)).hexdigest() != (
+        final_evaluation.get("data_view_sha256")
+    ):
+        raise PackageError("amended final data-view receipt digest is inconsistent")
+    hardware_relative = str(allocation_hardware.get("relative_path", ""))
+    hardware_name = PurePosixPath(hardware_relative).name
+    if (
+        hardware_relative != f".h100/{hardware_name}"
+        or re.fullmatch(r"FINAL_H100_RUNTIME-[0-9]+\.json", hardware_name) is None
+        or not re.fullmatch(
+            r"[0-9a-f]{64}", str(allocation_hardware.get("sha256", ""))
+        )
+    ):
+        raise PackageError("amended final allocation-hardware binding is invalid")
+    scalar_digests = {
+        key: final_evaluation.get(key)
+        for key in expected_final_keys
+        - {
+            "status",
+            "allocation_hardware",
+            "data_view",
+            "eval_scene_ids",
+            "cell_result_sha256",
+        }
+    }
+    if any(
+        not re.fullmatch(r"[0-9a-f]{64}", str(digest or ""))
+        for digest in [*scalar_digests.values(), *result_digests.values()]
+    ):
+        raise PackageError("amended final-evaluation digest is malformed")
+
+    expected_final_members = {
+        "results/provenance/final/final_eval.lock": final_evaluation[
+            "lock_sha256"
+        ],
+        "results/provenance/final/FINAL_DATA_VIEW.json": final_evaluation[
+            "data_view_sha256"
+        ],
+        "results/provenance/final/FINAL_GROUND_TRUTH_CONSUMED.json": (
+            final_evaluation["consumption_sha256"]
+        ),
+        f"results/provenance/final/{hardware_name}": allocation_hardware[
+            "sha256"
+        ],
+        "results/provenance/final/FINAL_EVAL_COMPLETE.json": final_evaluation[
+            "completion_sha256"
+        ],
+        "results/provenance/final/final_verified.csv": final_evaluation[
+            "summary_sha256"
+        ],
+        **{
+            f"results/provenance/final/cells/{cell}.json": result_digests[cell]
+            for cell in cells
+        },
+    }
+    observed_final_members = {
+        str(path): digest
+        for path, digest in provenance_members.items()
+        if str(path).startswith("results/provenance/final/")
+    }
+    if observed_final_members != expected_final_members:
+        raise PackageError(
+            "amended final provenance is missing, extra, or digest-mismatched"
+        )
+    return True
+
+
 def _validate_artifact_schema(
     manifest: Mapping[str, object],
     artifacts: Sequence[Mapping[str, object]],
@@ -1985,6 +2427,12 @@ def _validate_artifact_schema(
             raise PackageError(
                 "result campaign/grid digests are not campaign-archive-bound"
             )
+        _validate_amended_result_provenance(
+            source=source,
+            result_identity=result_identity,
+            provenance_members=provenance_members,
+            cells=cells,
+        )
         runtime_digests = source.get("runtime_provenance_sha256")
         test_digests = source.get("test_metrics_sha256")
         if (
@@ -2197,8 +2645,11 @@ def _verify_package(
         identity_sha256 = source.get("result_identity_sha256")
         if not isinstance(identity, Mapping):
             raise PackageError("result package identity is absent")
+        expected_identity_schema = (
+            3 if _amended_result_declared(source, identity) else 2
+        )
         if (
-            identity.get("schema") != 2
+            identity.get("schema") != expected_identity_schema
             or identity.get("maximum_physical_file_bytes")
             != maximum_physical_file_bytes
         ):
