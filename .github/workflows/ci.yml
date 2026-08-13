@@ -26,7 +26,15 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r locks/env-cpu-test-paper.txt --extra-index-url https://download.pytorch.org/whl/cpu
       - name: Run frozen guards
-        run: make guards
+        run: |
+          python -m pytest -q \
+            tests/test_split_disjoint.py \
+            tests/test_splits_immutable.py \
+            tests/test_stats_immutable.py \
+            tests/test_detector_immutable.py \
+            tests/test_backbone_parity.py \
+            tests/test_fm_checkpoints_load.py \
+            tests/test_scorer_immutable.py
 
   tests:
     name: Full CPU suite
