@@ -1,0 +1,29 @@
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\sffamily\scriptsize, line width=0.7pt,
+  >={Stealth[length=2.2mm, width=1.8mm]},
+  stage/.style={draw, rounded corners=2pt, align=center, inner sep=3pt,
+                text=figink},
+  src/.style={stage, fill=black!6, draw=black!45},
+  posbox/.style={stage, fill=figgreen!10, draw=figgreen!70!black},
+  bg/.style={stage, fill=black!8, draw=black!50},
+  ign/.style={stage, fill=black!3, draw=black!40, dashed},
+  flow/.style={->, draw=figink}]
+\node[src] (rows) {annotation rows\\ (dev-8 scenes)};
+\node[posbox] (p) at ($(rows.east)+(26mm,10mm)$) [anchor=west]
+  {\textbf{517} positives\\ vessel, HIGH/MEDIUM};
+\node[bg] (n) at ($(rows.east)+(26mm,0)$) [anchor=west]
+  {\textbf{107} background\\ non-vessel, HIGH/MEDIUM};
+\node[ign] (i) at ($(rows.east)+(26mm,-10mm)$) [anchor=west]
+  {\textbf{118} ignore\\ LOW confidence};
+\draw[flow] (rows.east) -- ($(rows.east)+(9mm,0)$) |- (p.west);
+\draw[flow] (rows.east) -- (n.west);
+\draw[flow] (rows.east) -- ($(rows.east)+(9mm,0)$) |- (i.west);
+\end{tikzpicture}
+\caption{The corrected ground-truth contract on the training-time development
+subset. A row is a positive only when \texttt{is\_vessel} is true at HIGH or
+MEDIUM confidence; HIGH/MEDIUM non-vessels are background, and LOW-confidence
+rows become ignore regions. Every H100 cell trained and evaluated under this
+contract.}
+\label{fig:gt-contract}
+\end{figure}

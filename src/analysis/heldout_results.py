@@ -431,6 +431,124 @@ def render_figure(validated: Mapping[str, object], out_pdf: Path) -> None:
     plt.close(fig)
 
 
+def render_training_dynamics(
+    validated: Mapping[str, object], evidence_root: Path, out_pdf: Path
+) -> None:
+    """Development-F1 history for the smallest and largest budgets per track."""
+
+    os.environ.setdefault("SOURCE_DATE_EPOCH", "0")
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    cells: Mapping[str, Mapping[str, object]] = validated["cells"]  # type: ignore[assignment]
+    fig, axes = plt.subplots(1, 2, figsize=(6.6, 2.5), sharey=True)
+    for axis, track in zip(axes, ("vit", "cnn")):
+        for role in ROLE_ORDER:
+            for fraction, style in ((10, "-"), (100, ":")):
+                exp_id = next(
+                    e
+                    for e, c in cells.items()
+                    if c["track"] == track and c["role"] == role and c["label_fraction"] == fraction
+                )
+                epochs, values = [], []
+                with (evidence_root / exp_id / "metrics.csv").open(
+                    newline="", encoding="utf-8"
+                ) as handle:
+                    for row in csv.DictReader(handle):
+                        raw = (row.get("dev_f1") or "").strip()
+                        if raw:
+                            epochs.append(int(float(row["epoch"])))
+                            values.append(float(raw))
+                axis.plot(
+                    epochs,
+                    values,
+                    color=ROLE_COLOR[role],
+                    linewidth=1.3,
+                    linestyle=style,
+                    label=ROLE_LABEL[role] if fraction == 10 else None,
+                )
+                best = cells[exp_id]
+                axis.plot(
+                    [best["best_epoch"]], [best["dev_f1"]],
+                    marker=ROLE_MARKER[role], markersize=4, color=ROLE_COLOR[role],
+                )
+        axis.set_title(TRACK_LABEL[track], fontsize=9)
+        axis.set_xlabel("Epoch", fontsize=8)
+        axis.tick_params(labelsize=7)
+        axis.grid(True, linewidth=0.4, alpha=0.35)
+        for spine in ("top", "right"):
+            axis.spines[spine].set_visible(False)
+    axes[0].set_ylabel("Development F1", fontsize=8)
+    axes[0].legend(fontsize=6.5, frameon=False, loc="lower right", title="solid 12 / dotted 111 scenes", title_fontsize=6.5)
+    fig.tight_layout(pad=0.4)
+    out_pdf.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_pdf, format="pdf", metadata={"CreationDate": None})
+    plt.close(fig)
+
+
+def render_transfer_gains(validated: Mapping[str, object], out_pdf: Path) -> None:
+    """Transfer gain over the track floor and the SAR-optical contrast."""
+
+    os.environ.setdefault("SOURCE_DATE_EPOCH", "0")
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    cells: Mapping[str, Mapping[str, object]] = validated["cells"]  # type: ignore[assignment]
+
+    def dev(track: str, role: str, fraction: int) -> float:
+        return float(
+            next(
+                c["dev_f1"]
+                for c in cells.values()
+                if c["track"] == track and c["role"] == role and c["label_fraction"] == fraction
+            )
+        )
+
+    fig, axes = plt.subplots(1, 3, figsize=(6.6, 2.2), sharey=False)
+    for axis, track in zip(axes[:2], ("vit", "cnn")):
+        for role in ("optical", "sar", "imagenet"):
+            gains = [dev(track, role, f) - dev(track, "floor", f) for f in FRACTIONS]
+            axis.plot(
+                FRACTIONS, gains, color=ROLE_COLOR[role], marker=ROLE_MARKER[role],
+                markersize=4, linewidth=1.6, label=ROLE_LABEL[role],
+            )
+        axis.axhline(0.0, color="#5D5D5D", linewidth=0.8, linestyle=":")
+        axis.set_title(TRACK_LABEL[track], fontsize=9)
+        axis.set_xlabel("Label fraction (%)", fontsize=8)
+        axis.set_xticks(FRACTIONS)
+        axis.tick_params(labelsize=7)
+        axis.grid(True, linewidth=0.4, alpha=0.35)
+        for spine in ("top", "right"):
+            axis.spines[spine].set_visible(False)
+    axes[0].set_ylabel(r"$\Delta$F1 over random floor", fontsize=8)
+    axes[0].legend(fontsize=6.5, frameon=False, loc="upper right")
+    contrast_axis = axes[2]
+    for track, style, marker in (("vit", "--", "o"), ("cnn", "-", "s")):
+        contrast = [dev(track, "sar", f) - dev(track, "optical", f) for f in FRACTIONS]
+        contrast_axis.plot(
+            FRACTIONS, contrast, color="#31302E", linestyle=style, marker=marker,
+            markersize=4, linewidth=1.4, markerfacecolor="white" if track == "vit" else "#31302E",
+            label=TRACK_MACRO[track],
+        )
+    contrast_axis.axhline(0.0, color="#5D5D5D", linewidth=0.8, linestyle=":")
+    contrast_axis.set_title("SAR $-$ optical", fontsize=9)
+    contrast_axis.set_xlabel("Label fraction (%)", fontsize=8)
+    contrast_axis.set_xticks(FRACTIONS)
+    contrast_axis.tick_params(labelsize=7)
+    contrast_axis.grid(True, linewidth=0.4, alpha=0.35)
+    for spine in ("top", "right"):
+        contrast_axis.spines[spine].set_visible(False)
+    contrast_axis.legend(fontsize=6.5, frameon=False, loc="lower left")
+    fig.tight_layout(pad=0.4)
+    out_pdf.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_pdf, format="pdf", metadata={"CreationDate": None})
+    plt.close(fig)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--evidence-root", type=Path, default=Path("results/h100/evidence"))
@@ -460,6 +578,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     tex_path.write_text(render_tex(validated), encoding="utf-8", newline="\n")
     figure_path = args.output_dir / "heldout_label_efficiency.pdf"
     render_figure(validated, figure_path)
+    dynamics_path = args.output_dir / "heldout_training_dynamics.pdf"
+    render_training_dynamics(validated, Path(args.evidence_root), dynamics_path)
+    gains_path = args.output_dir / "heldout_transfer_gains.pdf"
+    render_transfer_gains(validated, gains_path)
     manifest = {
         "generator": "src.analysis.heldout_results",
         "inputs": {
@@ -470,6 +592,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "outputs": {
             "heldout_results.tex": _sha256_file(tex_path),
             "heldout_label_efficiency.pdf": _sha256_file(figure_path),
+            "heldout_training_dynamics.pdf": _sha256_file(dynamics_path),
+            "heldout_transfer_gains.pdf": _sha256_file(gains_path),
         },
         "summary": summary,
     }

@@ -1,17 +1,21 @@
 \section{Full Evidence Inventory}
 \label{app:inventory}
 
-Table~\ref{tab:inventory} lists every cell with its development-selection F1,
-its checkpoint-bound operating threshold, the epoch of the selected
-checkpoint, and the held-out test F1 where admitted. All values are
-re-derived at build time from the committed cohort, markers, and training
-curves; dashes mean the fail-closed generator admitted no value, never zero
-performance.
+Table~\ref{tab:inventory} lists every cell with its development-selection
+F1, checkpoint-bound operating threshold, epoch of the selected checkpoint,
+and held-out test F1 where admitted. All values are re-derived at build time
+from the committed cohort, markers, and training curves; dashes mean the
+fail-closed generator admitted no value, never zero performance. The
+recorded thresholds range widely (0.587--0.929 in the ViT track,
+0.716--0.910 in the CNN track), confirming that a single shared threshold
+would misrepresent most arms and that the per-cell sweep does real
+calibration work.
 
 \begin{table}[h]
 \centering
-\caption{Per-cell evidence inventory (development-selection values; test
-column admitted only when all 32 immutable held-out results validate).}
+\caption{Per-cell evidence inventory (development-selection values; the
+test column is admitted only when all 32 immutable held-out results
+validate).}
 \label{tab:inventory}
 \scriptsize
 \setlength{\tabcolsep}{4pt}
@@ -57,23 +61,50 @@ CNN ImageNet & 100\% & \HevDevFCNNImageNetHundred & \HevThrCNNImageNetHundred & 
 \end{tabular}
 \end{table}
 
-The campaign's sanitized operator status snapshot (captured before the final
-cells closed) remains committed beside the evidence tree as a historical
-record of execution state at the deadline.
+\clearpage
+\section{Figures}
+\label{app:figures}
 
+\input{figures/study_design}
+\input{figures/detector_pipeline}
+\input{figures/gt_contract}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{heldout_training_dynamics.pdf}
+\caption{Development-F1 evaluation history for the smallest (12 scenes,
+solid) and largest (111 scenes, dotted) budgets, with each cell's selected
+checkpoint marked. Pretrained CNN arms separate from the random floor within
+the first evaluations; several strong arms peak early and are retained by
+the checkpoint binding.}
+\label{fig:training-dynamics}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{heldout_transfer_gains.pdf}
+\caption{Left, center: transfer gain over the track-matched random floor
+(Eq.~\eqref{eq:gain}) at each budget; the optical CNN arm is at or below
+zero everywhere. Right: the SAR--optical contrast
+(Eq.~\eqref{eq:contrast}); its sign flips between tracks below half data,
+so the modality effect is architecture-dependent.}
+\label{fig:transfer-gains}
+\end{figure}
+
+\clearpage
 \section{Reproducibility and Audit Record}
 
-The evidence tree records the frozen training cohort, each cell's hash-bound
-completion marker, its full training curve, and a sanitized runtime receipt
-(H100 hardware class, source SHA, strict-FP32 backend state). The generator
-validates marker-to-cohort hashes, metric consistency, and curve agreement
-before writing a manuscript artifact. Checkpoint bytes stay outside the
-repository; their SHA-256 bindings are published for archive verification.
-The submission excludes imagery, labels, weights, checkpoints, run trees,
-credentials, and private paths.
+The evidence tree records the frozen training cohort, each cell's
+hash-bound completion marker, its full training curve, and a sanitized
+runtime receipt (H100 hardware class, source SHA, strict-FP32 backend
+state). The generator validates marker-to-cohort hashes, metric
+consistency, and curve agreement before writing a manuscript artifact.
+Checkpoint bytes stay outside the repository; their SHA-256 bindings are
+published for archive verification. The submission excludes imagery,
+labels, weights, checkpoints, run trees, credentials, and private paths.
 
 The detector uses 512-pixel crops, a stride-4 heatmap, Gaussian standard
-deviation two output pixels, a candidate floor of 0.05, and 120 m distance
+deviation two output pixels, a candidate floor of 0.05, and 120\,m distance
 NMS. Training uses at most 50 epochs with development evaluation every five
 epochs. The project fixes seed 0 and reports point estimates without
 uncertainty bands.
@@ -81,7 +112,7 @@ uncertainty bands.
 \section{Qualitative-Evidence Boundary}
 
 The committed evidence contains metrics, curves, and receipts rather than
-exported H100 scene overlays. We omit qualitative examples instead of
-substituting engineering probes or opening sealed imagery. After the held-out
-results land through the fail-closed path, we will sample successes and
-errors from the pre-registered held-out outputs.
+exported scene overlays. We omit qualitative examples instead of
+substituting engineering probes or opening sealed imagery. After the
+held-out results land through the fail-closed path, we will sample
+successes and errors from the pre-registered held-out outputs.

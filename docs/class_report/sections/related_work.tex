@@ -1,17 +1,26 @@
 \section{Related Work}
 
-xView3 frames dark-vessel detection as localization in Sentinel-1 SAR rather
-than box classification~\cite{paolo2022xview3}. A CenterNet-style heatmap fits
-the point annotations and distance metric without inventing box extents
-~\cite{zhou2019objects}. We use this established detector form to hold the
-task head fixed.
+xView3 frames dark-vessel detection as point localization in Sentinel-1 SAR
+rather than box classification~\cite{paolo2022xview3}. A CenterNet-style
+heatmap fits the point annotations and distance metric without inventing box
+extents~\cite{zhou2019objects}; we use this established detector form to
+hold the task head fixed, and the detector is not presented as a
+contribution.
 
-The ViT track compares supervised ImageNet AugReg~\cite{steiner2021trainvit},
-optical SatDINO trained on fMoW-RGB~\cite{straka2025satdino}, and SARMAE trained
-on SAR-1M~\cite{liu2026sarmae}. SatDINO and SARMAE also differ in objective, so
-their gap is a released-checkpoint comparison rather than a pure modality
-intervention. The CNN track uses ConvNeXt-V2-Base~\cite{woo2023convnextv2}.
-Its optical and SAR arms come from matching BigEarthNet Sentinel-2 and
-Sentinel-1 land-cover models~\cite{sumbul2019bigearthnet,clasen2025reben}; this
-pair gives the cleaner modality contrast. ImageNet controls match the generic
-source dataset but not full training history across architectures.
+ImageNet pretraining is the common baseline for visual transfer
+learning~\cite{steiner2021trainvit}. The ViT track's generic control is a
+supervised AugReg ViT-B/16 checkpoint; the CNN track's is ConvNeXt-V2-Base
+initialized by fully convolutional masked autoencoding followed by
+supervised ImageNet-1K fine-tuning~\cite{woo2023convnextv2}. Remote-sensing
+pretraining may narrow the gap between source and target statistics: SatDINO
+applies DINO self-distillation to fMoW-RGB optical
+imagery~\cite{straka2025satdino}, and SARMAE applies masked autoencoding to
+a million-scale SAR corpus~\cite{liu2026sarmae}. Because these released ViT
+checkpoints differ in objective as well as sensing domain, their contrast is
+a best-available-checkpoint comparison rather than a pure modality
+intervention. The CNN track is tighter: its optical and SAR arms use
+BigEarthNet-v2 land-cover models trained with the same architecture,
+dataset family, and supervised task on Sentinel-2 and Sentinel-1 inputs,
+respectively~\cite{sumbul2019bigearthnet,clasen2025reben}---the study's
+cleanest modality contrast. Matched roles across the two tracks then test
+whether a within-track pattern survives a change of architecture family.

@@ -1,41 +1,74 @@
 \section{Methods}
+\label{sec:methods}
 
-Every arm predicts a stride-4 vessel heatmap from the same input. Gaussian
-targets mark positive points, and ignore neighborhoods mask LOW-confidence
-labels. The detector decodes local peaks above a permissive candidate floor,
-maps them to scene coordinates, and applies distance-based non-maximum
-suppression before scoring. ViT and CNN adapters reconcile native feature
-strides with the shared 256-channel head.
-
-One PyTorch Lightning module and data module serve all cells. AdamW uses a
-$10^{-4}$ learning rate, 0.05 weight decay, layer-wise decay 0.65, five warm-up
-epochs, and cosine decay across at most 50 epochs. Full-scene development
-evaluation occurs every five epochs; early stopping waits four evaluation
-cycles. All runs use seed 0, micro-batch 16, accumulation 1, and end-to-end
-fine-tuning.
-
-The corrected campaign runs one process per NVIDIA H100 in Lightning
-\texttt{32-true}. CUDA matrix-multiply TF32 and cuDNN TF32 stay disabled.
-Runtime receipts bind code, configuration, environment, GPU identity,
-checkpoint hashes, and completion markers. The evidence generator rejects a
-marker that does not hash to its cohort binding, a metric inconsistent with
-its own TP/FP/FN counts, a best-dev value that disagrees with the training
-curve, a mixed hardware class, or a partial held-out cohort.
+\paragraph{Two matched tracks, eight arms.}
+Table~\ref{tab:arms-short} lists the arms. Within each track the
+architecture and parameter count are invariant and only the initialization
+changes; pretrained checkpoints transfer the encoder only, with source heads
+discarded, and random floors use the identical target architecture. End to
+end, the implemented detectors contain 89{,}996{,}801 (ViT) and
+93{,}988{,}865 (CNN) trainable parameters.
 
 \begin{table}[t]
 \centering
-\caption{Controlled initialization roles. Source heads are discarded.}
+\caption{Controlled initialization roles. All non-random entries are
+released, revision-pinned checkpoints; task heads are discarded.}
 \label{tab:arms-short}
 \small
-\setlength{\tabcolsep}{4pt}
+\setlength{\tabcolsep}{5pt}
 \begin{tabular}{@{}lll@{}}
 \toprule
-Role & ViT-B/16 & ConvNeXt-V2-Base \\
+Role & ViT-B/16 track & ConvNeXt-V2-Base track \\
 \midrule
 Random & fresh initialization & fresh initialization \\
-Optical & SatDINO, fMoW-RGB & BigEarthNet Sentinel-2 \\
-SAR & SARMAE, SAR-1M & BigEarthNet Sentinel-1 \\
+Optical & SatDINO, DINO on fMoW-RGB & BigEarthNet-v2 Sentinel-2 \\
+SAR & SARMAE, MAE on SAR-1M & BigEarthNet-v2 Sentinel-1 \\
 ImageNet & supervised AugReg & FCMAE $+$ supervised \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+\paragraph{Shared point detector.}
+Every arm predicts a stride-4 vessel-presence heatmap from the same
+three-channel input (Fig.~\ref{fig:detector}, Appendix~\ref{app:figures}).
+Gaussian targets with standard deviation two output pixels mark positives;
+LOW-confidence annotations define ignore neighborhoods. Training uses the
+penalty-reduced focal objective of CenterNet-style point
+detection~\cite{zhou2019objects}. The ViT adapter receives stride-16
+features and the CNN adapter stride-32 features with one learned upsampling
+stage; both terminate in the same 256-channel head. At inference, local
+peaks above a permissive 0.05 candidate floor map to scene coordinates,
+120\,m distance non-maximum suppression removes duplicates, and whole
+scenes are tiled with 512-pixel windows at stride 384.
+
+\paragraph{Uniform fine-tuning recipe.}
+One PyTorch Lightning module, data module, and trainer configuration serve
+all cells. AdamW uses learning rate $10^{-4}$, weight decay 0.05,
+layer-wise decay 0.65, five warm-up epochs, and cosine decay across at most
+50 epochs; early stopping waits four development evaluations. Every cell
+uses micro-batch 16, accumulation 1, seed 0, and full-encoder fine-tuning.
+The campaign executed one process per NVIDIA H100 in Lightning
+\texttt{32-true} with CUDA matmul and cuDNN TF32 disabled; the code itself
+is hardware-neutral, and the uniform hardware class is a property of the
+evidence. No hyperparameter is selected per arm or label fraction.
+
+\paragraph{Registered contrasts.}
+For track $t$, role $r$, and fraction $f$, let $F^{(t)}_{r,f}$ denote
+development F1 at that cell's checkpoint-bound operating threshold. The
+analysis reports transfer over the track-matched random floor,
+\begin{equation}
+\Delta^{(t)}_{r,f} = F^{(t)}_{r,f} - F^{(t)}_{\mathrm{random},f},
+\label{eq:gain}
+\end{equation}
+and the within-track SAR--optical contrast,
+\begin{equation}
+\Delta^{(t)}_{\mathrm{SAR-opt},f} =
+F^{(t)}_{\mathrm{SAR},f} - F^{(t)}_{\mathrm{optical},f}.
+\label{eq:contrast}
+\end{equation}
+Agreement in the sign and pattern of Eq.~\eqref{eq:contrast} across tracks
+is the evidence used to assess architecture generality; it is never pooled
+into a single effect estimate. The evidence generator rejects a marker that
+does not hash to its cohort binding, a metric inconsistent with its own
+TP/FP/FN counts, a best-development value that disagrees with the training
+curve, a mixed hardware class, or a partial held-out cohort.

@@ -1,9 +1,17 @@
 \documentclass[10pt]{article}
 \usepackage[letterpaper,margin=1in]{geometry}
 \usepackage[T1]{fontenc}
-\usepackage{lmodern,microtype,booktabs,graphicx,tabularx,xcolor,url}
+\usepackage{lmodern,microtype,amsmath,booktabs,graphicx,tabularx,xcolor,url}
 \usepackage[hidelinks]{hyperref}
 \usepackage{enumitem}
+\usepackage{float}
+\usepackage{tikz}
+\usetikzlibrary{calc,positioning,arrows.meta,fit,backgrounds}
+\definecolor{figblue}{HTML}{2a78d6}
+\definecolor{figorange}{HTML}{eb6834}
+\definecolor{figgreen}{HTML}{008300}
+\definecolor{figred}{HTML}{c03535}
+\definecolor{figink}{HTML}{31302e}
 \setlist{nosep,leftmargin=*}
 \setlength{\parindent}{1em}
 \setlength{\parskip}{0pt}
@@ -20,7 +28,8 @@
 \begin{document}
 \begin{center}
 {\LARGE\bfseries Label-Efficient Dark-Vessel Detection in SAR:\\[2pt]
-A Controlled Comparison of Encoder Pretraining\par}
+Does SAR-Domain Pretraining Outperform\\[2pt]
+Optical and ImageNet Transfer Across ViT and CNN?\par}
 \vspace{0.8em}
 {\large John Roth \qquad Kyle Wagner\par}
 \vspace{0.25em}
@@ -30,21 +39,24 @@ Developments with PyTorch \,\textbullet\, August 2026\par}
 \suppressfloats[t]
 \vspace{0.4em}
 \begin{abstract}
-Human-verified labels for vessels without matched Automatic Identification
-System reports are scarce. We test whether generic ImageNet, optical
-remote-sensing, or SAR pretraining reduces the labeled-data requirement for
-point detection in Sentinel-1 imagery. Two size-matched tracks use ViT-B/16
-and ConvNeXt-V2-Base backbones. Four initialization roles within each track
-share the input, detector, schedule, scene subsets, seed, and strict-FP32
-execution. The design contains 32 cells across four nested label budgets.
-All 32 cells completed training on H100 hardware, and this report presents
-the resulting four-fraction comparison from hash-bound evidence. Transfer
-helps most under label scarcity, but the sign of the SAR-versus-optical
-contrast depends on the architecture, and generic ImageNet initialization
-leads both tracks at full data. Reported values are corrected
+Detecting dark vessels---vessels lacking matched Automatic Identification
+System reports---in spaceborne synthetic aperture radar (SAR) supports
+maritime safety and enforcement, but human-verified examples are scarce. We
+study whether source-domain pretraining improves label efficiency on
+xView3-SAR, and whether the effect persists across architectures. Two
+size-matched tracks (ViT-B/16 and ConvNeXt-V2-Base) each compare random
+initialization with released ImageNet, optical remote-sensing, and SAR
+checkpoints under one detector, optimizer, schedule, scene-level split, and
+seed. Fine-tuning nested 10--100\% fractions of 111 training scenes yields 32
+controlled cells, all completed on H100 GPUs in strict FP32 and re-derived at
+build time from hash-bound evidence. Transfer helps most under label
+scarcity, but the SAR-versus-optical contrast is architecture-dependent: SAR
+pretraining dominates optical in the CNN track at every budget while the ViT
+track prefers the optical checkpoint below half data, and generic ImageNet
+initialization leads both tracks at full data. Reported values are corrected
 development-selection F1\ifHevTestComplete{} alongside once-scored held-out
-test results\fi.
-\ifHevFinalEval\else The 50-scene human-verified set remains sealed.\fi
+test results\fi.\ifHevFinalEval\else{} The 50-scene human-verified
+evaluation remains sealed for follow-on work.\fi
 \end{abstract}
 \label{mainbody:start}
 \input{sections/introduction}

@@ -1,0 +1,41 @@
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[font=\sffamily\scriptsize, line width=0.7pt,
+  >={Stealth[length=2.2mm, width=1.8mm]},
+  stage/.style={draw, rounded corners=2pt, align=center, inner sep=3pt,
+                minimum height=8.5mm, text=figink},
+  data/.style={stage, fill=black!6, draw=black!45},
+  enc/.style={stage, fill=figblue!12, draw=figblue!70!black, minimum width=21mm},
+  neck/.style={stage, fill=figblue!6, draw=figblue!50!black},
+  cal/.style={stage, fill=figorange!12, draw=figorange!75!black},
+  endst/.style={stage, fill=figgreen!10, draw=figgreen!70!black},
+  flow/.style={->, draw=figink, rounded corners=1.5pt}]
+\node[data] (inp) {$[\mathrm{VH},\mathrm{VV},\mathrm{VH{-}VV}]$\\ $512^2$ crop};
+\node[enc] (vit) at ($(inp.east)+(14mm,7.5mm)$) [anchor=west]
+  {ViT-B/16\\ stride 16};
+\node[enc] (cnn) at ($(inp.east)+(14mm,-7.5mm)$) [anchor=west]
+  {ConvNeXt-V2-B\\ stride 32, $+$up};
+\begin{scope}[on background layer]
+\node[draw=black!35, dashed, rounded corners=3pt, inner sep=2.5mm,
+      fit=(vit)(cnn), fill=black!2] (encbox) {};
+\end{scope}
+\node[anchor=south, font=\sffamily\tiny, text=black!60]
+  at (encbox.north) {encoder: one per track};
+\node[neck] (head) at ($(encbox.east)+(9mm,0)$) [anchor=west]
+  {256-ch head\\ $128^2$ heatmap};
+\node[neck, right=5mm of head] (dec) {peaks $\geq 0.05$\\ 120 m NMS};
+\node[cal, right=5mm of dec] (op) {$\tau_{\mathrm{dev}}$\\ dev-selected};
+\node[endst, right=5mm of op] (mat) {200 m\\ geo match};
+\draw[flow] (inp.east) -- ($(inp.east)+(5mm,0)$) |- (vit.west);
+\draw[flow] (inp.east) -- ($(inp.east)+(5mm,0)$) |- (cnn.west);
+\draw[flow] (encbox.east) -- (head.west)
+  node[midway, above, font=\sffamily\tiny, text=black!60] {};
+\draw[flow] (head) -- (dec);
+\draw[flow] (dec) -- (op);
+\draw[flow] (op) -- (mat);
+\end{tikzpicture}}
+\caption{The shared detection path: only the encoder differs by track; one
+head, decode rule, dev-selected threshold, and frozen scorer serve every arm.}
+\label{fig:detector}
+\end{figure}

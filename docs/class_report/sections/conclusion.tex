@@ -1,22 +1,23 @@
 \section{Conclusion and Future Work}
 
 We built a controlled two-track experiment for measuring transfer under four
-nested label budgets. One detector, one corrected label contract, and one
-strict-FP32 H100 recipe constrain all 32 cells, and every published number is
-re-derived from hash-bound evidence at build time.
-
-The completed grid supports three conclusions. First, a suitable public
-checkpoint recovers most of what roughly ninety percent more labels buy a
-randomly initialized detector. Second, matching the sensing modality is not
-uniformly the right scarce-label choice: SAR pretraining dominates in the CNN
-track at every budget, while the ViT track prefers the optical checkpoint
-until half the label budget. Third, generic ImageNet initialization wins both
-tracks at full data. These remain corrected development-selection results
-from one seed; they support no variance claim.
+nested label budgets: one detector, one corrected label contract, one
+strict-FP32 recipe, and a fail-closed path from training bytes to every
+published number. The completed 32-cell grid supports three conclusions.
+First, transfer concentrates its value under scarcity---at 12 scenes every
+pretrained arm except CNN-optical clears its random floor, and the best
+12-scene cells approach what 111 scenes buy a randomly initialized
+detector. Second, matching the sensing modality is not uniformly the right
+scarce-label choice: SAR pretraining dominates optical in the CNN track at
+every budget, while the ViT track prefers the optical checkpoint below half
+data, so the contrast's sign is architecture-dependent. Third, generic
+ImageNet initialization wins both tracks at full data. These remain
+corrected development-selection results from one seed and support no
+variance claim.
 
 \ifHevTestComplete
-The once-scored 16-scene test column bounds development-selection optimism at
-a mean change of \HevTestMeanGap{} F1 without altering the within-track
+The once-scored 16-scene test column bounds development-selection optimism
+at a mean change of \HevTestMeanGap{} F1 without altering the within-track
 ordering conclusions.
 \else
 The next step scores the frozen 16-scene test split under the held-out
@@ -29,6 +30,7 @@ and near-shore analysis.
 The 50 human-verified scenes then support one sealed evaluation of
 dark-vessel recall and near-shore performance for follow-on work.
 \fi
+
 \paragraph{Roles.} John Roth and Kyle Wagner jointly designed the study,
 implemented its data, model, training, and evaluation code, ran the
 experiments, analyzed the evidence, and wrote this report.

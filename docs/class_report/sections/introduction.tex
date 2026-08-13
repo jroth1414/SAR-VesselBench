@@ -1,28 +1,51 @@
 \section{Introduction}
 
-Sentinel-1 synthetic-aperture radar (SAR) supplies maritime imagery through
-clouds and without daylight~\cite{torres2012sentinel1}. Analysts can use it to
-find vessels that lack a contemporaneous matched Automatic Identification
-System report. These dark-vessel candidates matter for fisheries enforcement,
-maritime safety, and sanctions monitoring. They also present a difficult
-learning problem: a vessel occupies few pixels in a large scene, coastal
-infrastructure creates strong clutter, and human verification costs time.
-The xView3-SAR benchmark provides georeferenced point labels and a geographic
-matching protocol for this setting~\cite{paolo2022xview3}.
+Spaceborne synthetic aperture radar (SAR) provides wide-area maritime
+observation independent of daylight and through most weather
+conditions~\cite{torres2012sentinel1}. Those properties make Sentinel-1
+imagery useful for detecting vessels without a contemporaneous matched
+Automatic Identification System report---the so-called \emph{dark vessels}.
+Such detections support maritime safety, fisheries monitoring, and
+investigation of activity potentially associated with sanctions evasion. The
+task is difficult: vessels occupy few pixels in a large scene, sea clutter
+and coastal structures produce strong responses, and human-verified labels
+are expensive. The xView3-SAR benchmark makes the problem concrete with
+ground-range-detected imagery, georeferenced point annotations, and an
+evaluation protocol based on geographic matching~\cite{paolo2022xview3}.
 
-Transfer learning may reduce the number of target labels required for a useful
-detector. Generic ImageNet features offer broad visual structure. Optical
-remote-sensing checkpoints add overhead-scene statistics, while SAR
-checkpoints share the sensing modality. Public checkpoints confound source
-domain with model family and pretraining objective, so an uncontrolled
-comparison cannot isolate transfer effects.
+The scarcity of verified labels motivates transfer learning, but it is not
+clear which source helps most. Generic ImageNet pretraining supplies broad
+visual features; optical remote-sensing pretraining adds overhead-scene
+statistics; SAR pretraining additionally shares the sensing modality. These
+alternatives also interact with architecture: vision transformers and
+convolutional networks encode different inductive biases, and released
+remote-sensing checkpoints are not available under one method-matched
+recipe. A comparison that changes architecture, optimization, detector, and
+pretraining source simultaneously cannot isolate the source-domain question.
 
-We use two architecture-matched tracks. Four ViT-B/16 arms and four
-ConvNeXt-V2-Base arms differ only in initialization within their track:
-random, ImageNet, optical remote sensing, or SAR. Matched roles across tracks
-show whether a within-track pattern survives a change in architecture. We
-make no new detector or pretraining claim. The contribution is a controlled
-32-cell design, one corrected evaluation contract, and a provenance-bound
-H100 result path.
-
-\input{figures/study_design}
+We study label efficiency through two architecture-matched tracks
+(Fig.~\ref{fig:study-design}, Appendix~\ref{app:figures}). Within each
+track, four arms differ only in initialization: random, ImageNet, optical
+remote sensing, or SAR. Every arm fine-tunes end to end through the same
+point detector, input representation, optimizer, schedule, nested scene
+subsets, and fixed seed, producing 32 controlled cells. The study asks
+three questions:
+\begin{enumerate}
+\item How does random, ImageNet, optical, or SAR initialization change
+  detection F1 as the number of labeled scenes grows?
+\item Does SAR pretraining beat optical pretraining within each
+  architecture, especially under label scarcity, and is the direction of
+  that contrast consistent across tracks?
+\item After model selection and thresholds freeze, how do the arms
+  generalize to held-out scenes and human-verified dark vessels?
+\end{enumerate}
+This report answers the first two questions with the completed 32-cell H100
+campaign, every value re-derived at build time from hash-bound
+evidence.\ifHevTestComplete{} The once-scored 16-scene test matrix addresses
+the held-out part of the third.\else{} The 16-scene test matrix and the
+sealed 50-scene human-verified evaluation address the third and are
+described in Sect.~\ref{sec:results}.\fi{} Our contribution is experimental
+control rather than a new method: an eight-arm two-track design in which
+initialization is the only within-track variable, one corrected evaluation
+contract with checkpoint-bound operating thresholds, and a fail-closed
+evidence path from training bytes to every published number.
