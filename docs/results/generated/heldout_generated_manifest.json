@@ -1,0 +1,18 @@
+{
+ "generator": "src.analysis.heldout_results",
+ "inputs": {
+  "arms_config_sha256": "4e1b0837d580572110f62611133d1599d7ef56b206e9adb2023d979b6c1ec8a8",
+  "cohort_sha256": "9b1ba03e3893a35cd1d0f4d3b63c994afb8e84219c8db28113c9bf6de62e7138",
+  "detector_sha256": "c42ae65bf9045cc93f0d73ae1437b2f6a1300670cb49d8e93f83a39d58a62a12"
+ },
+ "outputs": {
+  "heldout_label_efficiency.pdf": "84cad7972fdfbe1cff4e80d2466f513cbf5363510c46db06ebdb602a663199e9",
+  "heldout_results.tex": "8021d369f401c8f92aa537a1adf93dea0deb71aae7cb39aa57cc9b48d80cc780"
+ },
+ "summary": {
+  "cells": 32,
+  "final_eval_rows": 0,
+  "gpu_hours": 548.4,
+  "test_results": 0
+ }
+}
