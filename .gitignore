@@ -39,6 +39,8 @@ xview3-jwt.json
 *.jwt.json
 *.pem
 *.key
+.env
+*.env
 
 # Local working files that must never ride into a commit: presentation decks,
 # drafts, archives, and scratch figures at the repository root or under docs/.
