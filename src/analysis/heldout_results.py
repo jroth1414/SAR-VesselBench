@@ -351,6 +351,15 @@ def render_tex(validated: Mapping[str, object]) -> str:
         f"\\def\\HevGPUHours{{{float(campaign['gpu_hours']):.1f}}}",
         f"\\def\\HevCohortCreatedUTC{{{campaign['created_utc']}}}",
     ]
+    for track in ("vit", "cnn"):
+        floor_f10 = float(cells[by_key[(track, "floor", 10)][0]]["dev_f1"])
+        for role in ("optical", "sar", "imagenet"):
+            arm_f10 = float(cells[by_key[(track, role, 10)][0]]["dev_f1"])
+            delta = arm_f10 - floor_f10
+            lines.append(
+                f"\\def\\HevDeltaFTen{TRACK_MACRO[track]}{ROLE_MACRO[role]}"
+                f"{{{'+' if delta >= 0 else '-'}{abs(delta):.3f}}}"
+            )
     gaps: list[float] = []
     for track in ("vit", "cnn"):
         for role in ROLE_ORDER:

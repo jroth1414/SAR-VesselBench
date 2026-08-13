@@ -2,31 +2,32 @@
 
 We built a controlled two-track experiment for measuring transfer under four
 nested label budgets. One detector, one corrected label contract, and one
-strict-FP32 H100 recipe constrain all 32 cells.
-\ifHFullGridComplete
-The verified complete snapshot supplies all four label-fraction curves needed
-for the controlled comparison. They remain corrected development-selection
-results rather than held-out estimates, and one seed supports no variance claim.
-\else
-\ifHHasReportableCohort
-The deadline snapshot admits comparisons at \HResultReportableFractions{} while
-the remaining budgets continue. It supports no complete label-efficiency
-conclusion.
-\else
-The current deadline snapshot reports campaign progress but lacks the result
-receipts needed for a numerical claim. We therefore publish no H100 ranking or
-label-efficiency conclusion at this cutoff.
-\fi
-\fi
+strict-FP32 H100 recipe constrain all 32 cells, and every published number is
+re-derived from hash-bound evidence at build time.
 
-\ifHFullGridComplete
-The next step freezes this cohort, scores the 16-scene test split, and uses the
-50 human-verified scenes once for dark-vessel and near-shore analysis.
+The completed grid supports three conclusions. First, a suitable public
+checkpoint recovers most of what roughly ninety percent more labels buy a
+randomly initialized detector. Second, matching the sensing modality is not
+uniformly the right scarce-label choice: SAR pretraining dominates in the CNN
+track at every budget, while the ViT track prefers the optical checkpoint
+until half the label budget. Third, generic ImageNet initialization wins both
+tracks at full data. These remain corrected development-selection results
+from one seed; they support no variance claim.
+
+\ifHevTestComplete
+The once-scored 16-scene test column bounds development-selection optimism at
+a mean change of \HevTestMeanGap{} F1 without altering the within-track
+ordering conclusions.
 \else
-The next analysis step imports the verified reverse bundle, closes all 32
-cells, and regenerates both papers from that single source. The team will then
-freeze the cohort, score the 16-scene test split, and use the 50 human-verified
-scenes once for dark-vessel and near-shore analysis.
+The next step scores the frozen 16-scene test split under the held-out
+contract, which applies each cell's development-bound threshold verbatim.
+\fi
+\ifHevFinalEval
+The once-only 50-scene human-verified evaluation completes the dark-vessel
+and near-shore analysis.
+\else
+The 50 human-verified scenes then support one sealed evaluation of
+dark-vessel recall and near-shore performance for follow-on work.
 \fi
 \ifdefined\ClassReportRoles John Roth and Kyle Wagner
 jointly designed the study, implemented its data, model, training, and

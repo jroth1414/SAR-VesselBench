@@ -17,9 +17,10 @@ fine-tuning.
 The corrected campaign runs one process per NVIDIA H100 in Lightning
 \texttt{32-true}. CUDA matrix-multiply TF32 and cuDNN TF32 stay disabled.
 Runtime receipts bind code, configuration, environment, GPU identity,
-checkpoint hashes, and completion markers. The result importer rejects a
-non-H100 cell, a duplicate identifier, a non-finite metric, a missing marker,
-or any fraction that lacks all eight completed arms.
+checkpoint hashes, and completion markers. The evidence generator rejects a
+marker that does not hash to its cohort binding, a metric inconsistent with
+its own TP/FP/FN counts, a best-dev value that disagrees with the training
+curve, a mixed hardware class, or a partial held-out cohort.
 
 \begin{table}[t]
 \centering

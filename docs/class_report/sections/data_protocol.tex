@@ -23,6 +23,7 @@ human-verified labels.
 The frozen scorer greedily matches predictions and ground truth within 200 m,
 then aggregates precision, recall, and F1 across scenes. Each cell selects its
 threshold on development predictions and binds that operating point to the
-selected checkpoint. The public snapshot reports development-selection F1.
-It does not substitute that value for test F1, dark-vessel recall, or
-near-shore performance.
+selected checkpoint. The committed evidence reports development-selection F1.
+It never substitutes that value for test F1, dark-vessel recall, or
+near-shore performance; held-out values render only from their own immutable
+results.

@@ -15,6 +15,7 @@
 \renewcommand{\textfraction}{0.05}
 \renewcommand{\floatpagefraction}{0.8}
 \input{../results/generated/h100_results}
+\input{../results/generated/heldout_results}
 \graphicspath{{../results/generated/}}
 \newcommand{\ClassReportRoles}{}
 \title{Label-Efficient Dark-Vessel Detection in SAR:\\
@@ -33,22 +34,14 @@ point detection in Sentinel-1 imagery. Two size-matched tracks use ViT-B/16
 and ConvNeXt-V2-Base backbones. Four initialization roles within each track
 share the input, detector, schedule, scene subsets, seed, and strict-FP32
 execution. The design contains 32 cells across four nested label budgets.
-\ifHFullGridComplete
-The verified H100 snapshot closes all 32 cells, and this report presents the
-resulting four-fraction comparison.
-\else
-\ifHHasReportableCohort
-The deadline snapshot closes \HResultReportableFractions{} as complete
-eight-arm cohorts. We report only those corrected development-selection
-comparisons; remaining cells appear as in progress.
-\else
-The submission snapshot records campaign progress but lacks the completion
-receipts needed to admit numerical results. We therefore report the design,
-current status, and fail-closed result path without an H100 ranking or
-label-efficiency claim.
-\fi
-\fi
-The snapshot contains no test metric; the human-verified set remains sealed.
+All 32 cells completed training on H100 hardware, and this report presents
+the resulting four-fraction comparison from hash-bound evidence. Transfer
+helps most under label scarcity, but the sign of the SAR-versus-optical
+contrast depends on the architecture, and generic ImageNet initialization
+leads both tracks at full data. Reported values are corrected
+development-selection F1\ifHevTestComplete{} alongside once-scored held-out
+test results\fi.
+\ifHevFinalEval\else The 50-scene human-verified set remains sealed.\fi
 \end{abstract}
 \label{mainbody:start}
 \input{sections/introduction}

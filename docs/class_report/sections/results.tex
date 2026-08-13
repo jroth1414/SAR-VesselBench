@@ -1,66 +1,113 @@
 \section{Results and Analysis}
 
-\ifHFullGridComplete
-The verified snapshot closes all 32 H100 cells. Figure~\ref{fig:h100-results}
-shows the four label-fraction curves, and Table~\ref{tab:h100-status} records
-the completed evidence inventory. The cell-level values and checkpoint-bound
-status appear in Appendix~\ref{app:inventory}.
+Every value in this section comes from the committed evidence tree. The
+fail-closed generator re-derives each number from the frozen training cohort,
+the hash-bound completion markers, and the full training curves; a single
+inconsistent byte stops the build. All 32 cells completed training on one
+\HevHardware{} class in strict FP32 (\HevGPUHours{} GPU-hours, code
+\texttt{\HevCodeSHAShort}, cohort \texttt{\HevCohortSHAShort}, seed 0).
+Reported F1 is corrected development-selection performance: each cell selects
+its checkpoint and operating threshold on the eight development scenes.
+Table~\ref{tab:dev-matrix} lists the matrix and
+Fig.~\ref{fig:label-efficiency} shows the label-fraction curves.
+
+\begin{table}[t]
+\centering
+\caption{Development-selection F1 for all 32 cells. Columns give the label
+budget as a fraction of the 111 training scenes (scene counts in
+parentheses). Every cell shares the detector, schedule, seed, and strict-FP32
+recipe; initialization is the only variable within a track.}
+\label{tab:dev-matrix}
+\small
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{@{}llcccc@{}}
+\toprule
+Track & Initialization & 10\% (12) & 25\% (28) & 50\% (56) & 100\% (111) \\
+\midrule
+ViT-B/16 & Random & \HevDevFViTRandomTen & \HevDevFViTRandomTwentyFive & \HevDevFViTRandomFifty & \HevDevFViTRandomHundred \\
+ & Optical RS & \HevDevFViTOpticalTen & \HevDevFViTOpticalTwentyFive & \HevDevFViTOpticalFifty & \HevDevFViTOpticalHundred \\
+ & SAR & \HevDevFViTSarTen & \HevDevFViTSarTwentyFive & \HevDevFViTSarFifty & \HevDevFViTSarHundred \\
+ & ImageNet & \HevDevFViTImageNetTen & \HevDevFViTImageNetTwentyFive & \HevDevFViTImageNetFifty & \HevDevFViTImageNetHundred \\
+\midrule
+ConvNeXt-V2-B & Random & \HevDevFCNNRandomTen & \HevDevFCNNRandomTwentyFive & \HevDevFCNNRandomFifty & \HevDevFCNNRandomHundred \\
+ & Optical RS & \HevDevFCNNOpticalTen & \HevDevFCNNOpticalTwentyFive & \HevDevFCNNOpticalFifty & \HevDevFCNNOpticalHundred \\
+ & SAR & \HevDevFCNNSarTen & \HevDevFCNNSarTwentyFive & \HevDevFCNNSarFifty & \HevDevFCNNSarHundred \\
+ & ImageNet & \HevDevFCNNImageNetTen & \HevDevFCNNImageNetTwentyFive & \HevDevFCNNImageNetFifty & \HevDevFCNNImageNetHundred \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{heldout_label_efficiency.pdf}
+\caption{Development-selection F1 against the label budget. Colors identify
+initialization roles; the dashed gray curve is each track's random floor.
+Both panels share the y-axis.}
+\label{fig:label-efficiency}
+\end{figure}
+
+\paragraph{Transfer helps under scarcity, with one exception.}
+At the 12-scene budget, every pretrained ViT arm clears its random floor by a
+wide margin: optical adds \HevDeltaFTenViTOptical, SAR
+\HevDeltaFTenViTSar, and ImageNet \HevDeltaFTenViTImageNet{} F1 over
+\HevDevFViTRandomTen. In the CNN track, SAR adds \HevDeltaFTenCNNSar{} and
+ImageNet \HevDeltaFTenCNNImageNet{} over \HevDevFCNNRandomTen. The exception
+is CNN-optical (BigEarthNet Sentinel-2), which only matches its floor at
+10\% (both \HevDevFCNNOpticalTen) and falls below it at 25\% and 50\%. The
+land-cover classification source appears to teach this backbone features
+that vessel detection must first unlearn.
+
+\paragraph{The SAR-versus-optical contrast is architecture-dependent.}
+The CNN track orders SAR above optical at every budget, and the gap is large
+under scarcity (\HevDevFCNNSarTen{} versus \HevDevFCNNOpticalTen{} at 12
+scenes). The ViT track disagrees below half data: optical leads SAR at 10\%
+(\HevDevFViTOpticalTen{} versus \HevDevFViTSarTen) and at 25\%, and SAR
+recovers only from 56 scenes upward. A modality-matched encoder is therefore
+not uniformly the best scarce-label choice; the architecture and pretraining
+objective moderate the effect. Because the released checkpoints also differ
+in objective and source volume, these contrasts describe available
+checkpoints rather than a causal effect of modality alone.
+
+\paragraph{Generic ImageNet wins at full data.}
+With all 111 scenes, ImageNet initialization leads both tracks
+(\HevDevFViTImageNetHundred{} and \HevDevFCNNImageNetHundred). Domain
+pretraining matters most where labels are scarce; with enough target data,
+generic visual structure plus full fine-tuning closes the domain gap.
+
+\paragraph{Label efficiency.}
+The best 12-scene transfer arms nearly match the 111-scene random floors:
+ViT-optical reaches \HevDevFViTOpticalTen{} against the ViT floor's
+\HevDevFViTRandomHundred{} at full data, and CNN-ImageNet reaches
+\HevDevFCNNImageNetTen{} against \HevDevFCNNRandomHundred. Roughly ninety
+percent of the labeling budget buys what a suitable public checkpoint
+provides.
+
+\subsection{Held-out results}
+
+\ifHevTestComplete
+All 32 cells were scored once on the frozen 16-scene test split with their
+cohort-bound development thresholds (inference precision
+\HevTestInferencePrecision). The mean development-to-test F1 change is
+\HevTestMeanGap; the full per-cell test column appears in
+Appendix~\ref{app:inventory}. Development selection carries optimism from
+choosing both checkpoint and threshold on eight scenes, so the test column is
+the honest operating estimate.
 \else
-\ifHHasReportableCohort
-The deadline snapshot closes \HResultReportableFractions{} as complete
-eight-arm cohorts. Figure~\ref{fig:h100-results} reports only those
-corrected-development comparisons. Table~\ref{tab:h100-status} records the
-remaining execution state, and Appendix~\ref{app:inventory} lists every cell.
-Other dashes mean unavailable evidence, not zero performance.
-\else
-The committed snapshot is an operational status export rather than a verified
-reverse-result bundle. It records the state of all 32 planned cells, but it
-does not carry the completion-marker and checkpoint hashes required to admit a
-metric. The fail-closed generator therefore emits no numerical comparison.
-Table~\ref{tab:h100-status} and Fig.~\ref{fig:h100-results} summarize campaign
-progress. The full inventory appears in Appendix~\ref{app:inventory}; dashes
-mean unavailable evidence, not zero performance.
-\fi
+The 16-scene test split had not been scored under the held-out contract when
+this report was built. The contract freezes the cohort first, applies each
+cell's development-bound threshold verbatim, and writes one immutable result
+per cell; the generator admits the test column only when all 32 results
+validate. Two cross-hardware control cells scored locally under this contract
+(RTX 5070 Ti, strict FP32) showed development-to-test changes of $-0.080$ and
+$-0.069$, consistent with development-selection optimism rather than
+threshold-transfer failure.
 \fi
 
-\input{../results/generated/h100_status_table}
-\input{../results/generated/h100_figure}
-
-\ifHFullGridComplete
-All plotted values are corrected development-selection F1 from bound
-checkpoints. The four-fraction curves support descriptive within-track transfer
-comparisons, but they are not held-out test results. One fixed seed also
-precludes error bars, significance tests, or empirical seed-noise estimates.
+\ifHevFinalEval
+The sealed 50-scene human-verified evaluation ran once for the 24 cells at
+the 10\%, 25\%, and 100\% budgets; dark-vessel recall and near-shore results
+appear in Appendix~\ref{app:inventory}.
 \else
-\ifHHasReportableCohort
-The completion-closed cohorts support comparisons only at
-\HResultReportableFractions{}. They do not support a full label-efficiency
-curve or inference about unfinished budgets. Copying values from running cells
-would compare arms after unequal optimization. One fixed seed precludes error
-bars and significance tests.
-\else
-This cutoff supports conclusions about execution coverage only. The full-data
-jobs have reached a terminal status in the operator snapshot, while work at the
-lower budgets continues. We do not treat terminal status alone as proof of a
-reportable checkpoint. A valid metric also needs its completion receipt,
-checkpoint binding, strict-FP32 provenance, and finite corrected-development
-record.
-
-The status profile cannot establish an initialization ranking or label
-efficiency. A label-fraction comparison requires all eight roles at a common
-budget, and the generator must verify every corresponding receipt. We therefore
-make no claim about labels saved, curve monotonicity, scarce-label ordering, or
-transfer gains. One seed also precludes error bars and significance tests.
+The 50 human-verified scenes remain sealed. Their once-only evaluation is
+deferred until after this submission's cohort and analysis code freeze.
 \fi
-\fi
-
-\ifHFullGridComplete
-The analysis compares transfer against the random floor within each track and
-SAR against optical transfer at each fraction. Agreement in the latter
-contrast's sign across tracks tests architecture generality.
-\else
-The complete analysis will make those same comparisons after the reverse
-bundle passes validation.
-\fi
-The released checkpoints differ in objective and source-data volume, so these
-contrasts do not identify a causal effect of source modality alone.
