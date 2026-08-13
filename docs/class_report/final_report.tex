@@ -10,22 +10,25 @@
 \setlength{\textfloatsep}{7pt plus 2pt minus 2pt}
 \setlength{\floatsep}{6pt plus 2pt minus 2pt}
 \setlength{\abovecaptionskip}{4pt}
-\setlength{\belowcaptionskip}{0pt}
+\setlength{\belowcaptionskip}{3pt}
 \renewcommand{\topfraction}{0.95}
 \renewcommand{\textfraction}{0.05}
 \renewcommand{\floatpagefraction}{0.8}
 \input{../results/generated/h100_results}
 \input{../results/generated/heldout_results}
 \graphicspath{{../results/generated/}}
-\newcommand{\ClassReportRoles}{}
-\title{Label-Efficient Dark-Vessel Detection in SAR:\\
-A Controlled Comparison of Encoder Pretraining}
-\author{John Roth \and Kyle Wagner\\
-\small Johns Hopkins University, EN.705.643}
-\date{2026}
 \begin{document}
-\maketitle
-\vspace{-1.5em}
+\begin{center}
+{\LARGE\bfseries Label-Efficient Dark-Vessel Detection in SAR:\\[2pt]
+A Controlled Comparison of Encoder Pretraining\par}
+\vspace{0.8em}
+{\large John Roth \qquad Kyle Wagner\par}
+\vspace{0.25em}
+{\small Johns Hopkins University \,\textbullet\, EN.705.643 Deep Learning
+Developments with PyTorch \,\textbullet\, August 2026\par}
+\end{center}
+\suppressfloats[t]
+\vspace{0.4em}
 \begin{abstract}
 Human-verified labels for vessels without matched Automatic Identification
 System reports are scarce. We test whether generic ImageNet, optical
