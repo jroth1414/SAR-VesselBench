@@ -7,7 +7,8 @@
  },
  "outputs": {
   "heldout_label_efficiency.pdf": "84cad7972fdfbe1cff4e80d2466f513cbf5363510c46db06ebdb602a663199e9",
-  "heldout_results.tex": "52c2bdefd8fb259acd71870841ba2f7d248b3abd8d5c61e39f44371d6f151f73",
+  "heldout_operating_points.pdf": "f6fad27997574b48f88d097b306091b86d5b19809560bc2ba00dc7b2ef0dc092",
+  "heldout_results.tex": "c6fca3cd96040d842e6004670846f78fa632a144db396bb1ffa2e374c965f1e9",
   "heldout_training_dynamics.pdf": "78db50e6442d9ff32fc1709ca1c3666b21a09f771374d7e54e48c1ddf80ed5a8",
   "heldout_transfer_gains.pdf": "059712efd882509dceb0990507aa46e10701a280a8bfa5754f053c05c69a87dc"
  },

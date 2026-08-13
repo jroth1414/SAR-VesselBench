@@ -25,12 +25,34 @@ One target-semantics contract serves training and evaluation
 (Fig.~\ref{fig:gt-contract}, Appendix~\ref{app:figures}). A row is a
 positive vessel point only when \texttt{is\_vessel} is true at HIGH or
 MEDIUM confidence. HIGH/MEDIUM non-vessels are background. LOW-confidence
-rows define ignore regions. Under this contract, the fixed eight-scene
-training-time development subset contains 517 positives, 107 background
-non-vessels, and 118 ignores, and the 16-scene test split contains 1{,}165
-positives. These support counts are pre-registered integrity checks:
-evaluation stops if regenerated counts differ. Training never stages test
-or human-verified labels.
+rows define ignore regions. Table~\ref{tab:data-protocol} lists the
+annotation support of every partition under this contract; a committed
+audit receipt binds the counts to the frozen split file by SHA-256. These
+support counts are pre-registered integrity checks: evaluation stops if
+regenerated counts differ. Training never stages test or human-verified
+labels. Appendix~\ref{app:figures} (Fig.~\ref{fig:study-data}) shows the
+scale of one study scene against a single chip and the scene centroids of
+the frozen splits.
+
+\begin{table}[t]
+\centering
+\caption{Frozen scene-level data protocol and annotation support under the
+corrected ground-truth contract. The 50 verified scenes remain sealed until
+the held-out test matrix and review gates complete.}
+\label{tab:data-protocol}
+\small
+\setlength{\tabcolsep}{6pt}
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+Partition & Scenes & Vessel H/M & Non-vessel H/M & LOW ignore \\
+\midrule
+Training-time dev subset & \HevCountDevEightScenes & \HevCountDevEightPositive & \HevCountDevEightBackground & \HevCountDevEightIgnore \\
+Development (full) & \HevCountDevFullScenes & \HevCountDevFullPositive & \HevCountDevFullBackground & \HevCountDevFullIgnore \\
+Test & \HevCountTestScenes & \HevCountTestPositive & \HevCountTestBackground & \HevCountTestIgnore \\
+Verified final & 50 & \multicolumn{3}{c}{sealed; human verified} \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \paragraph{Selection and scoring.}
 The frozen scorer greedily matches predictions to ground truth within

@@ -286,6 +286,7 @@ def validate_evidence(
             "threshold": threshold,
             "best_epoch": int(best_dev.get("epoch")),  # type: ignore[arg-type]
             "epochs_run": epochs_run,
+            "gpu_hours": float(active) / 3600.0,
             "checkpoint_sha256": checkpoint_sha256,
             "marker_sha256": marker_sha256,
         }
@@ -296,6 +297,29 @@ def validate_evidence(
         )
     if len(hardware) != 1:
         raise EvidenceError(f"evidence spans mixed hardware classes: {sorted(hardware)}")
+
+    audit_path = root / "EVAL_GROUND_TRUTH_VALIDATED.json"
+    audit = _load_json(audit_path, "ground-truth audit receipt")
+    if audit.get("audit_schema") != 1:
+        raise EvidenceError("ground-truth audit receipt has an unknown schema")
+    audit_splits = audit.get("inputs", {}).get("splits_json", {})
+    committed_splits = Path("data/splits.json")
+    if (
+        committed_splits.is_file()
+        and audit_splits.get("sha256") != _sha256_file(committed_splits)
+    ):
+        raise EvidenceError("audit receipt does not bind the committed splits")
+    gt_counts: dict[str, dict[str, int]] = {}
+    for scope in ("dev8", "dev23", "test"):
+        counts = audit.get("expected_counts", {}).get(scope)
+        if not isinstance(counts, Mapping):
+            raise EvidenceError(f"audit receipt lacks {scope} counts")
+        gt_counts[scope] = {
+            key: int(counts[key])
+            for key in ("scene_count", "positive", "background", "ignore")
+        }
+    if gt_counts["test"]["positive"] != EXPECTED_TEST_POSITIVES:
+        raise EvidenceError("audit test positives disagree with the held-out contract")
 
     final_eval_path = root / "final_verified.csv"
     final_eval_rows: list[dict[str, str]] = []
@@ -314,6 +338,7 @@ def validate_evidence(
         "cells": cells,
         "test_results": test_results,
         "final_eval_rows": final_eval_rows,
+        "gt_counts": gt_counts,
         "campaign": {
             "git_sha": git_sha,
             "cohort_sha256": cohort_sha256,
@@ -383,6 +408,50 @@ def render_tex(validated: Mapping[str, object]) -> str:
     else:
         lines.append("\\def\\HevTestMeanGap{\\textemdash}")
         lines.append("\\def\\HevTestInferencePrecision{\\textemdash}")
+
+    for track in ("vit", "cnn"):
+        track_cells = [c for c in cells.values() if c["track"] == track]
+        thresholds = [float(c["threshold"]) for c in track_cells]
+        epochs = sorted(int(c["best_epoch"]) for c in track_cells)
+        hours = [float(c["gpu_hours"]) for c in track_cells]
+        median = (epochs[7] + epochs[8]) / 2.0
+        name = TRACK_MACRO[track]
+        lines.append(f"\\def\\HevThrMin{name}{{{min(thresholds):.3f}}}")
+        lines.append(f"\\def\\HevThrMax{name}{{{max(thresholds):.3f}}}")
+        lines.append(
+            f"\\def\\HevMedianBestEpoch{name}{{{median:g}}}"
+        )
+        lines.append(f"\\def\\HevMeanCellHours{name}{{{sum(hours) / len(hours):.1f}}}")
+    precision_over_recall = sum(
+        1 for c in cells.values() if float(c["dev_precision"]) > float(c["dev_recall"])
+    )
+    early_stopped = sum(1 for c in cells.values() if int(c["epochs_run"]) < 50)
+    lines.append(f"\\def\\HevCellsPrecOverRecall{{{precision_over_recall}}}")
+    lines.append(f"\\def\\HevCellsEarlyStopped{{{early_stopped}}}")
+
+    for track in ("vit", "cnn"):
+        for role in ROLE_ORDER:
+            for fraction in FRACTIONS:
+                exp_id, _meta = by_key[(track, role, fraction)]
+                cell = cells[exp_id]
+                name = _macro(track, role, fraction)
+                lines.append(f"\\def\\HevEpochsRun{name}{{{cell['epochs_run']}}}")
+                lines.append(f"\\def\\HevHours{name}{{{float(cell['gpu_hours']):.1f}}}")
+
+    scope_macro = {"dev8": "DevEight", "dev23": "DevFull", "test": "Test"}
+    counts: Mapping[str, Mapping[str, int]] = validated["gt_counts"]  # type: ignore[assignment]
+    for scope, fragment in scope_macro.items():
+        for key, key_fragment in (
+            ("scene_count", "Scenes"),
+            ("positive", "Positive"),
+            ("background", "Background"),
+            ("ignore", "Ignore"),
+        ):
+            lines.append(
+                f"\\def\\HevCount{fragment}{key_fragment}{{{counts[scope][key]:,}}}".replace(
+                    ",", "{,}"
+                )
+            )
     return "\n".join(lines) + "\n"
 
 
@@ -549,6 +618,87 @@ def render_transfer_gains(validated: Mapping[str, object], out_pdf: Path) -> Non
     plt.close(fig)
 
 
+def render_operating_points(validated: Mapping[str, object], out_pdf: Path) -> None:
+    """Precision-recall positions, threshold spread, and cost-performance."""
+
+    os.environ.setdefault("SOURCE_DATE_EPOCH", "0")
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    cells: Mapping[str, Mapping[str, object]] = validated["cells"]  # type: ignore[assignment]
+    fig, axes = plt.subplots(1, 3, figsize=(6.6, 2.2))
+
+    pr_axis, thr_axis, cost_axis = axes
+    recall_grid = np.linspace(0.55, 0.99, 200)
+    for iso in (0.7, 0.8, 0.9):
+        precision_iso = iso * recall_grid / np.clip(2 * recall_grid - iso, 1e-6, None)
+        mask = (precision_iso >= 0.55) & (precision_iso <= 1.0) & (2 * recall_grid > iso)
+        pr_axis.plot(
+            recall_grid[mask], precision_iso[mask],
+            color="#B8B8B8", linewidth=0.6, linestyle="--", zorder=1,
+        )
+        pr_axis.text(
+            0.985, iso * 0.985 / (2 * 0.985 - iso), f"F1={iso:.1f}",
+            fontsize=5.5, color="#8A8A8A", ha="right", va="bottom",
+        )
+    pr_axis.plot([0.55, 1.0], [0.55, 1.0], color="#B8B8B8", linewidth=0.6,
+                 linestyle=":", zorder=1)
+    for cell in cells.values():
+        marker_face = ROLE_COLOR[cell["role"]] if cell["track"] == "vit" else "white"
+        pr_axis.plot(
+            [cell["dev_recall"]], [cell["dev_precision"]],
+            marker="o" if cell["track"] == "vit" else "s",
+            markersize=4, linestyle="none",
+            markerfacecolor=marker_face, markeredgecolor=ROLE_COLOR[cell["role"]],
+            markeredgewidth=0.9, zorder=2,
+        )
+    pr_axis.set_xlabel("Recall", fontsize=8)
+    pr_axis.set_ylabel("Precision", fontsize=8)
+    pr_axis.set_xlim(0.62, 1.0)
+    pr_axis.set_ylim(0.62, 1.0)
+
+    role_position = {role: index for index, role in enumerate(ROLE_ORDER)}
+    for cell in cells.values():
+        offset = -0.16 if cell["track"] == "vit" else 0.16
+        marker_face = ROLE_COLOR[cell["role"]] if cell["track"] == "vit" else "white"
+        thr_axis.plot(
+            [role_position[cell["role"]] + offset], [cell["threshold"]],
+            marker="o" if cell["track"] == "vit" else "s",
+            markersize=4, linestyle="none",
+            markerfacecolor=marker_face, markeredgecolor=ROLE_COLOR[cell["role"]],
+            markeredgewidth=0.9,
+        )
+    thr_axis.set_xticks(range(4))
+    thr_axis.set_xticklabels(["Rand", "Opt", "SAR", "IN"], fontsize=7)
+    thr_axis.set_ylabel("Swept threshold", fontsize=8)
+    thr_axis.set_xlim(-0.6, 3.6)
+
+    for cell in cells.values():
+        marker_face = ROLE_COLOR[cell["role"]] if cell["track"] == "vit" else "white"
+        cost_axis.plot(
+            [cell["gpu_hours"]], [cell["dev_f1"]],
+            marker="o" if cell["track"] == "vit" else "s",
+            markersize=4, linestyle="none",
+            markerfacecolor=marker_face, markeredgecolor=ROLE_COLOR[cell["role"]],
+            markeredgewidth=0.9,
+        )
+    cost_axis.set_xlabel("GPU-hours", fontsize=8)
+    cost_axis.set_ylabel("Dev F1", fontsize=8)
+
+    for axis in axes:
+        axis.tick_params(labelsize=7)
+        axis.grid(True, linewidth=0.4, alpha=0.35)
+        for spine in ("top", "right"):
+            axis.spines[spine].set_visible(False)
+    fig.tight_layout(pad=0.4)
+    out_pdf.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_pdf, format="pdf", metadata={"CreationDate": None})
+    plt.close(fig)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--evidence-root", type=Path, default=Path("results/h100/evidence"))
@@ -582,6 +732,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     render_training_dynamics(validated, Path(args.evidence_root), dynamics_path)
     gains_path = args.output_dir / "heldout_transfer_gains.pdf"
     render_transfer_gains(validated, gains_path)
+    operating_path = args.output_dir / "heldout_operating_points.pdf"
+    render_operating_points(validated, operating_path)
     manifest = {
         "generator": "src.analysis.heldout_results",
         "inputs": {
@@ -594,6 +746,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "heldout_label_efficiency.pdf": _sha256_file(figure_path),
             "heldout_training_dynamics.pdf": _sha256_file(dynamics_path),
             "heldout_transfer_gains.pdf": _sha256_file(gains_path),
+            "heldout_operating_points.pdf": _sha256_file(operating_path),
         },
         "summary": summary,
     }

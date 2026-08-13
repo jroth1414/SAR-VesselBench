@@ -1,0 +1,194 @@
+{
+  "audit_schema": 1,
+  "contract": {
+    "background": "is_vessel=false and confidence in {HIGH,MEDIUM}",
+    "ignore": "confidence=LOW",
+    "near_shore_km_lte": 2.0,
+    "positive": "is_vessel=true and confidence in {HIGH,MEDIUM}",
+    "scene_ids_hash_encoding": "canonical-json-array-utf8-v1"
+  },
+  "expected_counts": {
+    "dev23": {
+      "background": 804,
+      "ignore": 441,
+      "near_shore_background": 1,
+      "near_shore_ignore": 2,
+      "near_shore_positive": 10,
+      "near_shore_rows": 13,
+      "positive": 1479,
+      "rows": 2724,
+      "scene_count": 23
+    },
+    "dev8": {
+      "background": 107,
+      "ignore": 118,
+      "near_shore_background": 1,
+      "near_shore_ignore": 1,
+      "near_shore_positive": 4,
+      "near_shore_rows": 6,
+      "positive": 517,
+      "rows": 742,
+      "scene_count": 8
+    },
+    "test": {
+      "background": 420,
+      "ignore": 325,
+      "near_shore_background": 0,
+      "near_shore_ignore": 2,
+      "near_shore_positive": 2,
+      "near_shore_rows": 4,
+      "positive": 1165,
+      "rows": 1910,
+      "scene_count": 16
+    }
+  },
+  "inputs": {
+    "splits_json": {
+      "bytes": 5128,
+      "name": "splits.json",
+      "sha256": "0d201003999b6e634bdb3f9cccaedbd391b9d0cdcdb7f9370470d56a5e391db6"
+    },
+    "train_csv": {
+      "bytes": 11134981,
+      "name": "train.csv",
+      "sha256": "42871b3ddf12d2a732d11d07897c21efc6c688c5d1a6c59a90839a5539e15415"
+    }
+  },
+  "scopes": {
+    "dev23": {
+      "counts": {
+        "background": 804,
+        "ignore": 441,
+        "near_shore": {
+          "background": 1,
+          "ignore": 2,
+          "positive": 10,
+          "rows": 13
+        },
+        "positive": 1479,
+        "rows": 2724
+      },
+      "expected_counts": {
+        "background": 804,
+        "ignore": 441,
+        "near_shore_background": 1,
+        "near_shore_ignore": 2,
+        "near_shore_positive": 10,
+        "near_shore_rows": 13,
+        "positive": 1479,
+        "rows": 2724,
+        "scene_count": 23
+      },
+      "matches_expected": true,
+      "scene_ids": [
+        "0d64d7c560136c46t",
+        "1723551816981769t",
+        "1832091c9c3235cct",
+        "18eae763f0fb9da6t",
+        "2e65e3387885c951t",
+        "3d4088738ad96e2ft",
+        "4ae61dece54a1ffat",
+        "662ae46aea259849t",
+        "7d5aeadca812e8c1t",
+        "7ef67f5bd2f89841t",
+        "8235ecb79dde8f28t",
+        "900c6dac347d1804t",
+        "9ecafe67043f52b9t",
+        "a08d07f4f8522f12t",
+        "adbc789d3c248b30t",
+        "afbb0908b0b4d74ft",
+        "bd24c2e8d539f972t",
+        "c07f6ec980c2c149t",
+        "c470441906b228bct",
+        "cb614f1bdab8b55at",
+        "d9d700a11647e8e1t",
+        "dec90016c05fe502t",
+        "f5ce2dc15a39b593t"
+      ],
+      "scene_ids_sha256": "95f16ece4eb12d1f8b5693e9e720234f0aeed843acd74ef9b6e9da90e5668e68"
+    },
+    "dev8": {
+      "counts": {
+        "background": 107,
+        "ignore": 118,
+        "near_shore": {
+          "background": 1,
+          "ignore": 1,
+          "positive": 4,
+          "rows": 6
+        },
+        "positive": 517,
+        "rows": 742
+      },
+      "expected_counts": {
+        "background": 107,
+        "ignore": 118,
+        "near_shore_background": 1,
+        "near_shore_ignore": 1,
+        "near_shore_positive": 4,
+        "near_shore_rows": 6,
+        "positive": 517,
+        "rows": 742,
+        "scene_count": 8
+      },
+      "matches_expected": true,
+      "scene_ids": [
+        "0d64d7c560136c46t",
+        "1723551816981769t",
+        "1832091c9c3235cct",
+        "18eae763f0fb9da6t",
+        "2e65e3387885c951t",
+        "3d4088738ad96e2ft",
+        "4ae61dece54a1ffat",
+        "662ae46aea259849t"
+      ],
+      "scene_ids_sha256": "bc7017396ed996035f9aaed14a0a052d2efc5469cda40a731a7dd91264d011d5"
+    },
+    "test": {
+      "counts": {
+        "background": 420,
+        "ignore": 325,
+        "near_shore": {
+          "background": 0,
+          "ignore": 2,
+          "positive": 2,
+          "rows": 4
+        },
+        "positive": 1165,
+        "rows": 1910
+      },
+      "expected_counts": {
+        "background": 420,
+        "ignore": 325,
+        "near_shore_background": 0,
+        "near_shore_ignore": 2,
+        "near_shore_positive": 2,
+        "near_shore_rows": 4,
+        "positive": 1165,
+        "rows": 1910,
+        "scene_count": 16
+      },
+      "matches_expected": true,
+      "scene_ids": [
+        "156845d347e67d21t",
+        "395dcf560a56ff39t",
+        "4cb65eef4af658c0t",
+        "5d45cb2dc3c48d8bt",
+        "78fde272efeb9d56t",
+        "821593907c14c5c2t",
+        "835f7629c3a3a9abt",
+        "83bf47e54523fc40t",
+        "8a6781613364d055t",
+        "968b06adcd8ba6ect",
+        "994a95128e83814et",
+        "9c4703bf071fc332t",
+        "a45bc46512eb61f8t",
+        "aec08a1bed9de27at",
+        "cb63265c445495d3t",
+        "efe75c178f7117a7t"
+      ],
+      "scene_ids_sha256": "27a4520df8ca3ffa2dface731466cfb42b5bb48c7cfd1b489ec26d228738b06a"
+    }
+  },
+  "verified": true
+}

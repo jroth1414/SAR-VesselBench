@@ -1,14 +1,12 @@
 \section{Full Evidence Inventory}
 \label{app:inventory}
 
-Table~\ref{tab:inventory} lists every cell with its development-selection
-F1, checkpoint-bound operating threshold, epoch of the selected checkpoint,
-and held-out test F1 where admitted. The build re-derives all values from
-the committed cohort, markers, and training curves. Dashes mean the
-fail-closed generator admitted no value, never zero performance. The
-recorded thresholds range widely (0.587--0.929 in the ViT track,
-0.716--0.910 in the CNN track), so one shared threshold would misrepresent
-most arms.
+Table~\ref{tab:inventory} lists every cell: development-selection F1, the
+checkpoint-bound operating threshold, the epoch of the selected checkpoint,
+the epochs run, measured GPU-hours, and held-out test F1 where admitted.
+The build re-derives all values from the committed cohort, markers,
+training curves, and runtime receipts. Dashes mean the fail-closed
+generator admitted no value, never zero performance.
 
 \begin{table}[h]
 \centering
@@ -19,50 +17,68 @@ validate).}
 \scriptsize
 \setlength{\tabcolsep}{4pt}
 \renewcommand{\arraystretch}{0.95}
-\begin{tabular}{@{}llcccc@{}}
+\begin{tabular}{@{}llcccccc@{}}
 \toprule
-Cell & Budget & Dev F1 & Threshold & Best epoch & Test F1 \\
+Cell & Budget & Dev F1 & Threshold & Best ep. & Epochs & GPU-h & Test F1 \\
 \midrule
-ViT random & 10\% & \HevDevFViTRandomTen & \HevThrViTRandomTen & \HevEpochViTRandomTen & \HevTestFViTRandomTen \\
-ViT random & 25\% & \HevDevFViTRandomTwentyFive & \HevThrViTRandomTwentyFive & \HevEpochViTRandomTwentyFive & \HevTestFViTRandomTwentyFive \\
-ViT random & 50\% & \HevDevFViTRandomFifty & \HevThrViTRandomFifty & \HevEpochViTRandomFifty & \HevTestFViTRandomFifty \\
-ViT random & 100\% & \HevDevFViTRandomHundred & \HevThrViTRandomHundred & \HevEpochViTRandomHundred & \HevTestFViTRandomHundred \\
-ViT optical & 10\% & \HevDevFViTOpticalTen & \HevThrViTOpticalTen & \HevEpochViTOpticalTen & \HevTestFViTOpticalTen \\
-ViT optical & 25\% & \HevDevFViTOpticalTwentyFive & \HevThrViTOpticalTwentyFive & \HevEpochViTOpticalTwentyFive & \HevTestFViTOpticalTwentyFive \\
-ViT optical & 50\% & \HevDevFViTOpticalFifty & \HevThrViTOpticalFifty & \HevEpochViTOpticalFifty & \HevTestFViTOpticalFifty \\
-ViT optical & 100\% & \HevDevFViTOpticalHundred & \HevThrViTOpticalHundred & \HevEpochViTOpticalHundred & \HevTestFViTOpticalHundred \\
-ViT SAR & 10\% & \HevDevFViTSarTen & \HevThrViTSarTen & \HevEpochViTSarTen & \HevTestFViTSarTen \\
-ViT SAR & 25\% & \HevDevFViTSarTwentyFive & \HevThrViTSarTwentyFive & \HevEpochViTSarTwentyFive & \HevTestFViTSarTwentyFive \\
-ViT SAR & 50\% & \HevDevFViTSarFifty & \HevThrViTSarFifty & \HevEpochViTSarFifty & \HevTestFViTSarFifty \\
-ViT SAR & 100\% & \HevDevFViTSarHundred & \HevThrViTSarHundred & \HevEpochViTSarHundred & \HevTestFViTSarHundred \\
-ViT ImageNet & 10\% & \HevDevFViTImageNetTen & \HevThrViTImageNetTen & \HevEpochViTImageNetTen & \HevTestFViTImageNetTen \\
-ViT ImageNet & 25\% & \HevDevFViTImageNetTwentyFive & \HevThrViTImageNetTwentyFive & \HevEpochViTImageNetTwentyFive & \HevTestFViTImageNetTwentyFive \\
-ViT ImageNet & 50\% & \HevDevFViTImageNetFifty & \HevThrViTImageNetFifty & \HevEpochViTImageNetFifty & \HevTestFViTImageNetFifty \\
-ViT ImageNet & 100\% & \HevDevFViTImageNetHundred & \HevThrViTImageNetHundred & \HevEpochViTImageNetHundred & \HevTestFViTImageNetHundred \\
+ViT random & 10\% & \HevDevFViTRandomTen & \HevThrViTRandomTen & \HevEpochViTRandomTen & \HevEpochsRunViTRandomTen & \HevHoursViTRandomTen & \HevTestFViTRandomTen \\
+ViT random & 25\% & \HevDevFViTRandomTwentyFive & \HevThrViTRandomTwentyFive & \HevEpochViTRandomTwentyFive & \HevEpochsRunViTRandomTwentyFive & \HevHoursViTRandomTwentyFive & \HevTestFViTRandomTwentyFive \\
+ViT random & 50\% & \HevDevFViTRandomFifty & \HevThrViTRandomFifty & \HevEpochViTRandomFifty & \HevEpochsRunViTRandomFifty & \HevHoursViTRandomFifty & \HevTestFViTRandomFifty \\
+ViT random & 100\% & \HevDevFViTRandomHundred & \HevThrViTRandomHundred & \HevEpochViTRandomHundred & \HevEpochsRunViTRandomHundred & \HevHoursViTRandomHundred & \HevTestFViTRandomHundred \\
+ViT optical & 10\% & \HevDevFViTOpticalTen & \HevThrViTOpticalTen & \HevEpochViTOpticalTen & \HevEpochsRunViTOpticalTen & \HevHoursViTOpticalTen & \HevTestFViTOpticalTen \\
+ViT optical & 25\% & \HevDevFViTOpticalTwentyFive & \HevThrViTOpticalTwentyFive & \HevEpochViTOpticalTwentyFive & \HevEpochsRunViTOpticalTwentyFive & \HevHoursViTOpticalTwentyFive & \HevTestFViTOpticalTwentyFive \\
+ViT optical & 50\% & \HevDevFViTOpticalFifty & \HevThrViTOpticalFifty & \HevEpochViTOpticalFifty & \HevEpochsRunViTOpticalFifty & \HevHoursViTOpticalFifty & \HevTestFViTOpticalFifty \\
+ViT optical & 100\% & \HevDevFViTOpticalHundred & \HevThrViTOpticalHundred & \HevEpochViTOpticalHundred & \HevEpochsRunViTOpticalHundred & \HevHoursViTOpticalHundred & \HevTestFViTOpticalHundred \\
+ViT SAR & 10\% & \HevDevFViTSarTen & \HevThrViTSarTen & \HevEpochViTSarTen & \HevEpochsRunViTSarTen & \HevHoursViTSarTen & \HevTestFViTSarTen \\
+ViT SAR & 25\% & \HevDevFViTSarTwentyFive & \HevThrViTSarTwentyFive & \HevEpochViTSarTwentyFive & \HevEpochsRunViTSarTwentyFive & \HevHoursViTSarTwentyFive & \HevTestFViTSarTwentyFive \\
+ViT SAR & 50\% & \HevDevFViTSarFifty & \HevThrViTSarFifty & \HevEpochViTSarFifty & \HevEpochsRunViTSarFifty & \HevHoursViTSarFifty & \HevTestFViTSarFifty \\
+ViT SAR & 100\% & \HevDevFViTSarHundred & \HevThrViTSarHundred & \HevEpochViTSarHundred & \HevEpochsRunViTSarHundred & \HevHoursViTSarHundred & \HevTestFViTSarHundred \\
+ViT ImageNet & 10\% & \HevDevFViTImageNetTen & \HevThrViTImageNetTen & \HevEpochViTImageNetTen & \HevEpochsRunViTImageNetTen & \HevHoursViTImageNetTen & \HevTestFViTImageNetTen \\
+ViT ImageNet & 25\% & \HevDevFViTImageNetTwentyFive & \HevThrViTImageNetTwentyFive & \HevEpochViTImageNetTwentyFive & \HevEpochsRunViTImageNetTwentyFive & \HevHoursViTImageNetTwentyFive & \HevTestFViTImageNetTwentyFive \\
+ViT ImageNet & 50\% & \HevDevFViTImageNetFifty & \HevThrViTImageNetFifty & \HevEpochViTImageNetFifty & \HevEpochsRunViTImageNetFifty & \HevHoursViTImageNetFifty & \HevTestFViTImageNetFifty \\
+ViT ImageNet & 100\% & \HevDevFViTImageNetHundred & \HevThrViTImageNetHundred & \HevEpochViTImageNetHundred & \HevEpochsRunViTImageNetHundred & \HevHoursViTImageNetHundred & \HevTestFViTImageNetHundred \\
 \midrule
-CNN random & 10\% & \HevDevFCNNRandomTen & \HevThrCNNRandomTen & \HevEpochCNNRandomTen & \HevTestFCNNRandomTen \\
-CNN random & 25\% & \HevDevFCNNRandomTwentyFive & \HevThrCNNRandomTwentyFive & \HevEpochCNNRandomTwentyFive & \HevTestFCNNRandomTwentyFive \\
-CNN random & 50\% & \HevDevFCNNRandomFifty & \HevThrCNNRandomFifty & \HevEpochCNNRandomFifty & \HevTestFCNNRandomFifty \\
-CNN random & 100\% & \HevDevFCNNRandomHundred & \HevThrCNNRandomHundred & \HevEpochCNNRandomHundred & \HevTestFCNNRandomHundred \\
-CNN optical & 10\% & \HevDevFCNNOpticalTen & \HevThrCNNOpticalTen & \HevEpochCNNOpticalTen & \HevTestFCNNOpticalTen \\
-CNN optical & 25\% & \HevDevFCNNOpticalTwentyFive & \HevThrCNNOpticalTwentyFive & \HevEpochCNNOpticalTwentyFive & \HevTestFCNNOpticalTwentyFive \\
-CNN optical & 50\% & \HevDevFCNNOpticalFifty & \HevThrCNNOpticalFifty & \HevEpochCNNOpticalFifty & \HevTestFCNNOpticalFifty \\
-CNN optical & 100\% & \HevDevFCNNOpticalHundred & \HevThrCNNOpticalHundred & \HevEpochCNNOpticalHundred & \HevTestFCNNOpticalHundred \\
-CNN SAR & 10\% & \HevDevFCNNSarTen & \HevThrCNNSarTen & \HevEpochCNNSarTen & \HevTestFCNNSarTen \\
-CNN SAR & 25\% & \HevDevFCNNSarTwentyFive & \HevThrCNNSarTwentyFive & \HevEpochCNNSarTwentyFive & \HevTestFCNNSarTwentyFive \\
-CNN SAR & 50\% & \HevDevFCNNSarFifty & \HevThrCNNSarFifty & \HevEpochCNNSarFifty & \HevTestFCNNSarFifty \\
-CNN SAR & 100\% & \HevDevFCNNSarHundred & \HevThrCNNSarHundred & \HevEpochCNNSarHundred & \HevTestFCNNSarHundred \\
-CNN ImageNet & 10\% & \HevDevFCNNImageNetTen & \HevThrCNNImageNetTen & \HevEpochCNNImageNetTen & \HevTestFCNNImageNetTen \\
-CNN ImageNet & 25\% & \HevDevFCNNImageNetTwentyFive & \HevThrCNNImageNetTwentyFive & \HevEpochCNNImageNetTwentyFive & \HevTestFCNNImageNetTwentyFive \\
-CNN ImageNet & 50\% & \HevDevFCNNImageNetFifty & \HevThrCNNImageNetFifty & \HevEpochCNNImageNetFifty & \HevTestFCNNImageNetFifty \\
-CNN ImageNet & 100\% & \HevDevFCNNImageNetHundred & \HevThrCNNImageNetHundred & \HevEpochCNNImageNetHundred & \HevTestFCNNImageNetHundred \\
+CNN random & 10\% & \HevDevFCNNRandomTen & \HevThrCNNRandomTen & \HevEpochCNNRandomTen & \HevEpochsRunCNNRandomTen & \HevHoursCNNRandomTen & \HevTestFCNNRandomTen \\
+CNN random & 25\% & \HevDevFCNNRandomTwentyFive & \HevThrCNNRandomTwentyFive & \HevEpochCNNRandomTwentyFive & \HevEpochsRunCNNRandomTwentyFive & \HevHoursCNNRandomTwentyFive & \HevTestFCNNRandomTwentyFive \\
+CNN random & 50\% & \HevDevFCNNRandomFifty & \HevThrCNNRandomFifty & \HevEpochCNNRandomFifty & \HevEpochsRunCNNRandomFifty & \HevHoursCNNRandomFifty & \HevTestFCNNRandomFifty \\
+CNN random & 100\% & \HevDevFCNNRandomHundred & \HevThrCNNRandomHundred & \HevEpochCNNRandomHundred & \HevEpochsRunCNNRandomHundred & \HevHoursCNNRandomHundred & \HevTestFCNNRandomHundred \\
+CNN optical & 10\% & \HevDevFCNNOpticalTen & \HevThrCNNOpticalTen & \HevEpochCNNOpticalTen & \HevEpochsRunCNNOpticalTen & \HevHoursCNNOpticalTen & \HevTestFCNNOpticalTen \\
+CNN optical & 25\% & \HevDevFCNNOpticalTwentyFive & \HevThrCNNOpticalTwentyFive & \HevEpochCNNOpticalTwentyFive & \HevEpochsRunCNNOpticalTwentyFive & \HevHoursCNNOpticalTwentyFive & \HevTestFCNNOpticalTwentyFive \\
+CNN optical & 50\% & \HevDevFCNNOpticalFifty & \HevThrCNNOpticalFifty & \HevEpochCNNOpticalFifty & \HevEpochsRunCNNOpticalFifty & \HevHoursCNNOpticalFifty & \HevTestFCNNOpticalFifty \\
+CNN optical & 100\% & \HevDevFCNNOpticalHundred & \HevThrCNNOpticalHundred & \HevEpochCNNOpticalHundred & \HevEpochsRunCNNOpticalHundred & \HevHoursCNNOpticalHundred & \HevTestFCNNOpticalHundred \\
+CNN SAR & 10\% & \HevDevFCNNSarTen & \HevThrCNNSarTen & \HevEpochCNNSarTen & \HevEpochsRunCNNSarTen & \HevHoursCNNSarTen & \HevTestFCNNSarTen \\
+CNN SAR & 25\% & \HevDevFCNNSarTwentyFive & \HevThrCNNSarTwentyFive & \HevEpochCNNSarTwentyFive & \HevEpochsRunCNNSarTwentyFive & \HevHoursCNNSarTwentyFive & \HevTestFCNNSarTwentyFive \\
+CNN SAR & 50\% & \HevDevFCNNSarFifty & \HevThrCNNSarFifty & \HevEpochCNNSarFifty & \HevEpochsRunCNNSarFifty & \HevHoursCNNSarFifty & \HevTestFCNNSarFifty \\
+CNN SAR & 100\% & \HevDevFCNNSarHundred & \HevThrCNNSarHundred & \HevEpochCNNSarHundred & \HevEpochsRunCNNSarHundred & \HevHoursCNNSarHundred & \HevTestFCNNSarHundred \\
+CNN ImageNet & 10\% & \HevDevFCNNImageNetTen & \HevThrCNNImageNetTen & \HevEpochCNNImageNetTen & \HevEpochsRunCNNImageNetTen & \HevHoursCNNImageNetTen & \HevTestFCNNImageNetTen \\
+CNN ImageNet & 25\% & \HevDevFCNNImageNetTwentyFive & \HevThrCNNImageNetTwentyFive & \HevEpochCNNImageNetTwentyFive & \HevEpochsRunCNNImageNetTwentyFive & \HevHoursCNNImageNetTwentyFive & \HevTestFCNNImageNetTwentyFive \\
+CNN ImageNet & 50\% & \HevDevFCNNImageNetFifty & \HevThrCNNImageNetFifty & \HevEpochCNNImageNetFifty & \HevEpochsRunCNNImageNetFifty & \HevHoursCNNImageNetFifty & \HevTestFCNNImageNetFifty \\
+CNN ImageNet & 100\% & \HevDevFCNNImageNetHundred & \HevThrCNNImageNetHundred & \HevEpochCNNImageNetHundred & \HevEpochsRunCNNImageNetHundred & \HevHoursCNNImageNetHundred & \HevTestFCNNImageNetHundred \\
 \bottomrule
 \end{tabular}
 \end{table}
 
+The campaign's sanitized operator status snapshot (captured before the
+final cells closed) remains committed beside the evidence tree as a
+historical record of execution state at the deadline.
+
 \clearpage
-\section{Figures}
+\section{Study Data and Figures}
 \label{app:figures}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\textwidth]{static/scene_context.png}\\[4pt]
+\includegraphics[width=0.9\textwidth]{static/scene_map.pdf}
+\caption{Study data. Top: scale context for one study scene, a full
+Sentinel-1 ground-range-detected scene and the single $800\times800$ chip
+($8\times8$\,km) marked by the red box; vessels occupy only a few pixels at
+this scale. Bottom: scene centroids of the frozen splits, computed from the
+label records. Sentinel-1 revisits place held-out scenes near training
+scenes, which is why Sect.~\ref{sec:data} reports in-region
+generalization.}
+\label{fig:study-data}
+\end{figure}
 
 \input{figures/study_design}
 \input{figures/detector_pipeline}
@@ -73,9 +89,9 @@ CNN ImageNet & 100\% & \HevDevFCNNImageNetHundred & \HevThrCNNImageNetHundred & 
 \includegraphics[width=\textwidth]{heldout_training_dynamics.pdf}
 \caption{Development-F1 evaluation history for the smallest (12 scenes,
 solid) and largest (111 scenes, dotted) budgets, with each cell's selected
-checkpoint marked. Pretrained CNN arms separate from the random floor within
-the first evaluations; several strong arms peak early and are retained by
-the checkpoint binding.}
+checkpoint marked. Pretrained CNN arms separate from the random floor
+within the first evaluations; several strong arms peak early, and the
+checkpoint binding retains those early peaks.}
 \label{fig:training-dynamics}
 \end{figure}
 
@@ -90,28 +106,85 @@ so the modality effect is architecture-dependent.}
 \label{fig:transfer-gains}
 \end{figure}
 
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{heldout_operating_points.pdf}
+\caption{Operating points for all 32 cells (filled circles: ViT; open
+squares: CNN; colors identify roles as in
+Fig.~\ref{fig:label-efficiency}). Left: precision--recall positions with
+iso-F1 contours. Center: swept threshold by initialization role. Right:
+development F1 against measured GPU-hours per cell.}
+\label{fig:operating-points}
+\end{figure}
+
 \clearpage
+\section{Extended Analysis}
+\label{app:analysis}
+
+\paragraph{Operating thresholds and calibration.}
+Each cell selects its operating point on the training-time development
+subset, and the cohort binds that point to the selected checkpoint.
+Figure~\ref{fig:operating-points} shows all 32 of them. The recorded
+thresholds vary widely (center panel): from \HevThrMinViT{} to
+\HevThrMaxViT{} across the ViT cells and from \HevThrMinCNN{} to
+\HevThrMaxCNN{} across the CNN cells. The spread confirms that a single
+shared threshold would misrepresent most arms and that the per-cell sweep
+does real calibration work. At the bound operating point, precision exceeds
+recall in \HevCellsPrecOverRecall{} of the 32 cells (left panel). The
+protocol also defines a calibration-transfer diagnostic (the bound
+threshold against an oracle test-optimal threshold); it becomes available
+only when the test matrix runs.
+
+\paragraph{Training dynamics and cost.}
+Figure~\ref{fig:training-dynamics} traces the development-F1 evaluation
+history for the smallest and largest budgets. The pretrained CNN arms open
+a large gap in the first evaluations and hold it, while the CNN random
+floor climbs for the full schedule; the ViT arms bunch together early.
+Early stopping (patience of four development evaluations) ended
+\HevCellsEarlyStopped{} of the 32 cells before the 50-epoch cap. The median
+best-checkpoint epoch is \HevMedianBestEpochViT{} for the ViT track and
+\HevMedianBestEpochCNN{} for the CNN track. Fine-tuning cost differs
+between the families: a core cell averaged \HevMeanCellHoursViT{} GPU-hours
+in the ViT track and \HevMeanCellHoursCNN{} GPU-hours in the CNN track,
+with the full matrix consuming \HevGPUHours{} GPU-hours. Within each track,
+cost scales with the label fraction, so the scarce-label cells that carry
+the study's headline contrasts are also its cheapest (right panel of
+Fig.~\ref{fig:operating-points}).
+
+\paragraph{Qualitative example.}
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{static/heatmap_overlay.png}
+\caption{A vessel-and-wake target and the shared detector's heatmap
+response, produced during development-phase probe runs on this study's
+frozen splits (peak score 0.22). Illustrative only; not a scored sample.}
+\label{fig:qualitative}
+\end{figure}
+Figure~\ref{fig:qualitative} shows a representative detector response on a
+development scene: a heatmap peak localized on a clear vessel-and-wake
+target at a raw score of 0.22. Peaks this far below 1.0 on clear targets
+explain two protocol choices, the permissive 0.05 candidate floor and the
+per-cell threshold sweep; a fixed high threshold would silently drop true
+detections. The panel illustrates a mechanism, not a scored sample. The
+registered false-positive taxonomy review is reserved for the held-out
+stage, and we interpret the panel alongside, not above, the quantitative
+findings in Sect.~\ref{sec:results}.
+
 \section{Reproducibility and Audit Record}
 
 The evidence tree records the frozen training cohort, each cell's
-hash-bound completion marker, its full training curve, and a sanitized
-runtime receipt (H100 hardware class, source SHA, strict-FP32 backend
-state). The generator validates marker-to-cohort hashes, metric
-consistency, and curve agreement before it writes a manuscript artifact.
-Checkpoint bytes stay outside the repository; we publish their SHA-256
-bindings for archive verification. The submission excludes imagery, labels,
-weights, checkpoints, run trees, credentials, and private paths.
+hash-bound completion marker, its full training curve, a sanitized runtime
+receipt (H100 hardware class, source SHA, strict-FP32 backend state), and
+the ground-truth audit receipt that binds every support count in
+Table~\ref{tab:data-protocol} to the frozen split file. The generator
+validates marker-to-cohort hashes, metric consistency, and curve agreement
+before it writes a manuscript artifact. Checkpoint bytes stay outside the
+repository; we publish their SHA-256 bindings for archive verification.
+The submission excludes imagery, labels, weights, checkpoints, run trees,
+credentials, and private paths.
 
 The detector uses 512-pixel crops, a stride-4 heatmap, Gaussian standard
 deviation two output pixels, a candidate floor of 0.05, and 120\,m distance
 NMS. Training uses at most 50 epochs with development evaluation every five
 epochs. The project fixes seed 0 and reports point estimates without
 uncertainty bands.
-
-\section{Qualitative-Evidence Boundary}
-
-The committed evidence contains metrics, curves, and receipts rather than
-exported scene overlays. We omit qualitative examples instead of
-substituting engineering probes or opening sealed imagery. After the
-held-out results land through the fail-closed path, we will sample
-successes and errors from the pre-registered held-out outputs.
