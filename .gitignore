@@ -1,4 +1,4 @@
-# Never commit data, runs, or heavy artifacts (DEVPLAN ground rule 11 / AGENTS.md).
+# Never commit data, runs, or heavy artifacts (study ground rule).
 # data/* (not data/) so the three frozen split/stats artifacts CAN be
 # committed once they exist — everything else under data/ stays ignored.
 data/*
@@ -37,3 +37,16 @@ xview3-jwt.json
 *.jwt.json
 *.pem
 *.key
+
+# Local working files that must never ride into a commit: presentation decks,
+# drafts, archives, and scratch figures at the repository root or under docs/.
+# Committed report artifacts live in docs/class_report/ and docs/results/.
+/*.pdf
+/*.pptx
+/*.zip
+/docs/*.pdf
+/docs/*.png
+/docs/*.docx
+/docs/*.tex
+/docs/*.pptx
+/docs/figures/

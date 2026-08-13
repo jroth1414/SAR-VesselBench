@@ -1,4 +1,4 @@
-"""Freeze guard for configs/detector.yaml (DEVPLAN do-not-touch manifest).
+"""Freeze guard for configs/detector.yaml (do-not-touch artifact).
 
 Originally pinned at the sprint-3-detector merge. Re-pinned 2026-07-26 on
 ``sprint-7c-fp32-grid`` after the owner approved one shared ``32-true``

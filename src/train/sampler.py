@@ -1,4 +1,4 @@
-"""Foreground-balanced chip sampling (DEVPLAN P3.4).
+"""Foreground-balanced chip sampling.
 
 Epoch-level weighted sampler so ~50% of sampled chips contain at least one
 HIGH/MEDIUM vessel — most open-ocean chips are empty, and an unweighted

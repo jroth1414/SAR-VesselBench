@@ -1,4 +1,4 @@
-"""Freeze guard for data/stats.json (DEVPLAN do-not-touch manifest).
+"""Freeze guard for data/stats.json (do-not-touch artifact).
 
 Pinned 2026-07-05 after the study-set chipping run completed (150/150 scenes,
 zero failures): global per-polarization mean/std computed ONCE over the

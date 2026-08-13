@@ -1,4 +1,4 @@
-"""Tiled whole-scene inference (DEVPLAN P2.2 unit contract + P3.5 dev eval).
+"""Tiled whole-scene inference (shared by dev evaluation and held-out scoring).
 
 This module is the SINGLE site performing
 ``heatmap-px -> chip-px (x4) -> meters (x10) -> scene-meters``:

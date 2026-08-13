@@ -1,4 +1,4 @@
-"""Guard test (DEVPLAN §1b guard 1): no scene_id in more than one split.
+"""Guard test: no scene_id in more than one split.
 
 Runs against the frozen ``data/splits.json`` once it exists; skips cleanly
 before then (CI is green-with-skips early in the project — see ci.yml).

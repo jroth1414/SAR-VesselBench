@@ -1,4 +1,4 @@
-"""The shared LightningModule every arm trains through (DEVPLAN P3.5).
+"""The shared LightningModule every arm trains through.
 
 One module: backbone (selected by init name) + shared heatmap head +
 penalty-reduced focal loss + AdamW with layer-wise lr decay and a warmup +
@@ -65,7 +65,7 @@ class HeatmapLitModule(L.LightningModule):
             raise RuntimeError(
                 f"non-finite {stage} loss at epoch {self.current_epoch} — "
                 "under the shared precision recipe; stop and diagnose "
-                "(DEVPLAN risk register)"
+                "(known instability class; never ignore)"
             )
         self.log(f"{stage}_loss", loss, prog_bar=stage == "train", sync_dist=stage != "train")
         return loss

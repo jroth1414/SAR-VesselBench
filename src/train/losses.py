@@ -1,4 +1,4 @@
-"""Penalty-reduced focal loss + Gaussian heatmap targets (DEVPLAN P3.4).
+"""Penalty-reduced focal loss + Gaussian heatmap targets.
 
 CenterNet (*Objects as Points*) recipe: each vessel stamps a Gaussian blob
 (sigma = 2 output px) on the stride-4 target map; the loss is the
@@ -77,7 +77,7 @@ def penalty_reduced_focal_loss(
     by the number of positives (min 1). ``mask`` zeroes ignored pixels.
     """
 
-    # Logit/log math must stay fp32 (DEVPLAN node-adaptation rule 2): in fp16
+    # Logit/log math must stay fp32 (study precision rule): in fp16
     # the upper clamp bound 1 - 1e-6 rounds to exactly 1.0 (largest half below
     # 1.0 is 1 - 2^-11), so a saturated negative-pixel sigmoid (logit >~ 9)
     # slips through as 1.0 and log(1 - prob) = -inf. Measured: killed

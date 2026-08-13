@@ -1,4 +1,4 @@
-"""Shared fine-tune entrypoint for all eight arms (DEVPLAN P3.5).
+"""Shared fine-tune entrypoint for all eight arms.
 
 ``--init`` selects the loader (and implicitly the backbone family); head,
 loss, sampler, augmentation, decode, schedule, and seeds are identical across

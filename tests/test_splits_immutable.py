@@ -1,4 +1,4 @@
-"""Freeze guard for data/splits.json (DEVPLAN do-not-touch manifest).
+"""Freeze guard for data/splits.json (do-not-touch artifact).
 
 Pinned 2026-07-05 when the real study split was built and committed:
 150 stratified train-pool scenes (seed 0, label-centroid region bins x

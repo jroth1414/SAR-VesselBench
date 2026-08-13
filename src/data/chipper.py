@@ -1,4 +1,4 @@
-"""Scene -> 800x800 chips + label projection (DEVPLAN P1.3).
+"""Scene -> 800x800 chips + label projection.
 
 Reads the xView3 GRD per-scene GeoTIFFs (VH_dB, VV_dB) in windows and emits
 800x800 float16 chips with per-chip JSON label sidecars and a per-scene

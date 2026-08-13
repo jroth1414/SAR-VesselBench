@@ -3,10 +3,8 @@ TECTONIC ?= tectonic
 SNAPSHOT ?= results/h100/h100_campaign_snapshot.json
 GENERATED ?= docs/results/generated
 TRAIN_ARGS ?=
-REFERENCE ?=
-REFERENCE_ARGS ?=
 
-.PHONY: test guards data-check train-cell references results class-paper submission final-eval
+.PHONY: test guards data-check train-cell results class-paper submission final-eval
 
 test:
 	$(PYTHON) -m pytest -q
@@ -32,16 +30,6 @@ data-check:
 train-cell:
 	@test -n "$(TRAIN_ARGS)" || { echo "Set TRAIN_ARGS to one core-cell recipe" >&2; exit 2; }
 	$(PYTHON) -m src.runtime.train $(TRAIN_ARGS)
-
-# Independent R2/R3 references. Example:
-# make references REFERENCE=r2 REFERENCE_ARGS='score --config configs/data.yaml ...'
-references:
-	@case "$(REFERENCE)" in \
-		r2) module=src.references.yolo26_ref ;; \
-		r3) module=src.references.locateanything_zs ;; \
-		*) echo "Set REFERENCE to r2 or r3" >&2; exit 2 ;; \
-	esac; \
-	$(PYTHON) -m "$$module" $(REFERENCE_ARGS)
 
 results:
 	$(PYTHON) -m src.analysis.h100_results generate \

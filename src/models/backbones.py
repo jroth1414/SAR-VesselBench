@@ -1,4 +1,4 @@
-"""The two study backbones behind one feature interface (DEVPLAN P3.1).
+"""The two study backbones behind one feature interface.
 
 - ViT track (arms 1-4): timm ``vit_base_patch16_224``, ``in_chans=3``,
   learnable pos-embed resampled to the input grid (``dynamic_img_size``), so a

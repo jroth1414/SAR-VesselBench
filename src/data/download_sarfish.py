@@ -1,4 +1,4 @@
-"""xView3 GRD acquisition -> data/raw/xview3/GRD/<scene_id>/ (DEVPLAN P1.1).
+"""xView3 GRD acquisition -> data/raw/xview3/GRD/<scene_id>/.
 
 Two acquisition paths, both writing a revision-pinned ``SOURCE.note``:
 
@@ -16,7 +16,7 @@ Two acquisition paths, both writing a revision-pinned ``SOURCE.note``:
   GeoTIFFs this pipeline (and the plan's chipper) assume — and its labels are
   NOT on HF (they come from the DIU download-links page, auth + country
   restricted). Using SARFish would require an S1 preprocessing step and a
-  product-id -> scene-id mapping that DEVPLAN P1.1 does not specify. ***
+  product-id -> scene-id mapping that this project never specified. ***
 """
 
 from __future__ import annotations

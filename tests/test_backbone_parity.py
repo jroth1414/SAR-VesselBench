@@ -1,4 +1,4 @@
-"""Guard test (DEVPLAN §1b guard 2): within-track param parity + cross-track
+"""Guard test: within-track param parity + cross-track
 adapter output-geometry parity.
 
 Within each track the four arms must instantiate the byte-identical
@@ -41,7 +41,7 @@ def test_within_track_param_parity():
     assert len(set(cnn_counts.values())) == 1, f"CNN arms diverge: {cnn_counts}"
 
     # Cross-track sizes are close but not identical (~86M vs ~89M) —
-    # reported, never asserted equal (DEVPLAN §1b guard 2).
+    # reported, never asserted equal (parity guard).
     vit_params = next(iter(vit_counts.values()))
     cnn_params = next(iter(cnn_counts.values()))
     assert vit_params != cnn_params

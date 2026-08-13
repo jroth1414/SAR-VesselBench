@@ -1,6 +1,6 @@
-# The run matrix (DEVPLAN Section 12 manifest). Consumed by `make grid` /
-# scripts that enumerate cells; exp ids are ALWAYS {init_short}-f{frac}-s{seed}.
-# NOT a frozen artifact, but ids must match Section 12 verbatim.
+# The run matrix manifest, consumed by everything that enumerates cells;
+# exp ids are ALWAYS {init_short}-f{frac}-s{seed}.
+# NOT a frozen artifact, but ids must stay verbatim-stable.
 
 arms:
   # init name        short      track  role

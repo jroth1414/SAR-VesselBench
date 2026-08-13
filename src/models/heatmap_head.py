@@ -1,4 +1,4 @@
-"""Shared heatmap head + per-family adapter (DEVPLAN P3.3).
+"""Shared heatmap head + per-family adapter.
 
 One head class attaches to either backbone through a small adapter that
 upsamples the backbone feature map to the common stride-4 response map:
@@ -9,7 +9,7 @@ applies a 3x3 conv -> 1 channel (logits at train, sigmoid at inference).
 The adapter block-count is the ONLY architecture-conditional difference in
 the whole detector; the guard ``test_backbone_parity`` asserts both adapters
 emit the same (B, C, 128, 128) stride-4 geometry for a 512 input, so an
-adapter wired to the wrong stride fails CI (DEVPLAN §1b guard 2).
+adapter wired to the wrong stride fails CI (parity guard).
 """
 
 from __future__ import annotations

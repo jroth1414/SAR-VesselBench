@@ -38,8 +38,12 @@ available for a fully receipted reverse handback.
 
 Every core run uses one PyTorch Lightning path, fixed `[VH, VV, VH-VV]` input,
 the same CenterNet-style point detector, scene-disjoint nested subsets, and an
-effective batch of 16. Each process runs on one H100 under Lightning `32-true`.
-CUDA matmul TF32 and cuDNN TF32 remain disabled.
+effective batch of 16. The code is hardware-neutral: it runs on any single
+CUDA-capable GPU under Lightning `32-true`, with CUDA matmul TF32 and cuDNN
+TF32 disabled (vendor-generic PyTorch settings). The recorded campaign
+executed every cell on one NVIDIA H100 so that all published values share one
+hardware class; that uniformity is a property of the evidence, not a
+requirement of the code.
 
 CI protects the splits, backbone parity, checkpoint-loading contract, detector
 configuration, training statistics, and scorer hash.
@@ -79,9 +83,11 @@ python -m pytest -q
 ```
 
 The H100 lock records the campaign environment rather than a portable CPU
-installation recipe. Reproduce value-sensitive checkpoint and GPU tests in a
-Python 3.11/CUDA 12.6 environment that matches it. Downloaded checkpoints
-retain their upstream licenses; see `THIRD_PARTY_NOTICES.md`.
+installation recipe; training itself needs only a Python 3.11 environment
+with a CUDA build of PyTorch and one GPU with enough memory for batch 16.
+Reproduce value-sensitive checkpoint and GPU tests in a Python 3.11/CUDA
+environment that matches the lock as closely as practical. Downloaded
+checkpoints retain their upstream licenses; see `THIRD_PARTY_NOTICES.md`.
 
 ## Checkpoint sourcing
 

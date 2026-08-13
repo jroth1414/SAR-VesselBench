@@ -1,4 +1,4 @@
-"""Eight backbone initializations behind one enum (DEVPLAN P3.2).
+"""Eight backbone initializations behind one enum.
 
 Within a track all four loaders produce the IDENTICAL architecture; only the
 weights differ. Each loader prints matched/missing/unexpected key counts and
@@ -211,7 +211,7 @@ def _load_mapped(
         raise RuntimeError(
             f"{name}: {len(missing)} backbone keys not covered by the "
             f"checkpoint (first: {missing[:5]}) — refusing a partial load "
-            "(DEVPLAN §1b guard 3: no silent random weights)"
+            "(loading guard: no silent random weights)"
         )
     if result.unexpected_keys:
         raise RuntimeError(f"{name}: unexpected keys slipped through: {result.unexpected_keys[:5]}")

@@ -1,4 +1,4 @@
-"""Guard test (DEVPLAN §1b guard 3): downloaded backbones load value-sensitively.
+"""Guard test: downloaded backbones load value-sensitively.
 
 Two halves:
 

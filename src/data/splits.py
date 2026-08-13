@@ -1,4 +1,4 @@
-"""Scene-level split builder + frozen data artifacts (DEVPLAN P1.5).
+"""Scene-level split builder + frozen data artifacts.
 
 Owns three frozen-at-sprint-1-merge artifacts:
 
@@ -344,7 +344,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if splits_path.exists() and not args.allow_overwrite:
             raise SystemExit(
                 f"{splits_path} already exists and freezes at sprint-1 merge; "
-                "pass --allow-overwrite only if it is not yet frozen (see DEVPLAN)."
+                "pass --allow-overwrite only if it is not yet frozen."
             )
 
         if args.from_labels:

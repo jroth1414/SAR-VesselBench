@@ -1,4 +1,4 @@
-"""Train-time augmentation on dB chips (DEVPLAN P3.4).
+"""Train-time augmentation on dB chips.
 
 Random 512 crop from the 800 chip (vessel-biased: 70% of crops centered
 within 128 px of a vessel when one exists), flips, 90-degree rotations, and
