@@ -39,21 +39,22 @@ Developments with PyTorch \,\textbullet\, August 2026\par}
 \suppressfloats[t]
 \vspace{0.4em}
 \begin{abstract}
-Detecting dark vessels---vessels lacking matched Automatic Identification
-System reports---in spaceborne synthetic aperture radar (SAR) supports
-maritime safety and enforcement, but human-verified examples are scarce. We
-study whether source-domain pretraining improves label efficiency on
+Dark vessels operate without a matched Automatic Identification System
+report. Spaceborne synthetic aperture radar (SAR) can find them through
+cloud and darkness, but human-verified examples are scarce. We test whether
+source-domain pretraining reduces the labeled scenes a detector needs on
 xView3-SAR, and whether the effect persists across architectures. Two
-size-matched tracks (ViT-B/16 and ConvNeXt-V2-Base) each compare random
-initialization with released ImageNet, optical remote-sensing, and SAR
-checkpoints under one detector, optimizer, schedule, scene-level split, and
-seed. Fine-tuning nested 10--100\% fractions of 111 training scenes yields 32
-controlled cells, all completed on H100 GPUs in strict FP32 and re-derived at
-build time from hash-bound evidence. Transfer helps most under label
-scarcity, but the SAR-versus-optical contrast is architecture-dependent: SAR
-pretraining dominates optical in the CNN track at every budget while the ViT
-track prefers the optical checkpoint below half data, and generic ImageNet
-initialization leads both tracks at full data. Reported values are corrected
+size-matched tracks use ViT-B/16 and ConvNeXt-V2-Base backbones. Within
+each track, four arms compare random initialization with released ImageNet,
+optical remote-sensing, and SAR checkpoints under one detector, optimizer,
+schedule, scene-level split, and seed. We fine-tuned nested 10--100\%
+fractions of 111 training scenes, which gives 32 controlled cells. All 32
+cells completed on H100 GPUs in strict FP32, and the build re-derives every
+published value from hash-bound evidence. Transfer helps most when labels
+are scarce. The SAR-versus-optical contrast depends on the architecture:
+SAR pretraining beats optical in the CNN track at every budget, but optical
+leads in the ViT track below half data. Generic ImageNet initialization
+leads both tracks at full data. Reported values are corrected
 development-selection F1\ifHevTestComplete{} alongside once-scored held-out
 test results\fi.\ifHevFinalEval\else{} The 50-scene human-verified
 evaluation remains sealed for follow-on work.\fi

@@ -1,19 +1,18 @@
 \section{Conclusion and Future Work}
 
-We built a controlled two-track experiment for measuring transfer under four
-nested label budgets: one detector, one corrected label contract, one
+We built a controlled two-track experiment for measuring transfer under
+four nested label budgets: one detector, one corrected label contract, one
 strict-FP32 recipe, and a fail-closed path from training bytes to every
 published number. The completed 32-cell grid supports three conclusions.
-First, transfer concentrates its value under scarcity---at 12 scenes every
+First, transfer concentrates its value under scarcity. At 12 scenes, every
 pretrained arm except CNN-optical clears its random floor, and the best
-12-scene cells approach what 111 scenes buy a randomly initialized
-detector. Second, matching the sensing modality is not uniformly the right
-scarce-label choice: SAR pretraining dominates optical in the CNN track at
-every budget, while the ViT track prefers the optical checkpoint below half
-data, so the contrast's sign is architecture-dependent. Third, generic
-ImageNet initialization wins both tracks at full data. These remain
-corrected development-selection results from one seed and support no
-variance claim.
+12-scene cells approach the full-data random floors. Second, matching the
+sensing modality is not always the right scarce-label choice. SAR
+pretraining beats optical in the CNN track at every budget, but optical
+leads in the ViT track below half data, so the contrast's sign depends on
+the architecture. Third, generic ImageNet initialization wins both tracks
+at full data. These remain corrected development-selection results from one
+seed and support no variance claim.
 
 \ifHevTestComplete
 The once-scored 16-scene test column bounds development-selection optimism

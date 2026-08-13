@@ -3,13 +3,12 @@
 
 Table~\ref{tab:inventory} lists every cell with its development-selection
 F1, checkpoint-bound operating threshold, epoch of the selected checkpoint,
-and held-out test F1 where admitted. All values are re-derived at build time
-from the committed cohort, markers, and training curves; dashes mean the
+and held-out test F1 where admitted. The build re-derives all values from
+the committed cohort, markers, and training curves. Dashes mean the
 fail-closed generator admitted no value, never zero performance. The
 recorded thresholds range widely (0.587--0.929 in the ViT track,
-0.716--0.910 in the CNN track), confirming that a single shared threshold
-would misrepresent most arms and that the per-cell sweep does real
-calibration work.
+0.716--0.910 in the CNN track), so one shared threshold would misrepresent
+most arms.
 
 \begin{table}[h]
 \centering
@@ -98,10 +97,10 @@ The evidence tree records the frozen training cohort, each cell's
 hash-bound completion marker, its full training curve, and a sanitized
 runtime receipt (H100 hardware class, source SHA, strict-FP32 backend
 state). The generator validates marker-to-cohort hashes, metric
-consistency, and curve agreement before writing a manuscript artifact.
-Checkpoint bytes stay outside the repository; their SHA-256 bindings are
-published for archive verification. The submission excludes imagery,
-labels, weights, checkpoints, run trees, credentials, and private paths.
+consistency, and curve agreement before it writes a manuscript artifact.
+Checkpoint bytes stay outside the repository; we publish their SHA-256
+bindings for archive verification. The submission excludes imagery, labels,
+weights, checkpoints, run trees, credentials, and private paths.
 
 The detector uses 512-pixel crops, a stride-4 heatmap, Gaussian standard
 deviation two output pixels, a candidate floor of 0.05, and 120\,m distance

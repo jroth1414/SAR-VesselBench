@@ -13,15 +13,15 @@ are expensive. The xView3-SAR benchmark makes the problem concrete with
 ground-range-detected imagery, georeferenced point annotations, and an
 evaluation protocol based on geographic matching~\cite{paolo2022xview3}.
 
-The scarcity of verified labels motivates transfer learning, but it is not
-clear which source helps most. Generic ImageNet pretraining supplies broad
+The scarcity of verified labels motivates transfer learning, but which
+source helps most is unknown. Generic ImageNet pretraining supplies broad
 visual features; optical remote-sensing pretraining adds overhead-scene
-statistics; SAR pretraining additionally shares the sensing modality. These
-alternatives also interact with architecture: vision transformers and
-convolutional networks encode different inductive biases, and released
-remote-sensing checkpoints are not available under one method-matched
-recipe. A comparison that changes architecture, optimization, detector, and
-pretraining source simultaneously cannot isolate the source-domain question.
+statistics; SAR pretraining also shares the sensing modality. These
+alternatives interact with architecture. Vision transformers and
+convolutional networks encode different inductive biases, and no released
+recipe matches the remote-sensing checkpoints method for method. A
+comparison that changes architecture, optimization, detector, and
+pretraining source at the same time cannot isolate the source effect.
 
 We study label efficiency through two architecture-matched tracks
 (Fig.~\ref{fig:study-design}, Appendix~\ref{app:figures}). Within each
@@ -40,12 +40,12 @@ three questions:
   generalize to held-out scenes and human-verified dark vessels?
 \end{enumerate}
 This report answers the first two questions with the completed 32-cell H100
-campaign, every value re-derived at build time from hash-bound
+campaign; the build re-derives every value from hash-bound
 evidence.\ifHevTestComplete{} The once-scored 16-scene test matrix addresses
 the held-out part of the third.\else{} The 16-scene test matrix and the
-sealed 50-scene human-verified evaluation address the third and are
-described in Sect.~\ref{sec:results}.\fi{} Our contribution is experimental
-control rather than a new method: an eight-arm two-track design in which
+sealed 50-scene human-verified evaluation address the third
+(Sect.~\ref{sec:results}).\fi{} Our contribution is experimental control
+rather than a new method. We provide an eight-arm two-track design in which
 initialization is the only within-track variable, one corrected evaluation
 contract with checkpoint-bound operating thresholds, and a fail-closed
 evidence path from training bytes to every published number.

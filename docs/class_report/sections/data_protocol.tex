@@ -4,45 +4,45 @@
 \paragraph{Study cohort.}
 We use xView3-SAR Sentinel-1 ground-range-detected scenes with VH and VV
 polarizations at 10\,m pixel spacing~\cite{paolo2022xview3}. Scene
-identifiers, not image chips, are the unit of partitioning. A frozen seed-0
-cohort contains 150 study scenes---111 train, 23 development, and 16
-test---stratified by coarse geographic region and shoreline presence; a
-separate set of 50 human-verified scenes is reserved for one sealed final
-evaluation. The four training budgets are exact nested sets of 12, 28, 56,
-and 111 scenes:
+identifiers define every split. A frozen seed-0 cohort contains 150 study
+scenes: 111 train, 23 development, and 16 test, stratified by coarse
+geographic region and shoreline presence. The protocol reserves a separate
+set of 50 human-verified scenes for one sealed final evaluation. The four
+training budgets are exact nested sets of 12, 28, 56, and 111 scenes:
 \begin{equation}
 S_{10} \subset S_{25} \subset S_{50} \subset S_{100}.
 \end{equation}
 Every arm sees the same scene set at a given budget, so a budget never
 changes which scenes one initialization sees relative to another. The
 preprocessing path converts each scene into a fixed three-channel
-decibel-domain tensor $[\mathrm{VH}, \mathrm{VV}, \mathrm{VH}-\mathrm{VV}]$,
-computes normalization statistics from training scenes only, and cuts
-overlapping 800-pixel chips from which optimization samples shared
-512-pixel crops.
+decibel-domain tensor $[\mathrm{VH}, \mathrm{VV}, \mathrm{VH}-\mathrm{VV}]$.
+It computes normalization statistics from training scenes only. It then cuts
+overlapping 800-pixel chips, and optimization samples shared 512-pixel
+crops from those chips.
 
 \paragraph{Ground-truth contract.}
 One target-semantics contract serves training and evaluation
-(Fig.~\ref{fig:gt-contract}, Appendix~\ref{app:figures}): a row is a
+(Fig.~\ref{fig:gt-contract}, Appendix~\ref{app:figures}). A row is a
 positive vessel point only when \texttt{is\_vessel} is true at HIGH or
-MEDIUM confidence; HIGH/MEDIUM non-vessels are background; LOW-confidence
-rows define ignore regions. Under this contract the fixed eight-scene
+MEDIUM confidence. HIGH/MEDIUM non-vessels are background. LOW-confidence
+rows define ignore regions. Under this contract, the fixed eight-scene
 training-time development subset contains 517 positives, 107 background
 non-vessels, and 118 ignores, and the 16-scene test split contains 1{,}165
 positives. These support counts are pre-registered integrity checks:
-evaluation stops if regenerated counts differ. Training never stages test or
-human-verified labels.
+evaluation stops if regenerated counts differ. Training never stages test
+or human-verified labels.
 
 \paragraph{Selection and scoring.}
 The frozen scorer greedily matches predictions to ground truth within
 200\,m and aggregates precision, recall, and F1 across scenes. Every five
-epochs, each run performs full-scene inference on the same eight development
-scenes and sweeps the score threshold that maximizes development F1; the
-best value is recorded with the retained checkpoint, and the protocol binds
-that complete operating point (epoch, threshold, and counts) to the SHA-256
-of the exact checkpoint. Held-out stages apply each stored threshold
-verbatim---first to the 16 test scenes and then, once, to the human-verified
-set; held-out annotations never retune a threshold or select a checkpoint.
-The frozen split is leakage-free but not geographically independent:
-Sentinel-1 revisits place held-out scenes near training scenes, so we
-describe absolute performance as in-region generalization.
+epochs, each run performs full-scene inference on the same eight
+development scenes and sweeps the score threshold that maximizes
+development F1. The run records the best value with the retained
+checkpoint. The protocol binds that complete operating point (epoch,
+threshold, and counts) to the SHA-256 of the exact checkpoint. Held-out
+stages apply each stored threshold verbatim, first to the 16 test scenes
+and then, once, to the human-verified set. Held-out annotations never
+retune a threshold or select a checkpoint. The frozen split is leakage-free
+but not geographically independent: Sentinel-1 revisits place held-out
+scenes near training scenes, so we describe absolute performance as
+in-region generalization.

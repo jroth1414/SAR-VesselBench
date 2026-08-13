@@ -2,9 +2,9 @@
 
 xView3 frames dark-vessel detection as point localization in Sentinel-1 SAR
 rather than box classification~\cite{paolo2022xview3}. A CenterNet-style
-heatmap fits the point annotations and distance metric without inventing box
-extents~\cite{zhou2019objects}; we use this established detector form to
-hold the task head fixed, and the detector is not presented as a
+heatmap fits the point annotations and distance metric without inventing
+box extents~\cite{zhou2019objects}. We use this established detector form
+to hold the task head fixed, and we do not present the detector as a
 contribution.
 
 ImageNet pretraining is the common baseline for visual transfer
@@ -15,12 +15,12 @@ supervised ImageNet-1K fine-tuning~\cite{woo2023convnextv2}. Remote-sensing
 pretraining may narrow the gap between source and target statistics: SatDINO
 applies DINO self-distillation to fMoW-RGB optical
 imagery~\cite{straka2025satdino}, and SARMAE applies masked autoencoding to
-a million-scale SAR corpus~\cite{liu2026sarmae}. Because these released ViT
-checkpoints differ in objective as well as sensing domain, their contrast is
-a best-available-checkpoint comparison rather than a pure modality
-intervention. The CNN track is tighter: its optical and SAR arms use
+a million-scale SAR corpus~\cite{liu2026sarmae}. These released ViT checkpoints differ in objective as well as sensing
+domain, so their contrast compares the best available checkpoints rather
+than modality alone. The CNN track is tighter. Its optical and SAR arms use
 BigEarthNet-v2 land-cover models trained with the same architecture,
-dataset family, and supervised task on Sentinel-2 and Sentinel-1 inputs,
-respectively~\cite{sumbul2019bigearthnet,clasen2025reben}---the study's
-cleanest modality contrast. Matched roles across the two tracks then test
-whether a within-track pattern survives a change of architecture family.
+dataset family, and supervised task on Sentinel-2 and Sentinel-1
+inputs~\cite{sumbul2019bigearthnet,clasen2025reben}. That pair is the
+study's cleanest modality contrast. Matched roles across the two tracks
+then test whether a within-track pattern survives a change of architecture
+family.
