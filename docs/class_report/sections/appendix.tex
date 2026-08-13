@@ -10,9 +10,8 @@ generator admitted no value, never zero performance.
 
 \begin{table}[h]
 \centering
-\caption{Per-cell evidence inventory (development-selection values; the
-test column is admitted only when all 32 immutable held-out results
-validate).}
+\caption{Per-cell evidence inventory for development selection. The test
+column is admitted only when all 32 immutable held-out results validate.}
 \label{tab:inventory}
 \scriptsize
 \setlength{\tabcolsep}{4pt}
@@ -72,7 +71,7 @@ historical record of execution state at the deadline.
 \includegraphics[width=0.9\textwidth]{static/scene_map.pdf}
 \caption{Study data. Top: scale context for one study scene, a full
 Sentinel-1 ground-range-detected scene and the single $800\times800$ chip
-($8\times8$\,km) marked by the red box; vessels occupy only a few pixels at
+($8\times8$\,km) marked by the red box. Vessels occupy only a few pixels at
 this scale. Bottom: scene centroids of the frozen splits, computed from the
 label records. Sentinel-1 revisits place held-out scenes near training
 scenes, which is why Sect.~\ref{sec:data} reports in-region
@@ -88,32 +87,33 @@ generalization.}
 \centering
 \includegraphics[width=\textwidth]{heldout_training_dynamics.pdf}
 \caption{Development-F1 evaluation history for the smallest (12 scenes,
-solid) and largest (111 scenes, dotted) budgets, with each cell's selected
-checkpoint marked. Pretrained CNN arms separate from the random floor
-within the first evaluations; several strong arms peak early, and the
-checkpoint binding retains those early peaks.}
+solid) and largest (111 scenes, dotted) budgets. A marker identifies each
+selected checkpoint. The SAR and ImageNet CNN arms separate from the random
+floor in the first evaluations. Several strong arms peak before the last
+evaluation, and checkpoint binding retains those peaks.}
 \label{fig:training-dynamics}
 \end{figure}
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=\textwidth]{heldout_transfer_gains.pdf}
-\caption{Left, center: transfer gain over the track-matched random floor
-(Eq.~\eqref{eq:gain}) at each budget; the optical CNN arm is at or below
+\caption{Left and center: transfer gain over the track-matched random floor
+(Eq.~\eqref{eq:gain}) at each budget. The optical CNN arm is at or below
 zero everywhere. Right: the SAR--optical contrast
-(Eq.~\eqref{eq:contrast}); its sign flips between tracks below half data,
-so the modality effect is architecture-dependent.}
+(Eq.~\eqref{eq:contrast}). Its sign flips between tracks below half data,
+so the modality effect depends on the architecture.}
 \label{fig:transfer-gains}
 \end{figure}
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=\textwidth]{heldout_operating_points.pdf}
-\caption{Operating points for all 32 cells (filled circles: ViT; open
-squares: CNN; colors identify roles as in
-Fig.~\ref{fig:label-efficiency}). Left: precision--recall positions with
-iso-F1 contours. Center: swept threshold by initialization role. Right:
-development F1 against measured GPU-hours per cell.}
+\caption{Operating points for all 32 cells. Filled circles show ViT, open
+squares show CNN, and colors identify roles as in
+Fig.~\ref{fig:label-efficiency}. The left panel shows precision--recall
+positions with iso-F1 contours. The center panel shows the swept threshold
+for each role. The right panel shows development F1 against measured
+GPU-hours per cell.}
 \label{fig:operating-points}
 \end{figure}
 
@@ -127,50 +127,44 @@ subset, and the cohort binds that point to the selected checkpoint.
 Figure~\ref{fig:operating-points} shows all 32 of them. The recorded
 thresholds vary widely (center panel): from \HevThrMinViT{} to
 \HevThrMaxViT{} across the ViT cells and from \HevThrMinCNN{} to
-\HevThrMaxCNN{} across the CNN cells. The spread confirms that a single
-shared threshold would misrepresent most arms and that the per-cell sweep
-does real calibration work. At the bound operating point, precision exceeds
-recall in \HevCellsPrecOverRecall{} of the 32 cells (left panel). The
-protocol also defines a calibration-transfer diagnostic (the bound
-threshold against an oracle test-optimal threshold); it becomes available
-only when the test matrix runs.
+\HevThrMaxCNN{} across the CNN cells. A single shared threshold would
+therefore change the operating point for most arms. At the bound operating
+point, precision exceeds recall in \HevCellsPrecOverRecall{} of the 32 cells
+(left panel).
 
 \paragraph{Training dynamics and cost.}
 Figure~\ref{fig:training-dynamics} traces the development-F1 evaluation
-history for the smallest and largest budgets. The pretrained CNN arms open
-a large gap in the first evaluations and hold it, while the CNN random
-floor climbs for the full schedule; the ViT arms bunch together early.
-Early stopping (patience of four development evaluations) ended
+history for the smallest and largest budgets. The SAR and ImageNet CNN arms
+separate from the random floor in the first evaluations. The optical CNN
+does not show the same gap, and the ViT arms begin closer together. Early
+stopping, with a patience of four development evaluations, ended
 \HevCellsEarlyStopped{} of the 32 cells before the 50-epoch cap. The median
 best-checkpoint epoch is \HevMedianBestEpochViT{} for the ViT track and
-\HevMedianBestEpochCNN{} for the CNN track. Fine-tuning cost differs
-between the families: a core cell averaged \HevMeanCellHoursViT{} GPU-hours
-in the ViT track and \HevMeanCellHoursCNN{} GPU-hours in the CNN track,
-with the full matrix consuming \HevGPUHours{} GPU-hours. Within each track,
-cost scales with the label fraction, so the scarce-label cells that carry
-the study's headline contrasts are also its cheapest (right panel of
-Fig.~\ref{fig:operating-points}).
+\HevMedianBestEpochCNN{} for the CNN track. Fine-tuning cost also differs
+between families. A ViT cell averaged \HevMeanCellHoursViT{} GPU-hours, and
+a CNN cell averaged \HevMeanCellHoursCNN{} GPU-hours. The full matrix used
+\HevGPUHours{} GPU-hours. Within each track, cost scales with the label
+fraction, so the scarce-label comparisons also require the least
+fine-tuning compute (Fig.~\ref{fig:operating-points}, right).
 
 \paragraph{Qualitative example.}
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.92\textwidth]{static/heatmap_overlay.png}
-\caption{A vessel-and-wake target and the shared detector's heatmap
-response, produced during development-phase probe runs on this study's
-frozen splits (peak score 0.22). Illustrative only; not a scored sample.}
+\caption{A vessel-and-wake target and the shared detector's heatmap response
+from a development-phase probe on this study's frozen splits (peak score
+0.22). This sample is illustrative and not scored.}
 \label{fig:qualitative}
 \end{figure}
-Figure~\ref{fig:qualitative} shows a representative detector response on a
-development scene: a heatmap peak localized on a clear vessel-and-wake
-target at a raw score of 0.22. Peaks this far below 1.0 on clear targets
-explain two protocol choices, the permissive 0.05 candidate floor and the
-per-cell threshold sweep; a fixed high threshold would silently drop true
-detections. The panel illustrates a mechanism, not a scored sample. The
-registered false-positive taxonomy review is reserved for the held-out
-stage, and we interpret the panel alongside, not above, the quantitative
-findings in Sect.~\ref{sec:results}.
+Figure~\ref{fig:qualitative} shows a detector response on a development
+scene. The heatmap places a 0.22 peak on a clear vessel-and-wake target. This
+example illustrates why candidate generation uses a 0.05 floor before the
+per-cell threshold sweep. A fixed high candidate threshold would drop this
+detection. The panel is illustrative and contributes no scored evidence to
+the findings in Sect.~\ref{sec:results}.
 
 \section{Reproducibility and Audit Record}
+\label{app:audit}
 
 The evidence tree records the frozen training cohort, each cell's
 hash-bound completion marker, its full training curve, a sanitized runtime
@@ -179,7 +173,7 @@ the ground-truth audit receipt that binds every support count in
 Table~\ref{tab:data-protocol} to the frozen split file. The generator
 validates marker-to-cohort hashes, metric consistency, and curve agreement
 before it writes a manuscript artifact. Checkpoint bytes stay outside the
-repository; we publish their SHA-256 bindings for archive verification.
+repository. We publish their SHA-256 bindings for archive verification.
 The submission excludes imagery, labels, weights, checkpoints, run trees,
 credentials, and private paths.
 

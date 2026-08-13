@@ -1,37 +1,40 @@
 \section{Conclusion and Future Work}
 
-We built a controlled two-track experiment for measuring transfer under
-four nested label budgets: one detector, one corrected label contract, one
-strict-FP32 recipe, and a fail-closed path from training bytes to every
-published number. The completed 32-cell grid supports three conclusions.
-First, transfer concentrates its value under scarcity. At 12 scenes, every
-pretrained arm except CNN-optical clears its random floor, and the best
-12-scene cells approach the full-data random floors. Second, matching the
-sensing modality is not always the right scarce-label choice. SAR
-pretraining beats optical in the CNN track at every budget, but optical
-leads in the ViT track below half data, so the contrast's sign depends on
-the architecture\ifHevTestComplete{} (the held-out test split confirms this
-sign at every budget)\fi. Third, generic ImageNet initialization wins both
-tracks in development selection at full data\ifHevTestComplete{}, though
-held-out scoring instead favors SAR in the ViT track\fi. These remain
-corrected development-selection results from one seed and support no
-variance claim.
+Five of the six pretrained checkpoints beat their random floors at 12
+scenes, but no source won across both backbones and both selection stages.
+CNN-SAR also leads CNN-optical at every budget. The ViT track gives a
+different scarce-label result: optical leads SAR at 10\% and 25\%, then SAR
+leads at the two larger budgets.\ifHevTestComplete{} The held-out test split
+preserves these SAR--optical rankings. At 111 scenes, development selection
+ranks ImageNet first in both tracks, while test scoring ranks SAR above
+ImageNet for ViT.\fi
 
 \ifHevTestComplete
-The once-scored 16-scene test column (mean change \HevTestMeanGap{} F1;
-Sect.~\ref{sec:results}) confirms the scarcity and SAR-versus-optical
-conclusions but reverses the full-data ImageNet-versus-SAR ranking in the
-ViT track: development selection alone would have missed that reversal.
+The failed monotonicity gate limits these conclusions. Two SAR test curves
+decline by more than 0.02 as the label budget grows, including a 50\%--100\%
+drop that development selection misses. The complete grid is therefore a
+set of descriptive seed-0 point estimates, not evidence that performance
+improves monotonically with more labels.
 \else
-The next step scores the frozen 16-scene test split under the held-out
-contract, which applies each cell's development-bound threshold verbatim.
+The frozen 16-scene test split remains the next held-out stage. It will use
+each cell's development-bound threshold without retuning.
 \fi
+
+The design adds further limits. Each cell uses one seed, checkpoint and
+threshold selection uses eight scenes, and the 16-scene test split measures
+in-region generalization. The ViT optical and SAR checkpoints also differ in
+objective and source corpus. The results support comparisons among these
+released checkpoints under one detector recipe. They do not identify a
+universal causal effect of pretraining domain.
+
 \ifHevFinalEval
-The once-only 50-scene human-verified evaluation completes the dark-vessel
-and near-shore analysis.
+The once-only 50-scene human-verified evaluation supplies dark-vessel recall
+and near-shore performance.
 \else
-The 50 human-verified scenes then support one sealed evaluation of
-dark-vessel recall and near-shore performance for follow-on work.
+The 50 human-verified scenes remain sealed. Their once-only evaluation is
+still required before the study can report dark-vessel recall and near-shore
+performance. Future experiments should add seeds, a geographically
+independent test cohort, and checkpoints with matched pretraining objectives.
 \fi
 
 \paragraph{Roles.} John Roth and Kyle Wagner jointly designed the study,

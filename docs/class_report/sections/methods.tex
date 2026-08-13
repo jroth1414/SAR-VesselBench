@@ -2,17 +2,18 @@
 \label{sec:methods}
 
 \paragraph{Two matched tracks, eight arms.}
-Table~\ref{tab:arms-short} lists the arms. Within each track, the
-architecture and parameter count stay fixed and only the initialization
-changes. Pretrained checkpoints transfer the encoder only, with source
-heads discarded. Random floors use the identical target architecture. End
-to end, the implemented detectors contain 89{,}996{,}801 (ViT) and
-93{,}988{,}865 (CNN) trainable parameters.
+Table~\ref{tab:arms-short} lists the eight arms. Architecture and parameter
+count stay fixed within each track, so only the initialization changes.
+We transfer encoder weights for pretrained arms and discard the source task
+heads. Random floors use the same target architectures. The complete
+detectors contain 89{,}996{,}801 trainable parameters for ViT and
+93{,}988{,}865 for
+CNN.
 
 \begin{table}[t]
 \centering
 \caption{Controlled initialization roles. All non-random entries are
-released, revision-pinned checkpoints; task heads are discarded.}
+released, revision-pinned checkpoints. We discard their source task heads.}
 \label{tab:arms-short}
 \small
 \setlength{\tabcolsep}{5pt}
@@ -31,27 +32,26 @@ ImageNet & supervised AugReg & FCMAE $+$ supervised \\
 \paragraph{Shared point detector.}
 Every arm predicts a stride-4 vessel-presence heatmap from the same
 three-channel input (Fig.~\ref{fig:detector}, Appendix~\ref{app:figures}).
-Gaussian targets with standard deviation two output pixels mark positives;
-LOW-confidence annotations define ignore neighborhoods. Training uses the
-penalty-reduced focal objective of CenterNet-style point
+Gaussian targets with a standard deviation of two output pixels mark
+positives. LOW-confidence annotations define ignore neighborhoods. Training
+uses the penalty-reduced focal objective from CenterNet-style point
 detection~\cite{zhou2019objects}. The ViT adapter receives stride-16
-features and the CNN adapter stride-32 features with one learned upsampling
-stage; both terminate in the same 256-channel head. At inference, local
-peaks above a permissive 0.05 candidate floor map to scene coordinates, and
-120\,m distance non-maximum suppression removes duplicates. The tiler cuts
-whole scenes into 512-pixel windows at stride 384.
+features. The CNN adapter receives stride-32 features and adds one learned
+upsampling stage. Both adapters terminate in the same 256-channel head. At
+inference, local peaks above a 0.05 candidate floor map to scene coordinates.
+Distance-based non-maximum suppression at 120\,m removes duplicates. The
+tiler processes 512-pixel windows at stride 384.
 
 \paragraph{Uniform fine-tuning recipe.}
 One PyTorch Lightning module, data module, and trainer configuration serve
-all cells. AdamW uses learning rate $10^{-4}$, weight decay 0.05,
-layer-wise decay 0.65, five warm-up epochs, and cosine decay across at most
-50 epochs; early stopping waits four development evaluations. Every cell
-uses micro-batch 16, accumulation 1, seed 0, and full-encoder fine-tuning.
-The campaign ran on one eight-GPU NVIDIA H100 node; each cell executed as a
-single-GPU process in Lightning \texttt{32-true} with CUDA matmul and cuDNN
-TF32 disabled. The code itself is hardware-neutral; the uniform hardware
-class is a property of the evidence. No arm and no label fraction gets its
-own hyperparameters.
+all cells. AdamW uses a learning rate of $10^{-4}$, weight decay 0.05,
+layer-wise decay 0.65, five warm-up epochs, and cosine decay for at most 50
+epochs. Early stopping has a patience of four development evaluations. Every
+cell uses micro-batch 16, accumulation 1, seed 0, and full-encoder
+fine-tuning. The campaign ran on one eight-GPU NVIDIA H100 node. Each cell
+executed as a single-GPU process with Lightning \texttt{32-true}. CUDA matmul
+and cuDNN TF32 remained disabled. Every arm and label budget uses the same
+hyperparameters.
 
 \paragraph{Registered contrasts.}
 For track $t$, role $r$, and fraction $f$, let $F^{(t)}_{r,f}$ denote
@@ -68,8 +68,5 @@ F^{(t)}_{\mathrm{SAR},f} - F^{(t)}_{\mathrm{optical},f}.
 \label{eq:contrast}
 \end{equation}
 We assess architecture generality from agreement in the sign and pattern of
-Eq.~\eqref{eq:contrast} across tracks, and we never pool the tracks into
-one effect estimate. The evidence generator rejects a marker that does not
-hash to its cohort binding, a metric inconsistent with its own TP/FP/FN
-counts, a best-development value that disagrees with the training curve, a
-mixed hardware class, or a partial held-out cohort.
+Eq.~\eqref{eq:contrast} across tracks. We do not pool the tracks into one
+effect estimate because their architectures and checkpoint histories differ.

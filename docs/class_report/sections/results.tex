@@ -3,19 +3,17 @@
 
 \paragraph{Execution summary and reporting contract.}
 
-The core result is one complete cohort: eight arms at four nested budgets,
-seed 0, all 32 cells finished on one \HevHardware{} class in strict FP32
-(\HevGPUHours{} GPU-hours; code \texttt{\HevCodeSHAShort}; cohort
-\texttt{\HevCohortSHAShort}). The build re-derives every published value
-from the committed evidence: the frozen cohort, the hash-bound completion
-markers, and the full training curves. A single inconsistent byte stops the
-build. The reported metric is corrected development-selection F1. Each cell
-selects its checkpoint and operating threshold on the eight development
-scenes, so the values carry selection optimism and are not held-out
-estimates. Table~\ref{tab:dev-matrix} lists the matrix;
-Fig.~\ref{fig:label-efficiency} shows the four-point curves. Training
-dynamics appear in Appendix~\ref{app:figures}
-(Fig.~\ref{fig:training-dynamics}).
+All 32 cells completed on one \HevHardware{} class in strict FP32 and used
+\HevGPUHours{} GPU-hours. Table~\ref{tab:dev-matrix} reports corrected
+development-selection F1. Each cell selects its checkpoint and operating
+threshold on the same eight-scene subset. These scores therefore include
+model-selection optimism and are not held-out estimates.
+Figure~\ref{fig:label-efficiency} shows the four-point curves, and
+Fig.~\ref{fig:training-dynamics} shows their training histories in the
+appendix. The evidence generator reconstructs every value from the frozen
+cohort, checkpoint-bound completion records, and full training curves. It
+rejects an incomplete cohort or a value that disagrees with its source
+record.
 
 \begin{table}[t]
 \centering
@@ -47,108 +45,100 @@ ConvNeXt-V2-B & Random & \HevDevFCNNRandomTen & \HevDevFCNNRandomTwentyFive & \H
 \centering
 \includegraphics[width=\textwidth]{heldout_label_efficiency.pdf}
 \caption{Development-F1 label-efficiency curves, one panel per track. Solid
-lines are pretrained arms; the dashed gray line is the track's random
-floor. Values are seed-0 point estimates; no uncertainty ribbon is drawn.}
+lines are pretrained arms. The dashed gray line is the track's random floor.
+Values are seed-0 point estimates. We draw no uncertainty ribbon.}
 \label{fig:label-efficiency}
 \end{figure}
 
 \paragraph{Label-efficiency curves and transfer gains.}
 
-The two tracks occupy different regimes. Every pretrained ViT arm clears
-its random floor at 12 scenes: optical by \HevDeltaFTenViTOptical, SAR by
-\HevDeltaFTenViTSar, and ImageNet by \HevDeltaFTenViTImageNet{}
-(Eq.~\eqref{eq:gain}; gain panels in Fig.~\ref{fig:transfer-gains},
-Appendix~\ref{app:figures}). The CNN track spreads wider. SAR gains
-\HevDeltaFTenCNNSar{} and ImageNet \HevDeltaFTenCNNImageNet{} over the
-12-scene floor. The optical Sentinel-2 arm only matches its floor at 12
-scenes (both \HevDevFCNNOpticalTen) and falls below it at 25\% and 50\%:
-the land-cover source gives this backbone features that fine-tuning must
-first undo.
+At 12 scenes, all three pretrained ViTs beat the random ViT. Their gains are
+\HevDeltaFTenViTOptical{} for optical, \HevDeltaFTenViTSar{} for SAR, and
+\HevDeltaFTenViTImageNet{} for ImageNet (Eq.~\eqref{eq:gain} and
+Fig.~\ref{fig:transfer-gains}). In the CNN track, SAR gains
+\HevDeltaFTenCNNSar{} and ImageNet gains \HevDeltaFTenCNNImageNet{} over the
+12-scene random floor. The optical CNN matches random at 12 scenes
+(both \HevDevFCNNOpticalTen) and trails it at every larger budget. Transfer
+benefit is therefore specific to the checkpoint rather than guaranteed by
+pretraining.
 
-Two curves violate monotonicity at the 10\%--25\% transition: ViT-optical
-drops from \HevDevFViTOpticalTen{} to \HevDevFViTOpticalTwentyFive{} and
-ViT-SAR from \HevDevFViTSarTen{} to \HevDevFViTSarTwentyFive. We report
-these declines as observed, and we do not smooth or rerun them. The metric
-rests on a few hundred positives over eight fixed scenes, so a shift of a
-few hundredths corresponds to a handful of detections at the swept
-threshold. The protocol resolves such selection noise with held-out scoring
-on the sealed sixteen-scene split.
+More labeled scenes did not raise every development curve. ViT-optical falls
+from \HevDevFViTOpticalTen{} to \HevDevFViTOpticalTwentyFive{} between the
+first two budgets. ViT-SAR falls from \HevDevFViTSarTen{} to
+\HevDevFViTSarTwentyFive. We report these declines without smoothing or
+reruns. With one seed and 517 positives on the selection subset, this study
+cannot separate optimization variation, subset composition, and selection
+error.
 
-We also ask for the smallest tested budget at which an arm reaches its
-track's full-data random floor. CNN-ImageNet crosses at 28 scenes
-(\HevDevFCNNImageNetTwentyFive{} against \HevDevFCNNRandomHundred). Every
-ViT transfer arm and CNN-SAR cross at 56 scenes. CNN-optical never crosses.
-No arm crosses at 12 scenes: the strongest 12-scene cell, ViT-optical at
-\HevDevFViTOpticalTen, sits just below the ViT floor's
-\HevDevFViTRandomHundred. Under this development-selection metric, a
-well-chosen public checkpoint at 12 scenes nearly, but not fully,
-substitutes for 111 random-initialization scenes.
+We also measure the smallest tested budget that reaches the track's
+full-data random floor. CNN-ImageNet reaches that reference at 28 scenes
+(\HevDevFCNNImageNetTwentyFive{} versus
+\HevDevFCNNRandomHundred). Every ViT transfer arm and CNN-SAR reaches it at
+56 scenes. CNN-optical never does. At 12 scenes, the strongest transferred
+model in each track falls just short of its full-data random floor. The
+tested checkpoints can therefore approach, but do not match, the selected
+development score of a random model trained on all 111 scenes.
 
 \paragraph{Source-domain contrasts and architecture generality.}
 
-The CNN track orders SAR above optical at every budget
-(Eq.~\eqref{eq:contrast}; right panel of Fig.~\ref{fig:transfer-gains}),
-with the largest contrast under scarcity (\HevDevFCNNSarTen{} versus
-\HevDevFCNNOpticalTen{} at 12 scenes). The BigEarthNet Sentinel-1 and
-Sentinel-2 checkpoints share architecture, dataset family, and supervised
-task, so this is the study's cleanest modality effect. The ViT track shows
-the opposite order below half data: optical leads SAR at 10\% and 25\%
-(\HevDevFViTOpticalTen{} versus \HevDevFViTSarTen;
-\HevDevFViTOpticalTwentyFive{} versus \HevDevFViTSarTwentyFive), and SAR
-moves ahead only from 56 scenes upward. The sign of the SAR--optical
-contrast does not replicate across architectures under label scarcity. A
-modality-matched encoder is not always the best scarce-label choice.
-Architecture and pretraining objective moderate the effect, and the
-released ViT checkpoints also differ in objective and source volume, so
-their contrast describes available checkpoints rather than modality alone.
+The SAR--optical ranking changes with the backbone
+(Eq.~\eqref{eq:contrast} and Fig.~\ref{fig:transfer-gains}). CNN-SAR leads
+CNN-optical at every budget. The largest gap occurs at 12 scenes
+(\HevDevFCNNSarTen{} versus \HevDevFCNNOpticalTen). The BigEarthNet
+Sentinel-1 and Sentinel-2 checkpoints share their architecture, dataset
+family, and supervised task, which makes this the cleanest modality
+comparison in the study.
 
-At full data, generic ImageNet initialization leads both tracks
-(\HevDevFViTImageNetHundred{} and \HevDevFCNNImageNetHundred). Domain
-pretraining matters most where labels are scarce. With enough target data,
-generic visual structure plus full fine-tuning closes the domain gap.
+The ViT ranking reverses below half data. Optical leads SAR at 10\% and 25\%
+(\HevDevFViTOpticalTen{} versus \HevDevFViTSarTen, and
+\HevDevFViTOpticalTwentyFive{} versus \HevDevFViTSarTwentyFive). SAR moves
+ahead at 56 and 111 scenes. The scarce-label SAR--optical order therefore
+does not replicate across architectures. The ViT checkpoints also differ in
+objective and source corpus, so their ranking cannot identify a modality-only
+effect.
+
+At 111 scenes, development selection ranks ImageNet first in both tracks
+(\HevDevFViTImageNetHundred{} and \HevDevFCNNImageNetHundred). Held-out
+scoring tests whether these full-data rankings persist.
 
 \paragraph{Held-out results.}
 
 \ifHevTestComplete
 All 32 cells were scored once on the frozen 16-scene test split with their
-cohort-bound development thresholds (inference precision
-\HevTestInferencePrecision), and the generator admits the test column only
-because all 32 results validated against the cohort. Every cell's test F1
-sits below its development F1; the shrinkage ranges from 0.041 to 0.142 F1
-and averages \HevTestMeanGap, consistent with development-selection
-optimism (both checkpoint and threshold are chosen on eight scenes) rather
-than a threshold-transfer failure. The SAR--optical sign holds at every
-budget in both tracks, including the reversed ViT order below half data.
-One ranking changes: development selection favors ImageNet at full data in
-both tracks, but held-out scoring instead favors SAR in the ViT track
-(\HevTestFViTSarHundred{} versus ImageNet's \HevTestFViTImageNetHundred);
-the CNN track's ImageNet lead survives (\HevTestFCNNImageNetHundred).
+development-bound thresholds and \HevTestInferencePrecision{} inference.
+The test column appears only after every result validates against the frozen
+cohort. Test F1 is lower than development F1 for every cell. The gap ranges
+from 0.041 to 0.142 and averages \HevTestMeanGap{} F1. A negative gap is
+compatible with selection on eight scenes, but this experiment cannot
+separate selection optimism, threshold transfer, and scene-distribution differences.
 
-The campaign's grid-validation gate stopped on two non-monotonic test-F1
-curves, both in the SAR role. ViT-SAR repeats the dev-side drop reported
-above: \HevTestFViTSarTen{} at 10\% falls to \HevTestFViTSarTwentyFive{} at
-25\%. CNN-SAR shows a violation development selection never revealed: its
-development curve rises from 50\% to 100\% (\HevDevFCNNSarFifty{} to
-\HevDevFCNNSarHundred), but its test curve falls (\HevTestFCNNSarFifty{} to
-\HevTestFCNNSarHundred), the study's clearest case of development selection
-missing a real instability. Appendix~\ref{app:inventory} lists the full
-test column.
+The central SAR--optical ranking persists at every budget. CNN-SAR remains
+above CNN-optical throughout. In ViT, optical remains ahead at 10\% and 25\%,
+then SAR leads at 50\% and 100\%. The full-data ranking changes in one track.
+ViT-SAR reaches \HevTestFViTSarHundred, above ImageNet's
+\HevTestFViTImageNetHundred. CNN-ImageNet retains its lead at
+\HevTestFCNNImageNetHundred.
+
+The predeclared monotonicity gate failed on two SAR test curves. ViT-SAR
+falls from \HevTestFViTSarTen{} at 10\% to
+\HevTestFViTSarTwentyFive{} at 25\%. CNN-SAR rises on development from
+\HevDevFCNNSarFifty{} at 50\% to \HevDevFCNNSarHundred{} at 100\%, but its
+test F1 falls from \HevTestFCNNSarFifty{} to
+\HevTestFCNNSarHundred. Both test declines exceed the allowed 0.02. The
+experiment therefore does not establish a monotone label-efficiency curve.
+Appendix~\ref{app:inventory} lists the full test column.
 \else
-We did not score the 16-scene test split before this build. The held-out
-contract freezes the 32-cell cohort first, applies each cell's
-development-bound threshold verbatim, and writes one immutable result per
-cell. The generator admits the test column only when all 32 results
-validate. We scored two cross-hardware control cells locally under this
-contract (RTX 5070 Ti, strict FP32). Their development-to-test changes were
-$-0.080$ and $-0.069$, consistent with development-selection optimism
-rather than threshold-transfer failure.
+The 16-scene test split has not been scored in this build. The held-out
+contract first freezes the 32-cell cohort. It then applies each cell's
+development-bound threshold and writes one immutable result. The generator
+admits test values only when all 32 results validate.
 \fi
 \ifHevFinalEval
-The sealed 50-scene human-verified evaluation ran once for the 24 cells at
-the 10\%, 25\%, and 100\% budgets; dark-vessel recall and near-shore
-results appear in Appendix~\ref{app:inventory}.
+The sealed 50-scene human-verified evaluation ran once for all 32 cells.
+Dark-vessel recall and near-shore results appear in
+Appendix~\ref{app:inventory}.
 \else
-The 50 human-verified scenes remain sealed. The protocol defines
-dark-vessel recall and near-shore performance only on that set, which
-awaits its once-only evaluation.
+The 50 human-verified scenes remain sealed. Dark-vessel recall and near-shore
+performance are defined only on that set, so neither result is available in
+this report.
 \fi

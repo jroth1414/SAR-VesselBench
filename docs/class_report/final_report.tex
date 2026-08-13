@@ -31,9 +31,9 @@
 \graphicspath{{../results/generated/}{figures/}}
 \begin{document}
 \begin{center}
-{\LARGE\bfseries Label-Efficient Dark-Vessel Detection in SAR:\\[2pt]
-Does SAR-Domain Pretraining Outperform\\[2pt]
-Optical and ImageNet Transfer Across ViT and CNN?\par}
+{\LARGE\bfseries Pretraining Domain and Label Efficiency for\\[2pt]
+Dark-Vessel Detection in SAR:\\[2pt]
+A Controlled ViT--CNN Study\par}
 \vspace{0.8em}
 {\large John Roth \qquad Kyle Wagner\par}
 \vspace{0.25em}
@@ -43,28 +43,28 @@ Developments with PyTorch \,\textbullet\, August 2026\par}
 \suppressfloats[t]
 \vspace{0.4em}
 \begin{abstract}
-Dark vessels operate without a matched Automatic Identification System
-report. Spaceborne synthetic aperture radar (SAR) can find them through
-cloud and darkness, but human-verified examples are scarce. We test whether
-source-domain pretraining reduces the labeled scenes a detector needs on
-xView3-SAR, and whether the effect persists across architectures. Two
-size-matched tracks use ViT-B/16 and ConvNeXt-V2-Base backbones. Within
-each track, four arms compare random initialization with released ImageNet,
-optical remote-sensing, and SAR checkpoints under one detector, optimizer,
-schedule, scene-level split, and seed. We fine-tuned nested 10--100\%
-fractions of 111 training scenes, which gives 32 controlled cells. All 32
-cells completed on H100 GPUs in strict FP32, and the build re-derives every
-published value from hash-bound evidence. Transfer helps most when labels
-are scarce. The SAR-versus-optical contrast depends on the architecture:
-SAR pretraining beats optical in the CNN track at every budget, but optical
-leads in the ViT track below half data\ifHevTestComplete; the held-out test
-split confirms this sign at every budget\fi. Development selection favors
-generic ImageNet at full data in both tracks\ifHevTestComplete, but the
-held-out test split instead favors SAR in the ViT track\fi. Reported values
-are corrected development-selection F1\ifHevTestComplete{} alongside
-once-scored held-out test results\fi.\ifHevFinalEval\else{} The 50-scene
-human-verified
-evaluation remains sealed for follow-on work.\fi
+Dark vessels lack a matched Automatic Identification System report, which
+makes them harder to identify and monitor. Spaceborne synthetic aperture
+radar (SAR) observes through cloud and darkness, but human-verified examples
+remain scarce. We measure how pretraining source changes label efficiency on
+xView3-SAR and whether the ranking persists across backbone families. Two
+approximately size-matched tracks use ViT-B/16 and ConvNeXt-V2-Base. Within
+each track, random, ImageNet, optical remote-sensing, and SAR initializations
+share one detector, training recipe, scene split, and seed. We fine-tuned four
+nested budgets from 12 to 111 training scenes, for 32 controlled cells. On
+corrected development-selection F1, every pretrained ViT and two of three
+pretrained CNNs beat their random floors at 12 scenes. The SAR--optical
+ranking depended on the backbone: SAR led at every CNN budget, while optical
+led the ViT track at 10\% and 25\%.\ifHevTestComplete{} The once-scored
+16-scene test split preserved these rankings. At full data, development
+selection favored ImageNet in both tracks, but test scoring favored SAR over
+ImageNet in the ViT track. Two SAR test curves exceeded the predeclared 0.02
+non-monotonicity tolerance, so the experiment failed its monotonicity
+gate.\else{} Held-out test scoring remains pending.\fi{} All values are
+seed-0 point estimates.\ifHevFinalEval{} The once-only 50-scene evaluation
+supplies dark-vessel recall and near-shore performance.\else{} The 50
+human-verified scenes remain sealed, so this report does not yet measure
+dark-vessel recall or near-shore performance.\fi
 \end{abstract}
 \label{mainbody:start}
 \input{sections/introduction}
