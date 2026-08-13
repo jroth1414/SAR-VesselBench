@@ -10,8 +10,7 @@
       "configs/detector.yaml": "c42ae65bf9045cc93f0d73ae1437b2f6a1300670cb49d8e93f83a39d58a62a12",
       "src/eval/scorer.py": "85dec7ab083b531547fe81fea5aa02e4d828457ff157619afae29981cf49cd32",
       "data/splits.json": "0d201003999b6e634bdb3f9cccaedbd391b9d0cdcdb7f9370470d56a5e391db6",
-      "data/stats.json": "8e7691002e540f7274f9e1d67812fe8ae2b6c45775a6e9072a5177b7fadb4490",
-      "data/lsssdd_split.json": "ae6d0343d021341d58c2d037e20eb9a9f4e67ace3b7c677439973838fd1473a3"
+      "data/stats.json": "8e7691002e540f7274f9e1d67812fe8ae2b6c45775a6e9072a5177b7fadb4490"
     },
     "hardware": {
       "accelerator": "NVIDIA H100 80GB HBM3",

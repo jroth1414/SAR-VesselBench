@@ -1,7 +1,6 @@
 # Data-preparation configuration. Consumed by src/data/*.
 # NOT a frozen artifact — active outputs data/splits.json and data/stats.json
-# are already frozen. data/lsssdd_split.json is retained separately as immutable
-# historical provenance and has no executable configuration path.
+# are already frozen.
 
 seed: 0
 

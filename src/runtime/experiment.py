@@ -20,7 +20,6 @@ FROZEN_PATHS = (
     "src/eval/scorer.py",
     "data/splits.json",
     "data/stats.json",
-    "data/lsssdd_split.json",
 )
 FAMILY_ORDER = ("cnn", "vit")
 FRACTION_ORDER = (1.0, 0.5, 0.25, 0.1)

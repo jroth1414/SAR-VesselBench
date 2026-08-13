@@ -59,7 +59,6 @@ results/h100/            H100 evidence tree, sanitized snapshot, and logs
 locks/                   normalized H100 and CPU/test/paper locks
 src/                     data, models, training, evaluation, and analysis
 tests/                   unit, contract, and anti-drift tests
-tools/                   report and submission utilities
 ```
 
 The repository contains no imagery, labels, weights, checkpoints, or virtual
@@ -87,7 +86,7 @@ installation recipe; training itself needs only a Python 3.11 environment
 with a CUDA build of PyTorch and one GPU with enough memory for batch 16.
 Reproduce value-sensitive checkpoint and GPU tests in a Python 3.11/CUDA
 environment that matches the lock as closely as practical. Downloaded
-checkpoints retain their upstream licenses; see `THIRD_PARTY_NOTICES.md`.
+checkpoints retain their upstream licenses.
 
 ## Checkpoint sourcing
 
@@ -124,8 +123,9 @@ ec152f1e375edc2b3dfac7a81155a449b4c5cbb7c5cf0b9494838f6c87518d73  imagenet_cnn_f
 The committed key manifests in `tests/manifests/` define structural coverage.
 Run `python -m pytest tests/test_fm_checkpoints_load.py -q` with all six files
 present; its value-sensitive checks reject a silently random encoder. SARMAE
-is gated and noncommercial, and all other artifacts retain their upstream
-terms. See `THIRD_PARTY_NOTICES.md` before retrieval or use.
+is gated and released under CC BY-NC 4.0 (noncommercial); all other
+artifacts retain their upstream terms. Review each checkpoint's license
+before retrieval or use.
 
 ## Data preparation
 
@@ -173,35 +173,22 @@ run also needs the recorded strict-FP32 runtime contract and six downloaded
 checkpoint files. The final 50-scene evaluator has an explicit confirmation
 gate and remains unused until the study freezes its cohort and analysis code.
 
-## Papers and class archive
+## Building the report
 
 ```bash
 python -m src.analysis.heldout_results --output-dir docs/results/generated
 cd docs/class_report
 tectonic -X compile --keep-intermediates final_report.tex
-python ../../tools/check_report.py final_report.pdf --aux final_report.aux
 ```
 
-Use Tectonic 0.17.0. The class report limits Introduction through Conclusion to five pages.
-References and appendices start on later pages. Build the deterministic,
-data-free Canvas archive from the repository root:
-
-```bash
-python tools/build_submission.py
-```
-
-The tool writes `dist/Roth_John_final_project.zip`, scans its allowlisted
-payload, rejects private infrastructure and prohibited file types, and records
-member hashes.
+Use Tectonic 0.17.0. The class report limits Introduction through Conclusion
+to five pages; references and appendices start on later pages.
 
 The full Git checkout runs the public test suite plus six expected
-weight-dependent skips. The data-free Canvas archive omits five test modules
-whose only inputs are the frozen metadata under `data/`: three immutable-hash
-guards and the two H100 snapshot-import suites. Those tests remain in Git and
-are required for a release. Running `python -m pytest -q` after ZIP extraction
-exercises the remaining package-safe scientific and runtime tests, including
-the held-out evidence suite, without reconstructing or redistributing excluded
-metadata.
+weight-dependent skips. Four modules take their only inputs from the frozen
+metadata under `data/` (two immutable-hash guards and the two H100
+snapshot-import suites); a checkout without that metadata skips or fails
+only those.
 
 ## Contributions
 
@@ -213,4 +200,5 @@ results, and wrote the class report.
 
 Original project code and documentation use the MIT License. Dataset files,
 labels, pretrained weights, and third-party components remain under their
-upstream terms. See `LICENSE` and `THIRD_PARTY_NOTICES.md`.
+upstream terms; see `LICENSE` and each checkpoint's own license note under
+`data/weights/`. SARMAE is CC BY-NC 4.0 (noncommercial).

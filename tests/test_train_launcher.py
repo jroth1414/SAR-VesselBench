@@ -95,11 +95,9 @@ def test_direct_finetune_module_rejects_missing_startup_marker():
 def test_public_entrypoints_use_strict_launcher():
     repo = Path(__file__).resolve().parents[1]
     pyproject = (repo / "pyproject.toml").read_text(encoding="utf-8")
-    makefile = (repo / "Makefile").read_text(encoding="utf-8")
     readme = (repo / "README.md").read_text(encoding="utf-8")
     child = (repo / "src/runtime/train_child.py").read_text(encoding="utf-8")
     assert 'xview3-train = "src.runtime.train:main"' in pyproject
-    assert "$(PYTHON) -m src.runtime.train $(TRAIN_ARGS)" in makefile
     assert "python -m src.runtime.train" in readme
     assert "python -m src.train.finetune \\" not in readme
     assert child.index("apply_strict_fp32()") < child.index(

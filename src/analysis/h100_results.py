@@ -38,7 +38,6 @@ FROZEN_PATHS = (
     "src/eval/scorer.py",
     "data/splits.json",
     "data/stats.json",
-    "data/lsssdd_split.json",
 )
 STRICT_BACKEND = {
     "cuda_matmul_fp32_precision": "ieee",

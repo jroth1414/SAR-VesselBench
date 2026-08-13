@@ -1,6 +1,6 @@
 """Scene-level split builder + frozen data artifacts.
 
-Owns three frozen-at-sprint-1-merge artifacts:
+Owns two frozen-at-sprint-1-merge artifacts:
 
 - ``data/splits.json``   — scene-level train/dev/test/eval_final membership,
   stratified by coarse region (k-means bins over scene-center lon/lat) and
@@ -9,8 +9,6 @@ Owns three frozen-at-sprint-1-merge artifacts:
 - ``data/stats.json``    — per-polarization mean/std computed ONCE over the
   train-split chips only, reused unchanged for every label fraction, both
   tracks, and all seeds.
-- ``data/lsssdd_split.json`` — immutable historical provenance only; this
-  module does not regenerate or consume it.
 
 Scene-pool convention: xView3 scene ids end in ``t`` (train pool — split
 75/15/10 here) or ``v`` (the human-verified validation scenes -> eval_final,
