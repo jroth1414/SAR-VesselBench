@@ -30,3 +30,10 @@ venv/
 
 # Office lock/owner files
 ~$*
+
+# Credentials must never enter the repository (keep any local copy outside the
+# worktree; the Box JWT config lives under the user profile, not here).
+xview3-jwt.json
+*.jwt.json
+*.pem
+*.key
