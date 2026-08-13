@@ -1,0 +1,68 @@
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "D:\wt-7f\scripts\score_test_cohort.py", line 349, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "D:\wt-7f\scripts\score_test_cohort.py", line 319, in main
+    labels = load_score_labels(
+             ^^^^^^^^^^^^^^^^^^
+  File "D:\wt-7f\scripts\score_test_cohort.py", line 114, in load_score_labels
+    score_labels_summary(labels_path, splits_path=splits_path, production=True)
+  File "D:\wt-7f\scripts\h100\data_staging.py", line 294, in score_labels_summary
+    raise RuntimeError(f"score-view labels contain forbidden scene {scene_id!r}")
+RuntimeError: score-view labels contain forbidden scene 'e42a50089e03990ft'
+[2026-08-12T22:08:21] cnnrand-f100-s0: scoring frozen TEST with cohort-bound best-dev threshold
+W0812 22:08:41.392000 10692 Lib\site-packages\torch\utils\flop_counter.py:29] triton not found; flop counting will not work for triton kernels
+Traceback (most recent call last):
+  File "D:\wt-7f\src\eval\result_contract.py", line 471, in atomic_write_json
+    directory_fd = os.open(destination.parent, os.O_RDONLY)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 13] Permission denied: 'D:\\h100-reverse\\xview3-h100-runs-1a82d508\\cnnrand-f100-s0'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "D:\wt-7f\src\eval\heldout_contract.py", line 59, in _write_new_immutable
+    atomic_write_json(path, payload)
+  File "D:\wt-7f\src\eval\result_contract.py", line 477, in atomic_write_json
+    raise ResultContractError(f"could not atomically write JSON: {destination}") from exc
+src.eval.result_contract.ResultContractError: could not atomically write JSON: D:\h100-reverse\xview3-h100-runs-1a82d508\cnnrand-f100-s0\test_metrics.json
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "D:\wt-7f\scripts\score_test_cohort.py", line 349, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "D:\wt-7f\scripts\score_test_cohort.py", line 326, in main
+    payload = score_run(
+              ^^^^^^^^^^
+  File "D:\wt-7f\scripts\score_test_cohort.py", line 208, in score_run
+    write_test_result(test_path, payload)
+  File "D:\wt-7f\src\eval\heldout_contract.py", line 594, in write_test_result
+    _write_new_immutable(path, payload)
+  File "D:\wt-7f\src\eval\heldout_contract.py", line 61, in _write_new_immutable
+    raise HeldoutContractError(str(exc)) from exc
+src.eval.heldout_contract.HeldoutContractError: could not atomically write JSON: D:\h100-reverse\xview3-h100-runs-1a82d508\cnnrand-f100-s0\test_metrics.json
+[2026-08-12T22:38:38] OPERATOR RECORD: restart under owner-approved Windows compatibility patch.
+  Deviation vs frozen 1a82d508: src/eval/result_contract.py atomic_write_json now skips the
+  POSIX parent-directory fsync when os.name == 'nt' (Windows cannot open directory descriptors).
+  Durability-only; written bytes unaffected. The prior cnnrand-f100-s0 result (protocol-interrupted,
+  unsealed) was deleted; the cell re-scores through the complete write->seal->validate protocol.
+  Owner approval: 2026-08-12 ('restart it and do it right' / 'Go ahead').
+[2026-08-12T22:40:14] cnnrand-f100-s0: scoring frozen TEST with cohort-bound best-dev threshold
+W0812 22:40:19.476000 9136 Lib\site-packages\torch\utils\flop_counter.py:29] triton not found; flop counting will not work for triton kernels
+[2026-08-12T23:00:14] cnnrand-f100-s0: test F1 0.8124; near-shore F1 0.0000 on 2 GT
+[2026-08-12T23:00:16] beS2-f100-s0: scoring frozen TEST with cohort-bound best-dev threshold
+[bigearthnet_s2] matched=378 missing=0 unexpected=0
+[2026-08-12T23:20:21] beS2-f100-s0: test F1 0.7948; near-shore F1 0.0000 on 2 GT
+[2026-08-12T23:20:22] beS1-f100-s0: scoring frozen TEST with cohort-bound best-dev threshold
+[bigearthnet_s1] matched=378 missing=0 unexpected=0
+[2026-08-12T23:35:00] OPERATOR RECORD: run stopped by owner directive.
+  TEST scoring moves to the H100 node (uniform hardware class); results arrive via a
+  follow-up Box transfer, possibly with the 50-scene verified evaluation. Local sealed
+  results retained for cross-hardware comparison: cnnrand-f100-s0 test F1 0.8124,
+  beS2-f100-s0 test F1 0.7948 (RTX 5070 Ti, 32-true, frozen cohort 9b1ba03e).

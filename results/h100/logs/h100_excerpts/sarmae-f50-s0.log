@@ -1,0 +1,184 @@
+# Excerpt of the full H100 training log for sarmae-f50-s0.
+# Full log: 331279 lines, sha256 0cb85ef1f15835e08e0e9c97f138b1150bddadf3280620115c75a2d84e5df63e (operator archive).
+# Site paths redacted: /projects/geofam -> /cluster-site-redacted.
+[rank: 0] Seed set to 0
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+💡 Tip: For seamless cloud logging and experiment tracking, try installing [litlogger](https://pypi.org/project/litlogger/) to enable LitLogger, which logs metrics and artifacts automatically to the Lightning Experiments platform.
+/cluster-site-redacted/jroth/envs/xview3-h100-fp32-dgx-a4af214a/lib/python3.11/site-packages/lightning/pytorch/trainer/configuration_validator.py:70: You defined a `validation_step` but have no `val_dataloader`. Skipping val loop.
+You are using a CUDA device ('NVIDIA H100 80GB HBM3') that has Tensor Cores. To properly utilize them, you should set `torch.set_float32_matmul_precision('medium' | 'high')` which will trade-off precision for performance. For more details, read https://pytorch.org/docs/stable/generated/torch.set_float32_matmul_precision.html#torch.set_float32_matmul_precision
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [3]
+
+  | Name     | Type        | Params | Mode  | FLOPs
+---------------------------------------------------------
+0 | backbone | ViTBackbone | 85.8 M | train | 0    
+1 | head     | HeatmapHead | 4.2 M  | train | 0    
+---------------------------------------------------------
+90.0 M    Trainable params
+0         Non-trainable params
+90.0 M    Total params
+359.987   Total estimated model params size (MB)
+288       Modules in train mode
+0         Modules in eval mode
+0         Total Flops
+SLURM auto-requeueing enabled. Setting signal handlers.
+/cluster-site-redacted/jroth/envs/xview3-h100-fp32-dgx-a4af214a/lib/python3.11/site-packages/lightning/pytorch/utilities/_pytree.py:21: `isinstance(treespec, LeafSpec)` is deprecated, use `isinstance(treespec, TreeSpec) and treespec.is_leaf()` instead.
+[sarmae_b] matched=150 missing=0 unexpected=0
+
+Training: |          | 0/? [00:00<?, ?it/s]
+Training: |          | 0/? [00:00<?, ?it/s]
+Epoch 0:   0%|          | 0/3310 [00:00<?, ?it/s]
+Epoch 0:   0%|          | 1/3310 [00:01<1:06:22,  0.83it/s]
+Epoch 0:   0%|          | 1/3310 [00:01<1:06:24,  0.83it/s, v_num=rics, train_loss=120.0]
+Epoch 0:   0%|          | 2/3310 [00:01<36:13,  1.52it/s, v_num=rics, train_loss=120.0]  
+Epoch 0:   0%|          | 2/3310 [00:01<41:16,  1.34it/s, v_num=rics, train_loss=105.0]
+Epoch 0:   0%|          | 3/3310 [00:01<29:23,  1.87it/s, v_num=rics, train_loss=105.0]
+Epoch 0:   0%|          | 3/3310 [00:01<32:49,  1.68it/s, v_num=rics, train_loss=28.10]
+Epoch 0:   0%|          | 4/3310 [00:01<26:01,  2.12it/s, v_num=rics, train_loss=28.10]
+Epoch 0:   0%|          | 4/3310 [00:02<28:35,  1.93it/s, v_num=rics, train_loss=37.40]
+Epoch 0:   0%|          | 5/3310 [00:02<24:00,  2.29it/s, v_num=rics, train_loss=37.40]
+Epoch 0:   0%|          | 5/3310 [00:02<26:04,  2.11it/s, v_num=rics, train_loss=20.60]
+Epoch 0:   0%|          | 6/3310 [00:02<22:40,  2.43it/s, v_num=rics, train_loss=20.60]
+Epoch 0:   0%|          | 6/3310 [00:02<24:23,  2.26it/s, v_num=rics, train_loss=7.570]
+Epoch 0:   0%|          | 7/3310 [00:02<21:42,  2.54it/s, v_num=rics, train_loss=7.570]
+Epoch 0:   0%|          | 7/3310 [00:02<23:11,  2.37it/s, v_num=rics, train_loss=8.550]
+Epoch 0:   0%|          | 8/3310 [00:03<21:00,  2.62it/s, v_num=rics, train_loss=8.550]
+Epoch 0:   0%|          | 8/3310 [00:03<22:17,  2.47it/s, v_num=rics, train_loss=6.440]
+Epoch 0:   0%|          | 9/3310 [00:03<20:25,  2.69it/s, v_num=rics, train_loss=6.440]
+Epoch 0:   0%|          | 9/3310 [00:03<21:34,  2.55it/s, v_num=rics, train_loss=5.880]
+Epoch 0:   0%|          | 10/3310 [00:03<19:58,  2.75it/s, v_num=rics, train_loss=5.880]
+Epoch 0:   0%|          | 10/3310 [00:03<21:00,  2.62it/s, v_num=rics, train_loss=4.710]
+Epoch 0:   0%|          | 11/3310 [00:03<19:37,  2.80it/s, v_num=rics, train_loss=4.710]
+Epoch 0:   0%|          | 11/3310 [00:04<20:33,  2.67it/s, v_num=rics, train_loss=4.810]
+Epoch 0:   0%|          | 12/3310 [00:04<19:18,  2.85it/s, v_num=rics, train_loss=4.810]
+Epoch 0:   0%|          | 12/3310 [00:04<20:10,  2.73it/s, v_num=rics, train_loss=5.020]
+Epoch 0:   0%|          | 13/3310 [00:04<19:02,  2.89it/s, v_num=rics, train_loss=5.020]
+Epoch 0:   0%|          | 13/3310 [00:04<19:50,  2.77it/s, v_num=rics, train_loss=3.980]
+Epoch 0:   0%|          | 14/3310 [00:04<18:49,  2.92it/s, v_num=rics, train_loss=3.980]
+Epoch 0:   0%|          | 14/3310 [00:04<19:33,  2.81it/s, v_num=rics, train_loss=5.390]
+Epoch 0:   0%|          | 15/3310 [00:05<18:37,  2.95it/s, v_num=rics, train_loss=5.390]
+Epoch 0:   0%|          | 15/3310 [00:05<19:18,  2.84it/s, v_num=rics, train_loss=4.290]
+Epoch 0:   0%|          | 16/3310 [00:05<18:27,  2.98it/s, v_num=rics, train_loss=4.290]
+Epoch 0:   0%|          | 16/3310 [00:05<19:05,  2.88it/s, v_num=rics, train_loss=4.090]
+Epoch 0:   1%|          | 17/3310 [00:05<18:17,  3.00it/s, v_num=rics, train_loss=4.090]
+[... 331099 lines elided ...]
+Epoch 49: 100%|█████████▉| 3299/3310 [16:04<00:03,  3.42it/s, v_num=rics, train_loss=0.000613, dev_f1=0.916]
+Epoch 49: 100%|█████████▉| 3299/3310 [16:04<00:03,  3.42it/s, v_num=rics, train_loss=0.000744, dev_f1=0.916]
+Epoch 49: 100%|█████████▉| 3300/3310 [16:04<00:02,  3.42it/s, v_num=rics, train_loss=0.000744, dev_f1=0.916]
+Epoch 49: 100%|█████████▉| 3300/3310 [16:04<00:02,  3.42it/s, v_num=rics, train_loss=0.000856, dev_f1=0.916]
+Epoch 49: 100%|█████████▉| 3301/3310 [16:05<00:02,  3.42it/s, v_num=rics, train_loss=0.000856, dev_f1=0.916]
+Epoch 49: 100%|█████████▉| 3301/3310 [16:05<00:02,  3.42it/s, v_num=rics, train_loss=0.000412, dev_f1=0.916]
+Epoch 49: 100%|█████████▉| 3302/3310 [16:05<00:02,  3.42it/s, v_num=rics, train_loss=0.000412, dev_f1=0.916]
+Epoch 49: 100%|█████████▉| 3302/3310 [16:05<00:02,  3.42it/s, v_num=rics, train_loss=0.000813, dev_f1=0.916]
+Epoch 49: 100%|█████████▉| 3303/3310 [16:05<00:02,  3.42it/s, v_num=rics, train_loss=0.000813, dev_f1=0.916]
+Epoch 49: 100%|█████████▉| 3303/3310 [16:05<00:02,  3.42it/s, v_num=rics, train_loss=0.00106, dev_f1=0.916] 
+Epoch 49: 100%|█████████▉| 3304/3310 [16:05<00:01,  3.42it/s, v_num=rics, train_loss=0.00106, dev_f1=0.916]
+Epoch 49: 100%|█████████▉| 3304/3310 [16:06<00:01,  3.42it/s, v_num=rics, train_loss=0.000952, dev_f1=0.916]
+Epoch 49: 100%|█████████▉| 3305/3310 [16:06<00:01,  3.42it/s, v_num=rics, train_loss=0.000952, dev_f1=0.916]
+Epoch 49: 100%|█████████▉| 3305/3310 [16:06<00:01,  3.42it/s, v_num=rics, train_loss=0.0248, dev_f1=0.916]  
+Epoch 49: 100%|█████████▉| 3306/3310 [16:06<00:01,  3.42it/s, v_num=rics, train_loss=0.0248, dev_f1=0.916]
+Epoch 49: 100%|█████████▉| 3306/3310 [16:06<00:01,  3.42it/s, v_num=rics, train_loss=0.0011, dev_f1=0.916]
+Epoch 49: 100%|█████████▉| 3307/3310 [16:06<00:00,  3.42it/s, v_num=rics, train_loss=0.0011, dev_f1=0.916]
+Epoch 49: 100%|█████████▉| 3307/3310 [16:07<00:00,  3.42it/s, v_num=rics, train_loss=0.000692, dev_f1=0.916]
+Epoch 49: 100%|█████████▉| 3308/3310 [16:07<00:00,  3.42it/s, v_num=rics, train_loss=0.000692, dev_f1=0.916]
+Epoch 49: 100%|█████████▉| 3308/3310 [16:07<00:00,  3.42it/s, v_num=rics, train_loss=0.574, dev_f1=0.916]   
+Epoch 49: 100%|█████████▉| 3309/3310 [16:07<00:00,  3.42it/s, v_num=rics, train_loss=0.574, dev_f1=0.916]
+Epoch 49: 100%|█████████▉| 3309/3310 [16:07<00:00,  3.42it/s, v_num=rics, train_loss=0.291, dev_f1=0.916]
+Epoch 49: 100%|██████████| 3310/3310 [16:07<00:00,  3.42it/s, v_num=rics, train_loss=0.291, dev_f1=0.916]
+Epoch 49: 100%|██████████| 3310/3310 [16:07<00:00,  3.42it/s, v_num=rics, train_loss=0.00101, dev_f1=0.916][dev eval, checkpoint epoch 49] {'f1': 0.9150943396226415, 'precision': 0.8931860036832413, 'recall': 0.9381044487427466, 'tp': 485, 'fp': 58, 'fn': 32, 'ignored_predictions': 80, 'threshold': 0.87744140625, 'n_candidates': 760, 'epoch': 49}
+
+Epoch 49: 100%|██████████| 3310/3310 [22:24<00:00,  2.46it/s, v_num=rics, train_loss=0.00101, dev_f1=0.915]`Trainer.fit` stopped: `max_epochs=50` reached.
+
+Epoch 49: 100%|██████████| 3310/3310 [22:24<00:00,  2.46it/s, v_num=rics, train_loss=0.00101, dev_f1=0.915]
+{
+ "result_schema": 2,
+ "exp_id": "sarmae-f50-s0",
+ "git_sha": "1a82d508fbeb9fdf6868a9637611e9018952fb43",
+ "detector_sha256": "c42ae65bf9045cc93f0d73ae1437b2f6a1300670cb49d8e93f83a39d58a62a12",
+ "precision": "32-true",
+ "micro_batch": 16,
+ "gradient_accumulation": 1,
+ "effective_batch": 16,
+ "epochs_run": 50,
+ "best_dev_f1": 0.9161168708765316,
+ "best_dev": {
+  "f1": 0.9161168708765316,
+  "precision": 0.8933823529411765,
+  "recall": 0.9400386847195358,
+  "tp": 486,
+  "fp": 58,
+  "fn": 31,
+  "ignored_predictions": 81,
+  "threshold": 0.85546875,
+  "n_candidates": 758,
+  "epoch": 39
+ },
+ "best_checkpoint": {
+  "relative_path": "checkpoints/best.ckpt",
+  "sha256": "e34d7ce840e5254789d7c9669fead84d4897ac97894c1731d3774b74bcc099b1",
+  "epoch": 39
+ },
+ "last_dev": {
+  "f1": 0.9150943396226415,
+  "precision": 0.8931860036832413,
+  "recall": 0.9381044487427466,
+  "tp": 485,
+  "fp": 58,
+  "fn": 32,
+  "ignored_predictions": 80,
+  "threshold": 0.87744140625,
+  "n_candidates": 760,
+  "epoch": 49
+ },
+ "train_loss": 0.0010146864224225283,
+ "h100_runtime_contract": {
+  "schema": 1,
+  "status": "verified",
+  "pre_trainer": {
+   "schema": 1,
+   "status": "verified",
+   "stage": "pre-trainer",
+   "precision": "32-true",
+   "devices": 1,
+   "micro_batch": 16,
+   "gradient_accumulation": 1,
+   "effective_batch": 16,
+   "strict_fp32": {
+    "cuda_matmul_fp32_precision": "ieee",
+    "cudnn_conv_fp32_precision": "ieee",
+    "cudnn_rnn_fp32_precision": "ieee"
+   },
+   "autocast": {
+    "global": false,
+    "cuda": false,
+    "cpu": false
+   },
+   "process": {
+    "WORLD_SIZE": "unset",
+    "SLURM_NTASKS": "1",
+    "effective_world_size": 1
+   },
+   "model": {
+    "floating_parameter_count": 160,
+    "floating_parameter_dtypes": [
+     "torch.float32"
+    ]
+   }
+  },
+  "resolved_trainer": {
+   "accelerator": "lightning.pytorch.accelerators.cuda.CUDAAccelerator",
+   "precision_plugin": "lightning.pytorch.plugins.precision.precision.Precision",
+   "precision": "32-true",
+   "gradient_scaler": null,
+   "strategy": "lightning.pytorch.strategies.single_device.SingleDeviceStrategy",
+   "root_device_type": "cuda",
+   "root_device_index": 0,
+   "num_devices": 1,
+   "world_size": 1,
+   "device_ids": [
+    0
+   ],
+   "gradient_accumulation": 1
+  }
+ }
+}

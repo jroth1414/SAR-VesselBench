@@ -1,0 +1,711 @@
+{
+  "acceptance_uuid": "0c4db53a-b721-4782-a97b-d6f928bf4c38",
+  "accepted_hardware_class": {
+    "compute_capability": [
+      9,
+      0
+    ],
+    "cuda_build": "12.6",
+    "driver_version": "580.173.02",
+    "gpu_name": "NVIDIA H100 80GB HBM3",
+    "torch": "2.11.0+cu126",
+    "total_memory_bytes": 85017493504
+  },
+  "accumulated_active_seconds": 7121.070395604009,
+  "attempts": [
+    {
+      "active_seconds": 7121.070395604009,
+      "attempt": 1,
+      "compute_capability": [
+        9,
+        0
+      ],
+      "cuda_build": "12.6",
+      "driver_version": "580.173.02",
+      "exit_code": 0,
+      "finished_utc": "2026-08-12T19:00:26.738416+00:00",
+      "gpu_local_index": 2,
+      "gpu_name": "NVIDIA H100 80GB HBM3",
+      "gpu_total_memory_bytes": 85017493504,
+      "gpu_uuid": "e5c349fa-4c2c-e40e-a57c-d7fd4132bcda",
+      "phase": "train",
+      "resumed_from_last_ckpt": false,
+      "slurm_job_id": "550204",
+      "started_utc": "2026-08-12T17:01:44.844061+00:00",
+      "torch": "2.11.0+cu126",
+      "training_cohort_sha256": null
+    }
+  ],
+  "base_payload": {
+    "git_sha": "2726199efcebbebc89156e708b89df2a3415468a",
+    "manifest_sha256": "fccb0b505c89836a148afec709bb799f7af4908d955ea1b142e153154d830896",
+    "package_id": "xview3-h100-fp32-2726199efcebbebc89156e708b89df2a3415468a",
+    "ready_sha256": "b0d6ee18f9ddbd0d604cbea06610dcdbae6a9eb6d1f5ff3ea3431bd9e2d55f81",
+    "repo_bundle_sha256": "df21d64cd7ba2d884fcb4a454c46106b39a6c604459861681e2823ac460f2f4e",
+    "sha256sums_sha256": "21c83b2e3b1b9d67bf00b8abca3ce267a5efd9362c1206b8d29ab21ca3e2d396"
+  },
+  "base_python": {
+    "base_prefix": "/cm/shared/mitre-apps/python/3.11.13/build",
+    "config_vars": {
+      "INSTSONAME": "libpython3.11.so.1.0",
+      "LDLIBRARY": "libpython3.11.so",
+      "LIBDIR": "/cm/shared/mitre-apps/python/3.11.13/build/lib",
+      "LIBPL": "/cm/shared/mitre-apps/python/3.11.13/build/lib/python3.11/config-3.11-x86_64-linux-gnu",
+      "LIBRARY": "libpython3.11.a"
+    },
+    "executable": "/cm/shared/mitre-apps/python/3.11.13/build/bin/python3.11",
+    "executable_sha256": "dbbb197739dbd20dcae2eacc394b97e7d092a7512c60f54980075b7f037afd39",
+    "implementation": "cpython",
+    "implementation_version": [
+      3,
+      11,
+      13,
+      "final",
+      0
+    ],
+    "libc": [
+      "glibc",
+      "2.35"
+    ],
+    "mapped_runtime_files": [
+      "/cm/shared/mitre-apps/python/3.11.13/build/bin/python3.11",
+      "/cm/shared/mitre-apps/python/3.11.13/build/lib/libpython3.11.so.1.0",
+      "/cm/shared/mitre-apps/python/3.11.13/build/lib/python3.11/lib-dynload/_bz2.cpython-311-x86_64-linux-gnu.so",
+      "/cm/shared/mitre-apps/python/3.11.13/build/lib/python3.11/lib-dynload/_ctypes.cpython-311-x86_64-linux-gnu.so",
+      "/cm/shared/mitre-apps/python/3.11.13/build/lib/python3.11/lib-dynload/_decimal.cpython-311-x86_64-linux-gnu.so",
+      "/cm/shared/mitre-apps/python/3.11.13/build/lib/python3.11/lib-dynload/_hashlib.cpython-311-x86_64-linux-gnu.so",
+      "/cm/shared/mitre-apps/python/3.11.13/build/lib/python3.11/lib-dynload/_json.cpython-311-x86_64-linux-gnu.so",
+      "/cm/shared/mitre-apps/python/3.11.13/build/lib/python3.11/lib-dynload/_lzma.cpython-311-x86_64-linux-gnu.so",
+      "/cm/shared/mitre-apps/python/3.11.13/build/lib/python3.11/lib-dynload/_socket.cpython-311-x86_64-linux-gnu.so",
+      "/cm/shared/mitre-apps/python/3.11.13/build/lib/python3.11/lib-dynload/_sqlite3.cpython-311-x86_64-linux-gnu.so",
+      "/cm/shared/mitre-apps/python/3.11.13/build/lib/python3.11/lib-dynload/_ssl.cpython-311-x86_64-linux-gnu.so",
+      "/cm/shared/mitre-apps/python/3.11.13/build/lib/python3.11/lib-dynload/_uuid.cpython-311-x86_64-linux-gnu.so",
+      "/cm/shared/mitre-apps/python/3.11.13/build/lib/python3.11/lib-dynload/readline.cpython-311-x86_64-linux-gnu.so",
+      "/cm/shared/mitre-apps/python/3.11.13/build/lib/python3.11/lib-dynload/zlib.cpython-311-x86_64-linux-gnu.so",
+      "/usr/lib/locale/C.utf8/LC_CTYPE",
+      "/usr/lib/locale/locale-archive",
+      "/usr/lib/x86_64-linux-gnu/gconv/gconv-modules.cache",
+      "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+      "/usr/lib/x86_64-linux-gnu/libbz2.so.1.0.4",
+      "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "/usr/lib/x86_64-linux-gnu/libcrypto.so.3",
+      "/usr/lib/x86_64-linux-gnu/libffi.so.8.1.0",
+      "/usr/lib/x86_64-linux-gnu/liblzma.so.5.2.5",
+      "/usr/lib/x86_64-linux-gnu/libm.so.6",
+      "/usr/lib/x86_64-linux-gnu/libreadline.so.8.1",
+      "/usr/lib/x86_64-linux-gnu/libsqlite3.so.0.8.6",
+      "/usr/lib/x86_64-linux-gnu/libssl.so.3",
+      "/usr/lib/x86_64-linux-gnu/libtinfo.so.6.3",
+      "/usr/lib/x86_64-linux-gnu/libuuid.so.1.3.0",
+      "/usr/lib/x86_64-linux-gnu/libz.so.1.2.11"
+    ],
+    "platform": "Linux-5.15.0-1107-nvidia-x86_64-with-glibc2.35",
+    "platstdlib": "/cm/shared/mitre-apps/python/3.11.13/build/lib/python3.11",
+    "prefix": "/cm/shared/mitre-apps/python/3.11.13/build",
+    "probed_modules": {
+      "_bz2": "loaded",
+      "_ctypes": "loaded",
+      "_decimal": "loaded",
+      "_hashlib": "loaded",
+      "_lzma": "loaded",
+      "_sqlite3": "loaded",
+      "_ssl": "loaded",
+      "readline": "loaded",
+      "uuid": "loaded",
+      "zlib": "loaded"
+    },
+    "requested_path": "/cm/shared/mitre-apps/python/3.11.13/build/bin/python3.11",
+    "resolved_path": "/cm/shared/mitre-apps/python/3.11.13/build/bin/python3.11",
+    "runtime": {
+      "algorithm": "xview3-base-python-runtime-v1",
+      "bytes": 310518858,
+      "directories": 183,
+      "excluded_directories": [
+        "__pycache__",
+        "dist-packages",
+        "site-packages"
+      ],
+      "excluded_suffixes": [
+        ".pyc",
+        ".pyo"
+      ],
+      "files": 2519,
+      "libpython_paths": [
+        "/cm/shared/mitre-apps/python/3.11.13/build/lib/libpython3.11.so",
+        "/cm/shared/mitre-apps/python/3.11.13/build/lib/libpython3.11.so.1.0",
+        "/cm/shared/mitre-apps/python/3.11.13/build/lib/python3.11/config-3.11-x86_64-linux-gnu/libpython3.11.a"
+      ],
+      "mapped_runtime_files": [
+        "/cm/shared/mitre-apps/python/3.11.13/build/bin/python3.11",
+        "/cm/shared/mitre-apps/python/3.11.13/build/lib/libpython3.11.so.1.0",
+        "/cm/shared/mitre-apps/python/3.11.13/build/lib/python3.11/lib-dynload/_bz2.cpython-311-x86_64-linux-gnu.so",
+        "/cm/shared/mitre-apps/python/3.11.13/build/lib/python3.11/lib-dynload/_ctypes.cpython-311-x86_64-linux-gnu.so",
+        "/cm/shared/mitre-apps/python/3.11.13/build/lib/python3.11/lib-dynload/_decimal.cpython-311-x86_64-linux-gnu.so",
+        "/cm/shared/mitre-apps/python/3.11.13/build/lib/python3.11/lib-dynload/_hashlib.cpython-311-x86_64-linux-gnu.so",
+        "/cm/shared/mitre-apps/python/3.11.13/build/lib/python3.11/lib-dynload/_json.cpython-311-x86_64-linux-gnu.so",
+        "/cm/shared/mitre-apps/python/3.11.13/build/lib/python3.11/lib-dynload/_lzma.cpython-311-x86_64-linux-gnu.so",
+        "/cm/shared/mitre-apps/python/3.11.13/build/lib/python3.11/lib-dynload/_socket.cpython-311-x86_64-linux-gnu.so",
+        "/cm/shared/mitre-apps/python/3.11.13/build/lib/python3.11/lib-dynload/_sqlite3.cpython-311-x86_64-linux-gnu.so",
+        "/cm/shared/mitre-apps/python/3.11.13/build/lib/python3.11/lib-dynload/_ssl.cpython-311-x86_64-linux-gnu.so",
+        "/cm/shared/mitre-apps/python/3.11.13/build/lib/python3.11/lib-dynload/_uuid.cpython-311-x86_64-linux-gnu.so",
+        "/cm/shared/mitre-apps/python/3.11.13/build/lib/python3.11/lib-dynload/readline.cpython-311-x86_64-linux-gnu.so",
+        "/cm/shared/mitre-apps/python/3.11.13/build/lib/python3.11/lib-dynload/zlib.cpython-311-x86_64-linux-gnu.so",
+        "/usr/lib/locale/C.utf8/LC_CTYPE",
+        "/usr/lib/locale/locale-archive",
+        "/usr/lib/x86_64-linux-gnu/gconv/gconv-modules.cache",
+        "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+        "/usr/lib/x86_64-linux-gnu/libbz2.so.1.0.4",
+        "/usr/lib/x86_64-linux-gnu/libc.so.6",
+        "/usr/lib/x86_64-linux-gnu/libcrypto.so.3",
+        "/usr/lib/x86_64-linux-gnu/libffi.so.8.1.0",
+        "/usr/lib/x86_64-linux-gnu/liblzma.so.5.2.5",
+        "/usr/lib/x86_64-linux-gnu/libm.so.6",
+        "/usr/lib/x86_64-linux-gnu/libreadline.so.8.1",
+        "/usr/lib/x86_64-linux-gnu/libsqlite3.so.0.8.6",
+        "/usr/lib/x86_64-linux-gnu/libssl.so.3",
+        "/usr/lib/x86_64-linux-gnu/libtinfo.so.6.3",
+        "/usr/lib/x86_64-linux-gnu/libuuid.so.1.3.0",
+        "/usr/lib/x86_64-linux-gnu/libz.so.1.2.11"
+      ],
+      "probed_modules": {
+        "_bz2": "loaded",
+        "_ctypes": "loaded",
+        "_decimal": "loaded",
+        "_hashlib": "loaded",
+        "_lzma": "loaded",
+        "_sqlite3": "loaded",
+        "_ssl": "loaded",
+        "readline": "loaded",
+        "uuid": "loaded",
+        "zlib": "loaded"
+      },
+      "roots": [
+        {
+          "bytes": 149362508,
+          "directories": 183,
+          "files": 2487,
+          "identity": "stdlib",
+          "requested_path": "/cm/shared/mitre-apps/python/3.11.13/build/lib/python3.11",
+          "resolved_path": "/cm/shared/mitre-apps/python/3.11.13/build/lib/python3.11",
+          "symlinks": 0
+        }
+      ],
+      "sha256": "a4af214a34be0512d657350faed6aa76ab9f937d64e27858b043e0d147664733",
+      "symlinks": 0
+    },
+    "soabi": "cpython-311-x86_64-linux-gnu",
+    "stdlib": "/cm/shared/mitre-apps/python/3.11.13/build/lib/python3.11",
+    "version": "3.11.13"
+  },
+  "best_dev_f1": 0.8856589147286822,
+  "campaign_id": "xview3-h100-fp32-20260806",
+  "compute_capability": [
+    9,
+    0
+  ],
+  "cuda_build": "12.6",
+  "detector_sha256": "c42ae65bf9045cc93f0d73ae1437b2f6a1300670cb49d8e93f83a39d58a62a12",
+  "driver_version": "580.173.02",
+  "effective_batch": 16,
+  "epochs_run": 25,
+  "evaluation_ground_truth_sha256": "89c592ade848bfabf376f2ab04e769a2a6de2db951a969fbfa2958c18fca55a5",
+  "exp_id": "sarmae-f10-s0",
+  "external_controls_policy": "owner-approved-h100-only-launch;external-controls-required-before-phase5-completion-export-analysis-reporting",
+  "git_sha": "1a82d508fbeb9fdf6868a9637611e9018952fb43",
+  "gpu_local_index": 2,
+  "gpu_name": "NVIDIA H100 80GB HBM3",
+  "gpu_total_memory_bytes": 85017493504,
+  "gpu_uuid": "e5c349fa-4c2c-e40e-a57c-d7fd4132bcda",
+  "gradient_accumulation": 1,
+  "h100_ready_sha256": "6dc4a77ff57e2a21a8e3aa39eda5a6e12e500ef759e4ff34a1ee2fa6df1c8f4e",
+  "h100_runtime_contract": {
+    "pre_trainer": {
+      "autocast": {
+        "cpu": false,
+        "cuda": false,
+        "global": false
+      },
+      "devices": 1,
+      "effective_batch": 16,
+      "gradient_accumulation": 1,
+      "micro_batch": 16,
+      "model": {
+        "floating_parameter_count": 160,
+        "floating_parameter_dtypes": [
+          "torch.float32"
+        ]
+      },
+      "precision": "32-true",
+      "process": {
+        "SLURM_NTASKS": "1",
+        "WORLD_SIZE": "unset",
+        "effective_world_size": 1
+      },
+      "schema": 1,
+      "stage": "pre-trainer",
+      "status": "verified",
+      "strict_fp32": {
+        "cuda_matmul_fp32_precision": "ieee",
+        "cudnn_conv_fp32_precision": "ieee",
+        "cudnn_rnn_fp32_precision": "ieee"
+      }
+    },
+    "resolved_trainer": {
+      "accelerator": "lightning.pytorch.accelerators.cuda.CUDAAccelerator",
+      "device_ids": [
+        0
+      ],
+      "gradient_accumulation": 1,
+      "gradient_scaler": null,
+      "num_devices": 1,
+      "precision": "32-true",
+      "precision_plugin": "lightning.pytorch.plugins.precision.precision.Precision",
+      "root_device_index": 0,
+      "root_device_type": "cuda",
+      "strategy": "lightning.pytorch.strategies.single_device.SingleDeviceStrategy",
+      "world_size": 1
+    },
+    "schema": 1,
+    "status": "verified"
+  },
+  "host": "dgx10",
+  "micro_batch": 16,
+  "phase": "train",
+  "phase_runtime": {
+    "train": {
+      "active_seconds": 7121.070395604009,
+      "attempts": 1,
+      "best_checkpoint_sha256": "060594d89df0b429f75288339c5400b1da82240d7324f977b862e245e0cd3f04",
+      "best_dev_f1": 0.8856589147286822,
+      "completed_utc": "2026-08-12T19:00:26.738416+00:00",
+      "elapsed_hours": 1.9780751098900025,
+      "epochs_run": 25,
+      "final_metrics_sha256": "c4ede4d5fdd7af6d18e3cb90f8306778b46496ea789225f7df4c635b4f49f1c0"
+    }
+  },
+  "precision": "32-true",
+  "run_dir": "/cluster-site-redacted/jroth/xview3-h100-runs-1a82d508/sarmae-f10-s0",
+  "runtime_amendment": {
+    "git_sha": "1a82d508fbeb9fdf6868a9637611e9018952fb43",
+    "manifest_sha256": "d9412f6772589a37bd20914313455d7e2eca856b56e9aaac3020add55922195f",
+    "package_id": "xview3-h100-runtime-1a82d508fbeb9fdf6868a9637611e9018952fb43-dc9ce5996fd1458c894fa33d0eaf6ca98f4c5478474da34cca7320618cf665a3",
+    "ready_sha256": "7490027cb0aabdc19fa452fd7410620ed69cfef48de1d8317c0d36933009a06a",
+    "runtime_bundle_sha256": "e00f7f9ab43de54853ff639023f19d672423f1932e8885778c0e7da0371b3bf1",
+    "sha256sums_sha256": "3c2a077e3b98cb6a6f1c33513f25b5d0f86071cb9a2b8cb43a8260b44fed610f"
+  },
+  "schema": 2,
+  "slurm_job_id": "550204",
+  "source_validation_sha256": "2bd145518652dbe7cf80c158ef62e066a26c8b61214817cb2a6d2272d35891d4",
+  "started_utc": "2026-08-12T17:01:44.844061+00:00",
+  "strict_fp32": {
+    "cuda_matmul_fp32_precision": "ieee",
+    "cudnn_conv_fp32_precision": "ieee",
+    "cudnn_rnn_fp32_precision": "ieee"
+  },
+  "torch": "2.11.0+cu126",
+  "training_cohort": null,
+  "training_completed_utc": "2026-08-12T19:00:26.738416+00:00",
+  "venv_build_sha256": "d84d60c8ecce9138bdd68042d7c5b999aca154b049db1d15b0bc196972b15c3c",
+  "venv_sha256": "d1237904ba04e602aa05e693074d4466b50a3f9c2cd6969692684e415838a200",
+  "wheelhouse": {
+    "artifacts": {
+      "accelerate-1.14.0-py3-none-any.whl": {
+        "bytes": 389246,
+        "sha256": "e94390c2863b873be18f623f9df48a0d8fe5eff13ea7f1a00092b0a7904888c6"
+      },
+      "affine-2.4.0-py3-none-any.whl": {
+        "bytes": 15662,
+        "sha256": "8a3df80e2b2378aef598a83c1392efd47967afec4242021a0b06b4c7cbc61a92"
+      },
+      "aiohappyeyeballs-2.7.1-py3-none-any.whl": {
+        "bytes": 15038,
+        "sha256": "9243213661e29250eb41368e5daa826fc017156c3b8a11440826b2e3ed376472"
+      },
+      "aiohttp-3.14.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl": {
+        "bytes": 1786989,
+        "sha256": "b821a1f7dedf7e37450654e620038ac3b2e81e8fa6ea269337e97101978ec730"
+      },
+      "aiosignal-1.4.0-py3-none-any.whl": {
+        "bytes": 7490,
+        "sha256": "053243f8b92b990551949e63930a839ff0cf0b0ebbe0597b0f3fb19e1a0fe82e"
+      },
+      "appdirs-1.4.4-py2.py3-none-any.whl": {
+        "bytes": 9566,
+        "sha256": "a841dacd6b99318a741b166adb07e19ee71a274450e68237b4650ca1055ab128"
+      },
+      "attrs-26.1.0-py3-none-any.whl": {
+        "bytes": 67548,
+        "sha256": "c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309"
+      },
+      "certifi-2026.6.17-py3-none-any.whl": {
+        "bytes": 133289,
+        "sha256": "2227dcbaafe0d2f59279d1762ddddc37783ed4354594f194ffc31d20f41fc3db"
+      },
+      "charset_normalizer-3.4.7-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl": {
+        "bytes": 214061,
+        "sha256": "2fe249cb4651fd12605b7288b24751d8bfd46d35f12a20b1ba33dea122e690df"
+      },
+      "click-8.4.2-py3-none-any.whl": {
+        "bytes": 119243,
+        "sha256": "e6f9f66136c816745b9d65817da91d61d957fb16e02e4dcd0552553c5a197b76"
+      },
+      "click_plugins-1.1.1.2-py2.py3-none-any.whl": {
+        "bytes": 11051,
+        "sha256": "008d65743833ffc1f5417bf0e78e8d2c23aab04d9745ba817bd3e71b0feb6aa6"
+      },
+      "cligj-0.7.2-py3-none-any.whl": {
+        "bytes": 7069,
+        "sha256": "c1ca117dbce1fe20a5809dc96f01e1c2840f6dcc939b3ddbb1111bf330ba82df"
+      },
+      "colorama-0.4.6-py2.py3-none-any.whl": {
+        "bytes": 25335,
+        "sha256": "4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6"
+      },
+      "configilm-0.7.1-py3-none-any.whl": {
+        "bytes": 55276758,
+        "sha256": "54e8c2424c55bb4e68dfda07593e155e9ecfa6c60b50585c4b378076934cf5e3"
+      },
+      "contourpy-1.3.3-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl": {
+        "bytes": 355238,
+        "sha256": "51e79c1f7470158e838808d4a996fa9bac72c498e93d8ebe5119bc1e6becb0db"
+      },
+      "cuda_bindings-12.9.7-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl": {
+        "bytes": 7647147,
+        "sha256": "c6496a88d84b1209d6651b0370c19c26319e157c22f6d018bf9a358cd8049041"
+      },
+      "cuda_pathfinder-1.6.0-py3-none-any.whl": {
+        "bytes": 54591,
+        "sha256": "1503af579d8379c24bdd65528379bc57039b0455be9f5f9686cf8e473a1fce51"
+      },
+      "cuda_toolkit-12.6.3-py2.py3-none-any.whl": {
+        "bytes": 2288,
+        "sha256": "79d8605baeb6c2f695761e0efb54bc62dbc3c9e32eb0742df7669c07befaa8f7"
+      },
+      "cycler-0.12.1-py3-none-any.whl": {
+        "bytes": 8321,
+        "sha256": "85cef7cff222d8644161529808465972e51340599459b8ac3ccbac5a854e0d30"
+      },
+      "decord-0.6.0-py3-none-manylinux2010_x86_64.whl": {
+        "bytes": 13602299,
+        "sha256": "51997f20be8958e23b7c4061ba45d0efcd86bffd5fe81c695d0befee0d442976"
+      },
+      "filelock-3.29.0-py3-none-any.whl": {
+        "bytes": 39812,
+        "sha256": "96f5f6344709aa1572bbf631c640e4ebeeb519e08da902c39a001882f30ac258"
+      },
+      "fonttools-4.63.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl": {
+        "bytes": 5082308,
+        "sha256": "d76ac49f929aecaf82d83250b8347e099d7aecba0f4726c1d9b6df3b8bb5fe18"
+      },
+      "frozenlist-1.8.0-cp311-cp311-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl": {
+        "bytes": 231067,
+        "sha256": "2552f44204b744fba866e573be4c1f9048d6a324dfe14475103fd51613eb1d1f"
+      },
+      "fsspec-2026.4.0-py3-none-any.whl": {
+        "bytes": 203402,
+        "sha256": "11ef7bb35dab8a394fde6e608221d5cf3e8499401c249bebaeaad760a1a8dec2"
+      },
+      "hf_xet-1.5.2-cp38-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl": {
+        "bytes": 4428006,
+        "sha256": "db78c39c83d6279daddc98e2238f373ab8980685556d42472b4ec51abcf03e8c"
+      },
+      "huggingface_hub-0.36.2-py3-none-any.whl": {
+        "bytes": 566395,
+        "sha256": "48f0c8eac16145dfce371e9d2d7772854a4f591bcb56c9cf548accf531d54270"
+      },
+      "idna-3.18-py3-none-any.whl": {
+        "bytes": 65455,
+        "sha256": "7f952cbe720b688055e3f87de14f5c3e5fdaa8bc3928985c4077ca689de849a2"
+      },
+      "iniconfig-2.3.0-py3-none-any.whl": {
+        "bytes": 7484,
+        "sha256": "f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12"
+      },
+      "jinja2-3.1.6-py3-none-any.whl": {
+        "bytes": 134899,
+        "sha256": "85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67"
+      },
+      "kiwisolver-1.5.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl": {
+        "bytes": 1438209,
+        "sha256": "2517e24d7315eb51c10664cdb865195df38ab74456c677df67bb47f12d088a27"
+      },
+      "lightning-2.6.5-py3-none-any.whl": {
+        "bytes": 848611,
+        "sha256": "3702fb7ef4ab51a8c3d4a140f4674514fe72973a9673dfa05e07a078e2767389"
+      },
+      "lightning_utilities-0.15.3-py3-none-any.whl": {
+        "bytes": 31906,
+        "sha256": "6c55f1bee70084a1cbeaa41ada96e4b3a0fea5909e844dd335bd80f5a73c5f91"
+      },
+      "lmdb-2.2.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl": {
+        "bytes": 329516,
+        "sha256": "9c145f6a67cc10c0c055cf4b9ce16274fb850c4d9690fef5428cb588f0694be1"
+      },
+      "markupsafe-3.0.3-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl": {
+        "bytes": 22940,
+        "sha256": "0bf2a864d67e76e5c9a34dc26ec616a66b9888e25e7b9460e1c76d3293bd9dbf"
+      },
+      "matplotlib-3.11.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl": {
+        "bytes": 10021076,
+        "sha256": "630eee0e67d35cce2019a0e670719f4816e3b86aff0fa72729f6c69786fceb45"
+      },
+      "mpmath-1.3.0-py3-none-any.whl": {
+        "bytes": 536198,
+        "sha256": "a0b2b9fe80bbcd81a6647ff13108738cfb482d481d826cc0e02f5b35e5c88d2c"
+      },
+      "multidict-6.7.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl": {
+        "bytes": 246293,
+        "sha256": "439cbebd499f92e9aa6793016a8acaa161dfa749ae86d20960189f5398a19144"
+      },
+      "networkx-3.6.1-py3-none-any.whl": {
+        "bytes": 2068504,
+        "sha256": "d47fbf302e7d9cbbb9e2555a0d267983d2aa476bac30e90dfbe5669bd57f3762"
+      },
+      "numpy-1.26.4-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl": {
+        "bytes": 18252005,
+        "sha256": "666dbfb6ec68962c033a450943ded891bed2d54e6755e35e5835d63f4f6931d5"
+      },
+      "nvidia_cublas_cu12-12.6.4.1-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl": {
+        "bytes": 393138322,
+        "sha256": "08ed2686e9875d01b58e3cb379c6896df8e76c75e0d4a7f7dace3d7b6d9ef8eb"
+      },
+      "nvidia_cuda_cupti_cu12-12.6.80-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl": {
+        "bytes": 8917980,
+        "sha256": "6768bad6cab4f19e8292125e5f1ac8aa7d1718704012a0e3272a6f61c4bce132"
+      },
+      "nvidia_cuda_nvrtc_cu12-12.6.85-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl": {
+        "bytes": 23649944,
+        "sha256": "800927308ccc5dd6246d3f61f7fcef2ed7ec4e59e199090d360d3293f78bd5a2"
+      },
+      "nvidia_cuda_runtime_cu12-12.6.77-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl": {
+        "bytes": 897690,
+        "sha256": "ba3b56a4f896141e25e19ab287cd71e52a6a0f4b29d0d31609f60e3b4d5219b7"
+      },
+      "nvidia_cudnn_cu12-9.10.2.21-py3-none-manylinux_2_27_x86_64.whl": {
+        "bytes": 706758467,
+        "sha256": "949452be657fa16687d0930933f032835951ef0892b37d2d53824d1a84dc97a8"
+      },
+      "nvidia_cufft_cu12-11.3.0.4-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl": {
+        "bytes": 200221632,
+        "sha256": "ccba62eb9cef5559abd5e0d54ceed2d9934030f51163df018532142a8ec533e5"
+      },
+      "nvidia_cufile_cu12-1.11.1.6-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl": {
+        "bytes": 1142103,
+        "sha256": "cc23469d1c7e52ce6c1d55253273d32c565dd22068647f3aa59b3c6b005bf159"
+      },
+      "nvidia_curand_cu12-10.3.7.77-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl": {
+        "bytes": 56279010,
+        "sha256": "a42cd1344297f70b9e39a1e4f467a4e1c10f1da54ff7a85c12197f6c652c8bdf"
+      },
+      "nvidia_cusolver_cu12-11.7.1.2-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl": {
+        "bytes": 158229790,
+        "sha256": "e9e49843a7707e42022babb9bcfa33c29857a93b88020c4e4434656a655b698c"
+      },
+      "nvidia_cusparse_cu12-12.5.4.2-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl": {
+        "bytes": 216561367,
+        "sha256": "7556d9eca156e18184b94947ade0fba5bb47d69cec46bf8660fd2c71a4b48b73"
+      },
+      "nvidia_cusparselt_cu12-0.7.1-py3-none-manylinux2014_x86_64.whl": {
+        "bytes": 287193691,
+        "sha256": "f1bb701d6b930d5a7cea44c19ceb973311500847f81b634d802b7b539dc55623"
+      },
+      "nvidia_ml_py-13.610.43-py3-none-any.whl": {
+        "bytes": 53163,
+        "sha256": "f13c72698edef492f985cc225f14faafe68ae065a2e407f45bdf6f4b9b43fde8"
+      },
+      "nvidia_nccl_cu12-2.28.9-py3-none-manylinux_2_18_x86_64.whl": {
+        "bytes": 296782137,
+        "sha256": "485776daa8447da5da39681af455aa3b2c2586ddcf4af8772495e7c532c7e5ab"
+      },
+      "nvidia_nvjitlink_cu12-12.6.85-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl": {
+        "bytes": 19744971,
+        "sha256": "eedc36df9e88b682efe4309aa16b5b4e78c2407eac59e8c10a6a47535164369a"
+      },
+      "nvidia_nvshmem_cu12-3.4.5-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl": {
+        "bytes": 139103095,
+        "sha256": "042f2500f24c021db8a06c5eec2539027d57460e1c1a762055a6554f72c369bd"
+      },
+      "nvidia_nvtx_cu12-12.6.77-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl": {
+        "bytes": 89276,
+        "sha256": "b90bed3df379fa79afbd21be8e04a0314336b8ae16768b58f2d34cb1d04cd7d2"
+      },
+      "opencv_python-4.11.0.86-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl": {
+        "bytes": 62986597,
+        "sha256": "6b02611523803495003bd87362db3e1d2a0454a6a63025dc6658a9830570aa0d"
+      },
+      "packaging-26.2-py3-none-any.whl": {
+        "bytes": 100195,
+        "sha256": "5fc45236b9446107ff2415ce77c807cee2862cb6fac22b8a73826d0693b0980e"
+      },
+      "pandas-3.0.3-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl": {
+        "bytes": 11274611,
+        "sha256": "8a1e45c80cceb3b4a21bc5939d52e8cbd8d9b7305309219d59e9754d9ce09e27"
+      },
+      "peft-0.19.1-py3-none-any.whl": {
+        "bytes": 680692,
+        "sha256": "2113f72a81621b5913ef28f9022204c742df111890c5f49d812716a4a301e356"
+      },
+      "pillow-12.2.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl": {
+        "bytes": 7079655,
+        "sha256": "e74473c875d78b8e9d5da2a70f7099549f9eb37ded4e2f6a463e60125bccd176"
+      },
+      "pluggy-1.6.0-py3-none-any.whl": {
+        "bytes": 20538,
+        "sha256": "e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746"
+      },
+      "polars-1.42.1-py3-none-any.whl": {
+        "bytes": 837622,
+        "sha256": "3c0c65cdfa21a621650c4bdcbbccf93964d052fd766c3e70e84a55d961c259fd"
+      },
+      "polars_runtime_32-1.42.1-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl": {
+        "bytes": 57302723,
+        "sha256": "d059e8e53cc114ff82f9bd791fd341dc53534a2c745e6f6aa37594c3a93f01fe"
+      },
+      "propcache-0.5.2-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl": {
+        "bytes": 58888,
+        "sha256": "5aaa2b923c1944ac8febd6609cb373540a5563e7cbcb0fd770f75dace2eb817b"
+      },
+      "psutil-7.2.2-cp36-abi3-manylinux2010_x86_64.manylinux_2_12_x86_64.manylinux_2_28_x86_64.whl": {
+        "bytes": 155560,
+        "sha256": "076a2d2f923fd4821644f5ba89f059523da90dc9014e85f8e45a5774ca5bc6f9"
+      },
+      "pyarrow-24.0.0-cp311-cp311-manylinux_2_28_x86_64.whl": {
+        "bytes": 48837449,
+        "sha256": "14e31a3c9e35f1ab6356c6378f6f72830e6d2d5f1791df3774a7b097d18a6a1e"
+      },
+      "pygments-2.20.0-py3-none-any.whl": {
+        "bytes": 1231151,
+        "sha256": "81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176"
+      },
+      "pyparsing-3.3.2-py3-none-any.whl": {
+        "bytes": 122781,
+        "sha256": "850ba148bd908d7e2411587e247a1e4f0327839c40e2e5e6d05a007ecc69911d"
+      },
+      "pytest-9.1.1-py3-none-any.whl": {
+        "bytes": 386536,
+        "sha256": "37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c"
+      },
+      "python_dateutil-2.9.0.post0-py2.py3-none-any.whl": {
+        "bytes": 229892,
+        "sha256": "a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427"
+      },
+      "pytorch_lightning-2.6.5-py3-none-any.whl": {
+        "bytes": 852407,
+        "sha256": "62d9c8549b2278fedc3364f0a5607a56c6063d18635008f8cf3fae8d802b0d76"
+      },
+      "pyyaml-6.0.3-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl": {
+        "bytes": 806638,
+        "sha256": "b8bb0864c5a28024fac8a632c443c87c5aa6f215c0b126c449ae1a150412f31d"
+      },
+      "rasterio-1.4.4-cp311-cp311-manylinux_2_28_x86_64.whl": {
+        "bytes": 35881871,
+        "sha256": "e24b7b8c2df801dde2a1dffb44c58902bd76b5cab740dc11de4ff9963992a71a"
+      },
+      "regex-2026.6.28-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl": {
+        "bytes": 799867,
+        "sha256": "a361feeaf1b6ba1df060f2ff5c5947092edf537a35ce78e76387ac56d3e0f4a4"
+      },
+      "requests-2.34.2-py3-none-any.whl": {
+        "bytes": 73075,
+        "sha256": "2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0"
+      },
+      "safetensors-0.8.0-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl": {
+        "bytes": 516040,
+        "sha256": "fd6f3f93c9a0a7cc2788ee63fb763353d4bd2e89b0751bc78fcf7dda00bea774"
+      },
+      "scipy-1.17.1-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl": {
+        "bytes": 35349300,
+        "sha256": "43af8d1f3bea642559019edfe64e9b11192a8978efbd1539d7bc2aaa23d92de4"
+      },
+      "shapely-2.1.2-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl": {
+        "bytes": 3110842,
+        "sha256": "136ab87b17e733e22f0961504d05e77e7be8c9b5a8184f685b4a91a84efe3c26"
+      },
+      "six-1.17.0-py2.py3-none-any.whl": {
+        "bytes": 11050,
+        "sha256": "4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274"
+      },
+      "sympy-1.14.0-py3-none-any.whl": {
+        "bytes": 6299353,
+        "sha256": "e091cc3e99d2141a0ba2847328f5479b05d94a6635cb96148ccb3f34671bd8f5"
+      },
+      "timm-1.0.27-py3-none-any.whl": {
+        "bytes": 2589280,
+        "sha256": "5ff07c9ddf53cbada88eab1c93ff175c64cab683b5a2fddf863bcee985926f89"
+      },
+      "tokenizers-0.22.2-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl": {
+        "bytes": 3274982,
+        "sha256": "369cc9fc8cc10cb24143873a0d95438bb8ee257bb80c71989e3ee290e8d72c67"
+      },
+      "torch-2.11.0+cu126-cp311-cp311-manylinux_2_28_x86_64.whl": {
+        "bytes": 830427461,
+        "sha256": "a992bf8b3f2f4a8e0f2caf204ea1b1206466535eb485d4f61caf69a881e2fae7"
+      },
+      "torchmetrics-1.9.0-py3-none-any.whl": {
+        "bytes": 983384,
+        "sha256": "bfdcbff3dd1d96b3374bb2496eb39f23c4b28b8a845b6a18c313688e0d2d9ca1"
+      },
+      "torchvision-0.26.0+cu126-cp311-cp311-manylinux_2_28_x86_64.whl": {
+        "bytes": 7303570,
+        "sha256": "26bc03574a5e1d3b48348292d523e089db8e833fac2f56a49ebbfde571b90db2"
+      },
+      "tqdm-4.68.3-py3-none-any.whl": {
+        "bytes": 78337,
+        "sha256": "39832cc2def2789a6f29df83f172db7416cea70052c0907a57801c5f2fdccb03"
+      },
+      "transformers-4.57.6-py3-none-any.whl": {
+        "bytes": 11993498,
+        "sha256": "4c9e9de11333ddfe5114bc872c9f370509198acf0b87a832a0ab9458e2bd0550"
+      },
+      "triton-3.6.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl": {
+        "bytes": 188221377,
+        "sha256": "e021e87e8f266c6f87bf379b669c43c2800aac6247bdf5d518cb553e3c403c00"
+      },
+      "typing_extensions-4.15.0-py3-none-any.whl": {
+        "bytes": 44614,
+        "sha256": "f0fa19c6845758ab08074a0cfa8b7aecb71c999ca73d62883bc25cc018c4e548"
+      },
+      "tzdata-2026.2-py2.py3-none-any.whl": {
+        "bytes": 349321,
+        "sha256": "bbe9af844f658da81a5f95019480da3a89415801f6cc966806612cc7169bffe7"
+      },
+      "ultralytics-8.4.87-py3-none-any.whl": {
+        "bytes": 1346825,
+        "sha256": "a52c2facdf0f5f526421a5a1cb0b64496fc21da1cd9471553b6453287fc1c168"
+      },
+      "ultralytics_thop-2.0.20-py3-none-any.whl": {
+        "bytes": 28954,
+        "sha256": "ef1b326404aeb10954f50db58982ec8dcab5946ee04a9b10e1107ec7ba4d5c22"
+      },
+      "urllib3-2.7.0-py3-none-any.whl": {
+        "bytes": 131087,
+        "sha256": "9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897"
+      },
+      "yarl-1.24.2-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl": {
+        "bytes": 106384,
+        "sha256": "49016d82f032b1bd1e10b01078a7d29ae71bf468eeae0ea22df8bab691e60003"
+      }
+    },
+    "base_extraction": {
+      "receipt": {
+        "format_version": 1,
+        "manifest_sha256": "fccb0b505c89836a148afec709bb799f7af4908d955ea1b142e153154d830896",
+        "package_id": "xview3-h100-fp32-2726199efcebbebc89156e708b89df2a3415468a",
+        "wheelhouse": {
+          "algorithm": "xview3-wheelhouse-tree-v1",
+          "bytes": 3954949360,
+          "files": 94,
+          "sha256": "fb0106771ddb223ba2b93af3463f6accbc018ece18275975ef7770749fd11138"
+        }
+      },
+      "sha256": "eb52d4e45083f55af3ae2e14be7fc2c8c610d0567454495542574c8e431a2b5d"
+    },
+    "identity": {
+      "algorithm": "xview3-wheelhouse-tree-v1",
+      "bytes": 3954949360,
+      "files": 94,
+      "sha256": "fb0106771ddb223ba2b93af3463f6accbc018ece18275975ef7770749fd11138"
+    },
+    "reverified_after_build": true
+  }
+}

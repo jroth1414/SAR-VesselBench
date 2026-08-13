@@ -1,0 +1,92 @@
+{
+ "result_schema": 2,
+ "exp_id": "sarmae-f10-s0",
+ "git_sha": "1a82d508fbeb9fdf6868a9637611e9018952fb43",
+ "detector_sha256": "c42ae65bf9045cc93f0d73ae1437b2f6a1300670cb49d8e93f83a39d58a62a12",
+ "precision": "32-true",
+ "micro_batch": 16,
+ "gradient_accumulation": 1,
+ "effective_batch": 16,
+ "epochs_run": 25,
+ "best_dev_f1": 0.8856589147286822,
+ "best_dev": {
+  "f1": 0.8856589147286822,
+  "precision": 0.887378640776699,
+  "recall": 0.8839458413926499,
+  "tp": 457,
+  "fp": 58,
+  "fn": 60,
+  "ignored_predictions": 62,
+  "threshold": 0.5869140625,
+  "n_candidates": 931,
+  "epoch": 4
+ },
+ "best_checkpoint": {
+  "relative_path": "checkpoints/best.ckpt",
+  "sha256": "060594d89df0b429f75288339c5400b1da82240d7324f977b862e245e0cd3f04",
+  "epoch": 4
+ },
+ "last_dev": {
+  "f1": 0.8316279069767442,
+  "precision": 0.8010752688172043,
+  "recall": 0.8646034816247582,
+  "tp": 447,
+  "fp": 111,
+  "fn": 70,
+  "ignored_predictions": 69,
+  "threshold": 0.9111328125,
+  "n_candidates": 1007,
+  "epoch": 24
+ },
+ "train_loss": 0.002737887902185321,
+ "h100_runtime_contract": {
+  "schema": 1,
+  "status": "verified",
+  "pre_trainer": {
+   "schema": 1,
+   "status": "verified",
+   "stage": "pre-trainer",
+   "precision": "32-true",
+   "devices": 1,
+   "micro_batch": 16,
+   "gradient_accumulation": 1,
+   "effective_batch": 16,
+   "strict_fp32": {
+    "cuda_matmul_fp32_precision": "ieee",
+    "cudnn_conv_fp32_precision": "ieee",
+    "cudnn_rnn_fp32_precision": "ieee"
+   },
+   "autocast": {
+    "global": false,
+    "cuda": false,
+    "cpu": false
+   },
+   "process": {
+    "WORLD_SIZE": "unset",
+    "SLURM_NTASKS": "1",
+    "effective_world_size": 1
+   },
+   "model": {
+    "floating_parameter_count": 160,
+    "floating_parameter_dtypes": [
+     "torch.float32"
+    ]
+   }
+  },
+  "resolved_trainer": {
+   "accelerator": "lightning.pytorch.accelerators.cuda.CUDAAccelerator",
+   "precision_plugin": "lightning.pytorch.plugins.precision.precision.Precision",
+   "precision": "32-true",
+   "gradient_scaler": null,
+   "strategy": "lightning.pytorch.strategies.single_device.SingleDeviceStrategy",
+   "root_device_type": "cuda",
+   "root_device_index": 0,
+   "num_devices": 1,
+   "world_size": 1,
+   "device_ids": [
+    0
+   ],
+   "gradient_accumulation": 1
+  }
+ }
+}
