@@ -23,11 +23,18 @@ fails closed on any inconsistency:
 python -m src.analysis.heldout_results --output-dir docs/results/generated
 ```
 
-Published F1 values are corrected development-selection scores. Held-out
-16-scene TEST macros render only when all 32 immutable test results are
-present and revalidate against the cohort; the separate 50-scene
-human-verified set remains sealed until `final_verified.csv` exists. Until
-then this repository makes no held-out dark-vessel-performance claim.
+Published values are corrected development-selection F1 alongside
+once-scored held-out TEST results: all 32 immutable `test_metrics.json`
+results are committed in the evidence tree and revalidate against the
+cohort on every build (the TEST column renders all-or-nothing). The
+separate 50-scene human-verified set remains sealed until
+`final_verified.csv` exists; dark-vessel recall is defined only there.
+
+`src/analysis/analysis.ipynb` is an executed, in-depth analysis notebook
+over the same validated evidence (dev-versus-test contrasts, shrinkage
+structure, monotonicity, operating-point movement, cost-performance, and
+training-curve timing). It reads only through the fail-closed validator and
+runs from the repository root with `jupyter`/`nbclient` installed.
 
 `results/h100/h100_campaign_snapshot.json` remains the sanitized operator
 status record from the campaign deadline, rendered by
