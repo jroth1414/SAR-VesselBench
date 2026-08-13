@@ -75,10 +75,10 @@ Every core run uses one PyTorch Lightning path, fixed `[VH, VV, VH-VV]` input,
 the same CenterNet-style point detector, scene-disjoint nested subsets, and an
 effective batch of 16. The code is hardware-neutral: it runs on any single
 CUDA-capable GPU under Lightning `32-true`, with CUDA matmul TF32 and cuDNN
-TF32 disabled (vendor-generic PyTorch settings). The recorded campaign
-executed every cell on one NVIDIA H100 so that all published values share one
-hardware class; that uniformity is a property of the evidence, not a
-requirement of the code.
+TF32 disabled (vendor-generic PyTorch settings). The recorded campaign ran
+on one eight-GPU NVIDIA H100 node, with each cell executing as a single
+single-GPU process, so all published values share one hardware class; that
+uniformity is a property of the evidence, not a requirement of the code.
 
 CI protects the splits, backbone parity, checkpoint-loading contract, detector
 configuration, training statistics, and scorer hash.
@@ -141,11 +141,14 @@ following layout under `data/weights/`:
 | ImageNet ViT | `timm/vit_base_patch16_224.augreg_in1k@458542882691a06a8b667c6fb5fe5c9573093a81` | `imagenet_vit_augreg_in1k/model.safetensors` |
 | ImageNet CNN | `timm/convnextv2_base.fcmae_ft_in1k@7b29800e499fdc06de5b612970f3384dc8d29ca5` | `imagenet_cnn_fcmae_ft_in1k/model.safetensors` |
 
-With the Hugging Face CLI, fetch a complete pinned snapshot before selecting
-the artifact named above:
+With the Hugging Face CLI (`hf`, the successor to `huggingface-cli`), fetch
+a complete snapshot at the pinned revision, then copy the required artifact
+into `data/weights/`. The table's source column splits at `@` into the
+repository ID and the revision. For example, for SatDINO:
 
 ```bash
-hf download REPOSITORY_ID --revision REVISION --local-dir /tmp/xview3-checkpoint
+hf download strakajk/satdino-vit_base-16 --revision 22b7a253 \
+  --local-dir ./xview3-checkpoint-scratch
 ```
 
 Create `LICENSE.note` beside each local checkpoint after reviewing its model

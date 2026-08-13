@@ -47,10 +47,11 @@ all cells. AdamW uses learning rate $10^{-4}$, weight decay 0.05,
 layer-wise decay 0.65, five warm-up epochs, and cosine decay across at most
 50 epochs; early stopping waits four development evaluations. Every cell
 uses micro-batch 16, accumulation 1, seed 0, and full-encoder fine-tuning.
-The campaign executed one process per NVIDIA H100 in Lightning
-\texttt{32-true} with CUDA matmul and cuDNN TF32 disabled. The code itself
-is hardware-neutral; the uniform hardware class is a property of the
-evidence. No arm and no label fraction gets its own hyperparameters.
+The campaign ran on one eight-GPU NVIDIA H100 node; each cell executed as a
+single-GPU process in Lightning \texttt{32-true} with CUDA matmul and cuDNN
+TF32 disabled. The code itself is hardware-neutral; the uniform hardware
+class is a property of the evidence. No arm and no label fraction gets its
+own hyperparameters.
 
 \paragraph{Registered contrasts.}
 For track $t$, role $r$, and fraction $f$, let $F^{(t)}_{r,f}$ denote
