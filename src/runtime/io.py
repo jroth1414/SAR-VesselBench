@@ -36,11 +36,14 @@ def atomic_write_json(path: str | Path, payload: object) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary, destination)
-        directory_fd = os.open(destination.parent, os.O_RDONLY)
-        try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
+        # POSIX-only durability step: Windows cannot open directory
+        # descriptors, and the file bytes are already fsynced above.
+        if os.name != "nt":
+            directory_fd = os.open(destination.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
@@ -62,11 +65,14 @@ def atomic_write_text(path: str | Path, text: str) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary, destination)
-        directory_fd = os.open(destination.parent, os.O_RDONLY)
-        try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
+        # POSIX-only durability step: Windows cannot open directory
+        # descriptors, and the file bytes are already fsynced above.
+        if os.name != "nt":
+            directory_fd = os.open(destination.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)

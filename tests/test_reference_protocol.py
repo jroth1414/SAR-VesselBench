@@ -14,6 +14,25 @@ from src.references import locateanything_zs, yolo26_ref
 from src.runtime import reference
 
 
+def _symlinks_available() -> bool:
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as scratch:
+        target = Path(scratch) / "target"
+        target.write_text("probe", encoding="utf-8")
+        try:
+            (Path(scratch) / "link").symlink_to(target)
+        except OSError:
+            return False
+    return True
+
+
+requires_symlinks = pytest.mark.skipif(
+    not _symlinks_available(),
+    reason="creating symlinks requires privilege on this platform",
+)
+
+
 GIT_SHA = "a" * 40
 
 
@@ -280,6 +299,7 @@ def test_r3_retains_low_ignore_labels_and_deterministic_sample() -> None:
     assert locateanything_zs.SAMPLE_ALGORITHM_VERSION == "floor-index-v1"
 
 
+@requires_symlinks
 def test_r3_model_payload_identity_rejects_drift_and_symlinks(tmp_path: Path) -> None:
     root = tmp_path / "model"
     root.mkdir()

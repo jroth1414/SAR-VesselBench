@@ -5,10 +5,30 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
+import tempfile
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 import torch
+
+
+def _symlinks_available() -> bool:
+    with tempfile.TemporaryDirectory() as scratch:
+        target = Path(scratch) / "target"
+        target.write_text("probe", encoding="utf-8")
+        try:
+            (Path(scratch) / "link").symlink_to(target)
+        except OSError:
+            return False
+    return True
+
+
+requires_symlinks = pytest.mark.skipif(
+    not _symlinks_available(),
+    reason="creating symlinks requires privilege on this platform",
+)
 
 from src.eval.result_contract import (
     RESULT_SCHEMA,
@@ -261,6 +281,7 @@ def test_marker_rejects_hash_epoch_path_and_recipe_drift(tmp_path):
         )
 
 
+@requires_symlinks
 def test_marker_rejects_symlinked_checkpoint(tmp_path):
     run_dir, checkpoint, payload = valid_marker(tmp_path)
     target = checkpoint.with_name("target.ckpt")
@@ -273,6 +294,7 @@ def test_marker_rejects_symlinked_checkpoint(tmp_path):
         )
 
 
+@requires_symlinks
 def test_symlinked_runs_root_accepts_canonical_checkpoint_and_rejects_escapes(
     tmp_path,
 ):
