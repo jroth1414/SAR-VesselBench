@@ -19,6 +19,7 @@ import hashlib
 import json
 import math
 import re
+import time
 from pathlib import Path
 from typing import Sequence
 
@@ -43,10 +44,108 @@ INIT_SHORT = {
     "bigearthnet_s1": "beS1",
     "cnn_imagenet": "cnnin1k",
 }
+DIAGNOSTIC_VARIANTS = ("current_replay", "first_conv_reset")
+DIAGNOSTIC_STAGES = ("probe", "full")
+DIAGNOSTIC_RUN_SCHEMA = 1
+DIAGNOSTIC_PROBE_EPOCHS = 5
+DIAGNOSTIC_SCHEDULE_EPOCHS = 50
+
 
 
 def exp_id(init_name: str, label_frac: float, seed: int) -> str:
     return f"{INIT_SHORT[init_name]}-f{int(round(label_frac * 100))}-s{seed}"
+
+
+def _diagnostic_layout(args, det_cfg, parser):
+    """Resolve a fail-closed namespace and unchanged recipe for S2 diagnostics."""
+
+    supplied = (
+        args.diagnostic_variant,
+        args.diagnostic_stage,
+        args.diagnostic_root,
+    )
+    if not any(value is not None for value in supplied):
+        return None
+    if not all(value is not None for value in supplied):
+        parser.error(
+            "--diagnostic-variant, --diagnostic-stage, and "
+            "--diagnostic-root must be supplied together"
+        )
+    if (
+        args.init != "bigearthnet_s2"
+        or args.label_frac != 1.0
+        or args.seed != 0
+    ):
+        parser.error(
+            "BigEarthNet-S2 diagnostics require --init bigearthnet_s2, "
+            "--label_frac 1.0, and --seed 0"
+        )
+    forbidden = {
+        "--epochs": args.epochs,
+        "--smoke": args.smoke,
+        "--exp-suffix": args.exp_suffix,
+        "--batch-size": args.batch_size,
+        "--micro-batch": args.micro_batch,
+        "--samples-per-epoch": args.samples_per_epoch,
+        "--dev-every": args.dev_every,
+        "--n-dev-scenes": args.n_dev_scenes,
+    }
+    changed = sorted(
+        name
+        for name, value in forbidden.items()
+        if value not in (None, False)
+    )
+    if changed:
+        parser.error(
+            "diagnostic runs refuse recipe overrides: " + ", ".join(changed)
+        )
+
+    expected_recipe = {
+        "schedule.epochs": DIAGNOSTIC_SCHEDULE_EPOCHS,
+        "schedule.batch_size": 16,
+        "schedule.precision": "32-true",
+        "optimizer.layer_decay": 0.65,
+        "eval.dev_every_epochs": 5,
+        "eval.n_dev_scenes": 8,
+    }
+    observed_recipe = {
+        "schedule.epochs": det_cfg["schedule"]["epochs"],
+        "schedule.batch_size": det_cfg["schedule"]["batch_size"],
+        "schedule.precision": det_cfg["schedule"]["precision"],
+        "optimizer.layer_decay": det_cfg["optimizer"]["layer_decay"],
+        "eval.dev_every_epochs": det_cfg["eval"]["dev_every_epochs"],
+        "eval.n_dev_scenes": det_cfg["eval"]["n_dev_scenes"],
+    }
+    if observed_recipe != expected_recipe:
+        parser.error(
+            "diagnostic detector recipe differs from the approved contract: "
+            f"{observed_recipe} != {expected_recipe}"
+        )
+
+    root = Path(args.diagnostic_root)
+    if not root.is_absolute() or root.is_symlink() or not root.is_dir():
+        parser.error(
+            "--diagnostic-root must be an existing absolute non-symlink directory"
+        )
+    resolved_root = root.resolve(strict=True)
+    core_root = (Path.cwd() / "runs").resolve(strict=False)
+    if resolved_root == core_root or resolved_root.is_relative_to(core_root):
+        parser.error("diagnostic runs must be outside the core runs namespace")
+
+    run_id = (
+        f"bes2-{args.diagnostic_variant}-{args.diagnostic_stage}-f100-s0"
+    )
+    trainer_epochs = (
+        DIAGNOSTIC_PROBE_EPOCHS
+        if args.diagnostic_stage == "probe"
+        else DIAGNOSTIC_SCHEDULE_EPOCHS
+    )
+    return {
+        "run_id": run_id,
+        "run_dir": resolved_root / run_id,
+        "trainer_epochs": trainer_epochs,
+        "schedule_epochs": DIAGNOSTIC_SCHEDULE_EPOCHS,
+    }
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -102,6 +201,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--samples-per-epoch", type=int, default=None)
     parser.add_argument("--dev-every", type=int, default=None)
     parser.add_argument("--n-dev-scenes", type=int, default=None)
+    parser.add_argument(
+        "--diagnostic-variant",
+        choices=DIAGNOSTIC_VARIANTS,
+        default=None,
+        help="diagnostic-only S2 initialization; never a core arm name",
+    )
+    parser.add_argument(
+        "--diagnostic-stage",
+        choices=DIAGNOSTIC_STAGES,
+        default=None,
+    )
+    parser.add_argument(
+        "--diagnostic-root",
+        type=Path,
+        default=None,
+        help="existing persistent namespace outside core runs",
+    )
     args = parser.parse_args(argv)
 
     data_cfg = yaml.safe_load(Path(args.data_config).read_text())
@@ -112,15 +228,35 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not re.fullmatch(r"[0-9a-f]{40}", git_sha):
         parser.error("--git-sha/source checkout must resolve to a full 40-hex SHA")
 
-    run_id = exp_id(args.init, args.label_frac, args.seed)
-    if args.exp_suffix:
-        run_id = f"{run_id}-{args.exp_suffix}"
-    run_dir = Path("runs") / run_id
+    diagnostic = _diagnostic_layout(args, det_cfg, parser)
+    if diagnostic is not None and not h100_runtime_active():
+        parser.error(
+            "BigEarthNet-S2 diagnostic training requires the accepted "
+            "strict-FP32 H100 runtime"
+        )
+
+    if diagnostic is None:
+        run_id = exp_id(args.init, args.label_frac, args.seed)
+        if args.exp_suffix:
+            run_id = f"{run_id}-{args.exp_suffix}"
+        run_dir = Path("runs") / run_id
+        trainer_epochs = args.epochs or det_cfg["schedule"]["epochs"]
+        schedule_epochs = trainer_epochs
+    else:
+        run_id = diagnostic["run_id"]
+        run_dir = diagnostic["run_dir"]
+        trainer_epochs = diagnostic["trainer_epochs"]
+        schedule_epochs = diagnostic["schedule_epochs"]
+        if (run_dir / "final_metrics.json").exists():
+            parser.error(
+                "diagnostic namespace contains a forbidden core completion marker"
+            )
+        if (run_dir / "training_metrics.json").exists():
+            parser.error("diagnostic training is already complete and immutable")
     run_dir.mkdir(parents=True, exist_ok=True)
 
     L.seed_everything(args.seed, workers=True)
 
-    epochs = args.epochs or det_cfg["schedule"]["epochs"]
     batch_size = args.batch_size or det_cfg["schedule"]["batch_size"]
     accumulate = 1
     if args.micro_batch and args.micro_batch < batch_size:
@@ -153,10 +289,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         lr=det_cfg["optimizer"]["lr"],
         layer_decay=det_cfg["optimizer"]["layer_decay"],
         weight_decay=det_cfg["optimizer"]["weight_decay"],
-        epochs=epochs,
+        epochs=schedule_epochs,
         warmup_epochs=det_cfg["schedule"]["warmup_epochs"],
         head_channels=det_cfg["head"]["channels"],
+        diagnostic_variant=args.diagnostic_variant,
     )
+    if diagnostic is not None:
+        initialization = module.diagnostic_initialization
+        if not isinstance(initialization, dict):
+            raise RuntimeError("diagnostic initialization manifest is absent")
+        initialization_path = run_dir / "initialization.json"
+        if initialization_path.exists():
+            if initialization_path.is_symlink() or json.loads(
+                initialization_path.read_text()
+            ) != initialization:
+                raise RuntimeError(
+                    "diagnostic initialization changed across resume"
+                )
+        else:
+            atomic_write_json(initialization_path, initialization)
 
     dev_eval = DevSceneEval(
         data_cfg=data_cfg,
@@ -165,7 +316,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         or (1 if args.smoke else det_cfg["eval"]["dev_every_epochs"]),
         n_scenes=args.n_dev_scenes
         or (1 if args.smoke else det_cfg["eval"]["n_dev_scenes"]),
-        final_epoch=epochs,
+        final_epoch=trainer_epochs,
+        diagnostic=diagnostic is not None,
     )
     checkpoint_callback = ModelCheckpoint(
         dirpath=run_dir / "checkpoints",
@@ -211,7 +363,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             gradient_accumulation=accumulate,
         )
     trainer = L.Trainer(
-        max_epochs=epochs,
+        max_epochs=trainer_epochs,
         accelerator="gpu",
         devices=1,
         precision=det_cfg["schedule"]["precision"],
@@ -236,9 +388,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             pre_trainer=h100_pre_trainer,
         )
 
+    resolved_args = dict(vars(args))
+    if isinstance(resolved_args.get("diagnostic_root"), Path):
+        resolved_args["diagnostic_root"] = str(
+            resolved_args["diagnostic_root"]
+        )
     resolved = {
         "exp_id": run_id,
-        "args": vars(args),
+        "args": resolved_args,
         "detector": det_cfg,
         "data": data_cfg,
         "git_sha": git_sha,
@@ -249,6 +406,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             "effective_batch": batch_size * accumulate,
         },
     }
+    if diagnostic is not None:
+        resolved["diagnostic"] = {
+            "schema": DIAGNOSTIC_RUN_SCHEMA,
+            "variant": args.diagnostic_variant,
+            "stage": args.diagnostic_stage,
+            "trainer_max_epochs": trainer_epochs,
+            "schedule_horizon_epochs": schedule_epochs,
+            "core_completion_marker_forbidden": True,
+        }
     if h100_runtime_contract is not None:
         resolved["execution"]["h100_runtime_contract"] = h100_runtime_contract
     (run_dir / "config.yaml").write_text(yaml.safe_dump(resolved), newline="\n")
@@ -316,8 +482,33 @@ def main(argv: Sequence[str] | None = None) -> int:
         candidate_floor=candidate_floor,
         expected_recipe=expected_recipe,
     )
-    atomic_write_json(run_dir / "final_metrics.json", final)
-    print(json.dumps(final, indent=1))
+    if diagnostic is None:
+        atomic_write_json(run_dir / "final_metrics.json", final)
+        output = final
+    else:
+        if (run_dir / "final_metrics.json").exists():
+            raise RuntimeError(
+                "diagnostic training must never publish final_metrics.json"
+            )
+        runtime_seconds = dev_eval.elapsed_seconds()
+        output = {
+            "diagnostic_run_schema": DIAGNOSTIC_RUN_SCHEMA,
+            "purpose": "bes2-root-cause-training",
+            "variant": args.diagnostic_variant,
+            "stage": args.diagnostic_stage,
+            "trainer_max_epochs": trainer_epochs,
+            "schedule_horizon_epochs": schedule_epochs,
+            "initialization": module.diagnostic_initialization,
+            "dev_history": dev_eval.history,
+            "runtime": {
+                "gpu_count": 1,
+                "seconds": runtime_seconds,
+                "gpu_hours": runtime_seconds / 3600.0,
+            },
+            "training_result": final,
+        }
+        atomic_write_json(run_dir / "training_metrics.json", output)
+    print(json.dumps(output, indent=1))
     return 0
 
 
@@ -337,16 +528,44 @@ def _git_sha() -> str:
 class DevSceneEval(Callback):
     """Every N epochs: tiled inference on the fixed dev scenes -> dev F1."""
 
-    def __init__(self, *, data_cfg, det_cfg, every_n_epochs, n_scenes, final_epoch):
+    def __init__(
+        self,
+        *,
+        data_cfg,
+        det_cfg,
+        every_n_epochs,
+        n_scenes,
+        final_epoch,
+        diagnostic: bool = False,
+    ):
         super().__init__()
         self.data_cfg = data_cfg
         self.det_cfg = det_cfg
         self.every = every_n_epochs
         self.n_scenes = n_scenes
         self.final_epoch = final_epoch
+        self.diagnostic = diagnostic
         self.best: float | None = None
         self.best_result: dict | None = None
         self.last_result: dict | None = None
+        self.history: list[dict[str, object]] = []
+        self._runtime_seconds = 0.0
+        self._segment_started: float | None = None
+
+    def on_fit_start(self, trainer, pl_module):
+        if self.diagnostic and self._segment_started is None:
+            self._segment_started = time.monotonic()
+
+    def on_fit_end(self, trainer, pl_module):
+        if self.diagnostic and self._segment_started is not None:
+            self._runtime_seconds = self.elapsed_seconds()
+            self._segment_started = None
+
+    def elapsed_seconds(self) -> float:
+        elapsed = self._runtime_seconds
+        if self._segment_started is not None:
+            elapsed += time.monotonic() - self._segment_started
+        return float(elapsed)
 
     # Lightning duck-typed callback hooks -------------------------------
     def setup(self, trainer, pl_module, stage=None):
@@ -380,6 +599,8 @@ class DevSceneEval(Callback):
             result,
             candidate_floor=self.det_cfg["decode"]["candidate_floor"],
         )
+        if self.diagnostic:
+            self.history.append(dict(result))
         self.last_result = dict(result)
         if self.best is None or result["f1"] > self.best:
             self.best = result["f1"]
@@ -391,15 +612,49 @@ class DevSceneEval(Callback):
         pl_module.train()
 
     def state_dict(self):
-        return {
+        state = {
             "best": self.best,
             "best_result": self.best_result,
             "last_result": self.last_result,
         }
+        if self.diagnostic:
+            state.update(
+                {
+                    "history": self.history,
+                    "elapsed_seconds": self.elapsed_seconds(),
+                }
+            )
+        return state
 
     def load_state_dict(self, state):
         if not isinstance(state, dict):
             raise ResultContractError("DevSceneEval checkpoint state must be a mapping")
+        if self.diagnostic:
+            raw_history = state.get("history")
+            elapsed = state.get("elapsed_seconds")
+            if not isinstance(raw_history, list):
+                raise ResultContractError(
+                    "diagnostic DevSceneEval history must be a list"
+                )
+            self.history = [
+                validate_dev_result(
+                    item,
+                    candidate_floor=self.det_cfg["decode"]["candidate_floor"],
+                    description=f"history[{index}]",
+                )
+                for index, item in enumerate(raw_history)
+            ]
+            if (
+                isinstance(elapsed, bool)
+                or not isinstance(elapsed, (int, float))
+                or not math.isfinite(float(elapsed))
+                or float(elapsed) < 0.0
+            ):
+                raise ResultContractError(
+                    "diagnostic DevSceneEval elapsed_seconds is invalid"
+                )
+            self._runtime_seconds = float(elapsed)
+            self._segment_started = None
         best = state.get("best")
         best_result = state.get("best_result")
         last_result = state.get("last_result")
@@ -411,6 +666,10 @@ class DevSceneEval(Callback):
             self.best = None
             self.best_result = None
             self.last_result = None
+            if self.diagnostic and self.history:
+                raise ResultContractError(
+                    "empty diagnostic best state cannot contain DEV history"
+                )
             return
         validated_best = validate_dev_result(
             best_result,
@@ -434,6 +693,18 @@ class DevSceneEval(Callback):
         self.best = normalized_best
         self.best_result = validated_best
         self.last_result = validated_last
+        if self.diagnostic:
+            if not self.history or self.history[-1] != validated_last:
+                raise ResultContractError(
+                    "diagnostic DEV history does not end at last_result"
+                )
+            expected_best = max(
+                self.history, key=lambda item: float(item["f1"])
+            )
+            if expected_best != validated_best:
+                raise ResultContractError(
+                    "diagnostic DEV history does not reproduce best_result"
+                )
 
 
 if __name__ == "__main__":
