@@ -38,6 +38,21 @@ Development plan for a coding agent (Claude Code or similar). Execute phases in 
   canonical `H100_READY.json`. External
   V100/reference/cutover/isolation controls are deferred to Phase-5
   completion/export/reporting; V100 remains untouched.
+- **Owner amendment, 2026-08-26 — BigEarthNet-S2 diagnosis before final
+  access.** The unconsumed final-evaluation authorization is paused. Work may
+  proceed on `sprint-10a-bes2-root-cause`, branched from `dev`, to run one
+  TRAIN+fixed-DEV8-only Judy H100 diagnostic pair at `f100`, seed 0:
+  production BigEarthNet-S2 replay and the documented timm unsupported-input-
+  convolution fallback (all downloaded encoder tensors except
+  `stem.0.weight`, which retains the seeded three-channel target
+  initialization). This is diagnostic-only and may not enter either core
+  cohort. If and only if the predeclared diagnostic decision admits an
+  owner-approved replacement, a later reviewed sprint must rerun all 32 core
+  cells from scratch in a separate Judy H100 cohort. Before any verified-final
+  byte is opened, both complete cohorts may then be bound into one prospective,
+  namespaced 64-cell authorization and evaluated in one no-requeue access.
+  Two final-data accesses remain forbidden. If no replacement is approved,
+  the existing bounded 32-cell authorization remains the fallback.
 - CI must trigger on `dev` (see the CI-trigger fix in §1b) or it never runs on the active branch.
 
 ### Status ledger (ground truth as of this revision)
@@ -49,6 +64,7 @@ Development plan for a coding agent (Claude Code or similar). Execute phases in 
 | 3 Detector | `sprint-3-detector` + `sprint-3b` + `sprint-3c-optimizer-fix` | **DONE — detector frozen + tagged `phase-3-done`; P3.6 PASSED** | the optimizer fix and Option-B plan-literal 50-epoch/early-stop budget decision are merged; historical P3.6 dev F1: ViT floor 0.788 < SatDINO 0.835 < SARMAE 0.858; CNN floor 0.677 < BigEarthNet-S2 0.726 < BigEarthNet-S1 0.819 (`runs/p36_summary.json`) | — |
 | 4 FM+floor arms+refs | `sprint-4/5/6` + `sprint-7c-fp32-grid` + `sprint-7d-h100-fp32` + `sprint-7e-judy-venv` + `sprint-7f-eval-contract` | **CORRECTED RELAUNCH PENDING — uniform H100 core restart; corrected V100 references** | the live V100 core campaign continues untouched only as non-reportable diagnostics; R2 preserves its exact weight and is rescored, while R3 requires a corrected-contract rerun | pass every Judy-local H100 launch gate, then rerun the 24 Phase-4 core cells from scratch; corrected R2/R3 evidence remains mandatory before Phase-5 completion/export/reporting |
 | 5 ImageNet arms+grid | `sprint-7-grid` + `sprint-7b-imagenet-arms` + `sprint-7c-fp32-grid` + `sprint-7d-h100-fp32` + `sprint-7e-judy-venv` + `sprint-7f-eval-contract` | **OWNER APPROVED, NOT LAUNCHED — corrected H100 strict-FP32 campaign gated** | strict evaluation-GT and exact schema-2 checkpoint binding are implemented; smoke 542536 passed, while acceptance 542596 completed staging and 406/407 sealed-venv tests before the portable-mode gate, so no `H100_READY.json`, GPU probe, or training exists | package/upload/pull the current runtime-only correction into a fresh namespace, pass fresh smoke plus all Judy-local numerical gates, run all 32 cells, then complete corrected references/cutover/isolation before Phase-5 completion, reverse export, analysis, or reporting |
+| 6a BigEarthNet-S2 diagnosis | `sprint-10a-bes2-root-cause` | **OWNER AUTHORIZED — IMPLEMENTATION IN PROGRESS** | H100-only paired `f100`, seed-0 replay/reset diagnostic; TRAIN+fixed-DEV8 only; current and replacement core namespaces remain immutable | merge reviewed diagnostic code, transfer a content-addressed amendment, pass Judy gates, and publish the predeclared root-cause result before any replacement decision |
 | 6 Final eval | `sprint-8-final-eval` | NOT STARTED | once-only tripwire and frozen 50 eval IDs exist; no lockfile has been written | the 50 eval-final raster scenes are not present on this node and must be acquired/extracted before the one allowed evaluation |
 | 7 Analysis | `sprint-9-analysis` | NOT STARTED | — | — |
 | 8 Contingent ref | — | **REMOVED** | former R1 ImageNet-ConvNeXt role is now represented symmetrically by core Arms 4/8 | — |
