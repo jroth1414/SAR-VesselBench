@@ -178,6 +178,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--epochs", type=int, default=None, help="override detector.yaml (smoke only)")
     parser.add_argument("--data-config", default="configs/data.yaml")
     parser.add_argument("--detector-config", default="configs/detector.yaml")
+    parser.add_argument("--weights-root", type=Path, default=Path("data/weights"))
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument(
         "--smoke",
@@ -293,6 +294,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         warmup_epochs=det_cfg["schedule"]["warmup_epochs"],
         head_channels=det_cfg["head"]["channels"],
         diagnostic_variant=args.diagnostic_variant,
+        weights_root=args.weights_root,
     )
     if diagnostic is not None:
         initialization = module.diagnostic_initialization
@@ -388,11 +390,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             pre_trainer=h100_pre_trainer,
         )
 
-    resolved_args = dict(vars(args))
-    if isinstance(resolved_args.get("diagnostic_root"), Path):
-        resolved_args["diagnostic_root"] = str(
-            resolved_args["diagnostic_root"]
-        )
+    resolved_args = {
+        name: str(value) if isinstance(value, Path) else value
+        for name, value in vars(args).items()
+    }
     resolved = {
         "exp_id": run_id,
         "args": resolved_args,
