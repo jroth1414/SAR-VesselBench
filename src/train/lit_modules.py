@@ -31,21 +31,47 @@ class HeatmapLitModule(L.LightningModule):
         epochs: int = 50,
         warmup_epochs: int = 5,
         head_channels: int = 256,
+        diagnostic_variant: str | None = None,
         load_weights: bool = True,
         weights_root: str | Path = "data/weights",
     ) -> None:
         super().__init__()
         self.save_hyperparameters()
-        self.backbone = build_init(
-            init_name,
-            load_weights=load_weights,
-            weights_root=weights_root,
-        )
+        diagnostic_manifest = None
+        if diagnostic_variant is not None:
+            if init_name != "bigearthnet_s2" or not load_weights:
+                raise ValueError(
+                    "BigEarthNet-S2 diagnostics require init_name="
+                    "'bigearthnet_s2' with downloaded weights enabled"
+                )
+            from src.models.bes2_diagnostic import (
+                build_bes2_diagnostic_backbone,
+            )
+
+            self.backbone, diagnostic_manifest = (
+                build_bes2_diagnostic_backbone(
+                    diagnostic_variant,
+                    weights_root=weights_root,
+                )
+            )
+        else:
+            self.backbone = build_init(
+                init_name,
+                load_weights=load_weights,
+                weights_root=weights_root,
+            )
         self.head = HeatmapHead(
             self.backbone.out_channels,
             self.backbone.out_stride,
             head_channels=head_channels,
         )
+        self.diagnostic_initialization = None
+        if diagnostic_manifest is not None:
+            from src.models.bes2_diagnostic import add_head_identity
+
+            self.diagnostic_initialization = add_head_identity(
+                diagnostic_manifest, self.head
+            )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Images -> heatmap logits (B, 1, H/4, W/4)."""
