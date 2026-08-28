@@ -20,13 +20,26 @@ from src.eval.result_contract import (
     validate_dev_result,
 )
 
-DIAGNOSTIC_READY_SCHEMA = 1
-DIAGNOSTIC_METRICS_SCHEMA = 1
-ROOT_CAUSE_SCHEMA = 1
+DIAGNOSTIC_READY_SCHEMA = 2
+DIAGNOSTIC_METRICS_SCHEMA = 2
+ROOT_CAUSE_SCHEMA = 2
 H100_CAMPAIGN_GIT_SHA = "1a82d508fbeb9fdf6868a9637611e9018952fb43"
 DEV_BASE_GIT_SHA = "322dea060a37ec793f1df3d49a7513dfd90b324f"
-S2_FROZEN_DEV_F1 = 0.8635917566
-RANDOM_FROZEN_DEV_F1 = 0.8919449902
+DIAGNOSTIC_FRACTIONS = (0.1, 0.5)
+PROBE_FRACTIONS = (0.5,)
+DIAGNOSTIC_VARIANTS = ("current_replay", "first_conv_reset")
+FROZEN_COMPARATOR_EXPERIMENTS = {
+    "f10": {
+        "fraction": 0.1,
+        "bigearthnet_s2": "beS2-f10-s0",
+        "cnn_random": "cnnrand-f10-s0",
+    },
+    "f50": {
+        "fraction": 0.5,
+        "bigearthnet_s2": "beS2-f50-s0",
+        "cnn_random": "cnnrand-f50-s0",
+    },
+}
 REPLAY_TOLERANCE = 0.02
 STEM_DOMINANT_RECOVERY = 0.50
 POST_STEM_RECOVERY = 0.20
@@ -56,6 +69,38 @@ FINAL_CONSUMPTION_RELATIVE_PATHS = (
 
 class BES2ContractError(RuntimeError):
     """A diagnostic artifact is unsafe, incomplete, or not decision-valid."""
+
+
+def fraction_tag(fraction: object) -> str:
+    if isinstance(fraction, bool) or not isinstance(fraction, (int, float)):
+        raise BES2ContractError("diagnostic fraction must be numeric")
+    value = float(fraction)
+    for allowed in DIAGNOSTIC_FRACTIONS:
+        if math.isclose(value, allowed, rel_tol=0.0, abs_tol=1.0e-12):
+            return f"f{int(round(allowed * 100))}"
+    raise BES2ContractError(
+        f"diagnostic fraction {value!r} is not one of {DIAGNOSTIC_FRACTIONS}"
+    )
+
+
+def stage_fractions(stage: str) -> tuple[float, ...]:
+    if stage == "probe":
+        return PROBE_FRACTIONS
+    if stage == "full":
+        return DIAGNOSTIC_FRACTIONS
+    raise BES2ContractError(f"invalid diagnostic stage: {stage!r}")
+
+
+def diagnostic_run_id(variant: str, stage: str, fraction: object) -> str:
+    if variant not in DIAGNOSTIC_VARIANTS:
+        raise BES2ContractError(f"invalid diagnostic variant: {variant!r}")
+    tag = fraction_tag(fraction)
+    allowed = {fraction_tag(value) for value in stage_fractions(stage)}
+    if tag not in allowed:
+        raise BES2ContractError(
+            f"{stage} does not authorize diagnostic fraction {tag}"
+        )
+    return f"bes2-{variant}-{stage}-{tag}-s0"
 
 
 def canonical_json(payload: object) -> bytes:
@@ -293,24 +338,269 @@ def _finite_unit(value: object, field: str) -> float:
     return result
 
 
+def _strict_h100_result(
+    path: Path,
+    *,
+    runs_root: Path,
+    expected_exp_id: str,
+) -> dict[str, object]:
+    if path.parent.is_symlink() or path.is_symlink() or not path.is_file():
+        raise BES2ContractError(
+            f"frozen comparator must be a regular non-symlink file: {path}"
+        )
+    if path.stat().st_mode & 0o222:
+        raise BES2ContractError(
+            f"frozen comparator result remains writable: {path}"
+        )
+    payload = read_regular_json(path, f"frozen comparator {expected_exp_id}")
+    runtime = payload.get("h100_runtime_contract")
+    pre = runtime.get("pre_trainer") if isinstance(runtime, Mapping) else None
+    resolved = (
+        runtime.get("resolved_trainer") if isinstance(runtime, Mapping) else None
+    )
+    strict = pre.get("strict_fp32") if isinstance(pre, Mapping) else None
+    expected_strict = {
+        "cuda_matmul_fp32_precision": "ieee",
+        "cudnn_conv_fp32_precision": "ieee",
+        "cudnn_rnn_fp32_precision": "ieee",
+    }
+    if (
+        payload.get("result_schema") != 2
+        or payload.get("exp_id") != expected_exp_id
+        or payload.get("git_sha") != H100_CAMPAIGN_GIT_SHA
+        or payload.get("precision") != "32-true"
+        or payload.get("micro_batch") != 16
+        or payload.get("gradient_accumulation") != 1
+        or payload.get("effective_batch") != 16
+        or not isinstance(runtime, Mapping)
+        or runtime.get("schema") != 1
+        or runtime.get("status") != "verified"
+        or not isinstance(pre, Mapping)
+        or pre.get("devices") != 1
+        or pre.get("precision") != "32-true"
+        or pre.get("micro_batch") != 16
+        or pre.get("gradient_accumulation") != 1
+        or pre.get("effective_batch") != 16
+        or strict != expected_strict
+        or not isinstance(resolved, Mapping)
+        or resolved.get("num_devices") != 1
+        or resolved.get("world_size") != 1
+        or resolved.get("gradient_accumulation") != 1
+        or any(str(key).startswith(("test_", "final_")) for key in payload)
+    ):
+        raise BES2ContractError(
+            f"{expected_exp_id} is not a canonical strict-FP32 H100 result"
+        )
+    best = validate_dev_result(
+        payload.get("best_dev"),
+        candidate_floor=0.05,
+        description=f"{expected_exp_id}.best_dev",
+    )
+    best_f1 = _finite_unit(
+        payload.get("best_dev_f1"), f"{expected_exp_id}.best_dev_f1"
+    )
+    if best_f1 != float(best["f1"]):
+        raise BES2ContractError(
+            f"{expected_exp_id} best_dev_f1 differs from best_dev"
+        )
+    return {
+        "exp_id": expected_exp_id,
+        "result": hash_binding(path, relative_to=runs_root),
+        "best_dev_f1": best_f1,
+        "best_dev": best,
+    }
+
+
+def frozen_comparator_payload(runs_root: str | Path) -> dict[str, object]:
+    """Snapshot only the four approved H100 best-DEV numerical comparators."""
+
+    root = Path(runs_root).resolve(strict=True)
+    fractions: dict[str, object] = {}
+    detector_sha256: str | None = None
+    for tag, specification in FROZEN_COMPARATOR_EXPERIMENTS.items():
+        roles: dict[str, object] = {}
+        for role in ("bigearthnet_s2", "cnn_random"):
+            exp_id = str(specification[role])
+            path = root / exp_id / "final_metrics.json"
+            roles[role] = _strict_h100_result(
+                path,
+                runs_root=root,
+                expected_exp_id=exp_id,
+            )
+            result = read_regular_json(path, f"frozen comparator {exp_id}")
+            observed_detector = str(result.get("detector_sha256"))
+            if not _HEX64.fullmatch(observed_detector):
+                raise BES2ContractError(
+                    f"{exp_id} detector SHA-256 is malformed"
+                )
+            if detector_sha256 is None:
+                detector_sha256 = observed_detector
+            elif detector_sha256 != observed_detector:
+                raise BES2ContractError(
+                    "frozen comparator results bind different detector bytes"
+                )
+        s2 = float(roles["bigearthnet_s2"]["best_dev_f1"])
+        random = float(roles["cnn_random"]["best_dev_f1"])
+        if not s2 < random:
+            raise BES2ContractError(
+                f"{tag} does not contain the approved S2-below-random deficit"
+            )
+        fractions[tag] = {
+            "fraction": specification["fraction"],
+            **roles,
+            "frozen_random_minus_s2_f1": random - s2,
+        }
+    payload = {
+        "schema": 1,
+        "status": "frozen",
+        "purpose": "bes2-h100-best-dev-numerical-comparators",
+        "created_utc": utc_now(),
+        "campaign_git_sha": H100_CAMPAIGN_GIT_SHA,
+        "detector_sha256": detector_sha256,
+        "read_scope": {
+            "final_metrics_json": sorted(
+                f"{specification[role]}/final_metrics.json"
+                for specification in FROZEN_COMPARATOR_EXPERIMENTS.values()
+                for role in ("bigearthnet_s2", "cnn_random")
+            ),
+            "checkpoint_bytes": False,
+            "training_cohort": False,
+            "test_metrics": False,
+            "verified_final": False,
+        },
+        "fractions": fractions,
+    }
+    return validate_frozen_comparator_payload(payload)
+
+
+def validate_frozen_comparator_payload(
+    payload: Mapping[str, object],
+) -> dict[str, object]:
+    required = {
+        "schema",
+        "status",
+        "purpose",
+        "created_utc",
+        "campaign_git_sha",
+        "detector_sha256",
+        "read_scope",
+        "fractions",
+    }
+    fractions = payload.get("fractions")
+    if (
+        set(payload) != required
+        or payload.get("schema") != 1
+        or payload.get("status") != "frozen"
+        or payload.get("purpose")
+        != "bes2-h100-best-dev-numerical-comparators"
+        or payload.get("campaign_git_sha") != H100_CAMPAIGN_GIT_SHA
+        or not _HEX64.fullmatch(str(payload.get("detector_sha256")))
+        or not isinstance(fractions, Mapping)
+        or set(fractions) != set(FROZEN_COMPARATOR_EXPERIMENTS)
+    ):
+        raise BES2ContractError("frozen comparator receipt identity is invalid")
+    expected_scope = {
+        "final_metrics_json": sorted(
+            f"{specification[role]}/final_metrics.json"
+            for specification in FROZEN_COMPARATOR_EXPERIMENTS.values()
+            for role in ("bigearthnet_s2", "cnn_random")
+        ),
+        "checkpoint_bytes": False,
+        "training_cohort": False,
+        "test_metrics": False,
+        "verified_final": False,
+    }
+    if payload.get("read_scope") != expected_scope:
+        raise BES2ContractError("frozen comparator read scope is invalid")
+    for tag, specification in FROZEN_COMPARATOR_EXPERIMENTS.items():
+        item = fractions[tag]
+        if not isinstance(item, Mapping) or set(item) != {
+            "fraction",
+            "bigearthnet_s2",
+            "cnn_random",
+            "frozen_random_minus_s2_f1",
+        }:
+            raise BES2ContractError(f"{tag} comparator schema is invalid")
+        if fraction_tag(item.get("fraction")) != tag:
+            raise BES2ContractError(f"{tag} comparator fraction is invalid")
+        for role in ("bigearthnet_s2", "cnn_random"):
+            record = item.get(role)
+            if not isinstance(record, Mapping) or set(record) != {
+                "exp_id",
+                "result",
+                "best_dev_f1",
+                "best_dev",
+            }:
+                raise BES2ContractError(f"{tag}/{role} comparator is invalid")
+            if record.get("exp_id") != specification[role]:
+                raise BES2ContractError(f"{tag}/{role} exp_id is invalid")
+            binding = record.get("result")
+            if (
+                not isinstance(binding, Mapping)
+                or set(binding) != {"path", "sha256"}
+                or binding.get("path")
+                != f"{specification[role]}/final_metrics.json"
+                or not _HEX64.fullmatch(str(binding.get("sha256")))
+            ):
+                raise BES2ContractError(f"{tag}/{role} result binding is invalid")
+            best = validate_dev_result(
+                record.get("best_dev"),
+                candidate_floor=0.05,
+                description=f"{tag}/{role}.best_dev",
+            )
+            value = _finite_unit(
+                record.get("best_dev_f1"), f"{tag}/{role}.best_dev_f1"
+            )
+            if value != float(best["f1"]):
+                raise BES2ContractError(f"{tag}/{role} best DEV values differ")
+        gap = float(item["cnn_random"]["best_dev_f1"]) - float(
+            item["bigearthnet_s2"]["best_dev_f1"]
+        )
+        if gap <= 0.0 or item.get("frozen_random_minus_s2_f1") != gap:
+            raise BES2ContractError(f"{tag} frozen deficit is invalid")
+    return dict(payload)
+
+
 def classify_cause(
     replay_best_dev_f1: object,
     reset_best_dev_f1: object,
+    *,
+    fraction: object,
+    comparator: Mapping[str, object],
 ) -> dict[str, object]:
-    """Apply the owner-predeclared replay and recovery decision exactly."""
+    """Apply the owner-predeclared replay and recovery decision per fraction."""
 
     replay = _finite_unit(replay_best_dev_f1, "current_replay best DEV F1")
     reset = _finite_unit(reset_best_dev_f1, "first_conv_reset best DEV F1")
-    replay_delta = replay - S2_FROZEN_DEV_F1
-    denominator = RANDOM_FROZEN_DEV_F1 - replay
+    tag = fraction_tag(fraction)
+    if fraction_tag(comparator.get("fraction")) != tag:
+        raise BES2ContractError("cause comparator fraction differs from run")
+    s2_record = comparator.get("bigearthnet_s2")
+    random_record = comparator.get("cnn_random")
+    if not isinstance(s2_record, Mapping) or not isinstance(random_record, Mapping):
+        raise BES2ContractError("cause comparator records are absent")
+    frozen_s2 = _finite_unit(
+        s2_record.get("best_dev_f1"), f"{tag} frozen S2 DEV F1"
+    )
+    frozen_random = _finite_unit(
+        random_record.get("best_dev_f1"), f"{tag} frozen random DEV F1"
+    )
+    if frozen_s2 >= frozen_random:
+        raise BES2ContractError(f"{tag} frozen comparator has no S2 deficit")
+    replay_delta = replay - frozen_s2
+    denominator = frozen_random - replay
 
     common = {
+        "fraction": float(comparator["fraction"]),
+        "fraction_tag": tag,
         "current_replay_best_dev_f1": replay,
         "first_conv_reset_best_dev_f1": reset,
-        "frozen_s2_best_dev_f1": S2_FROZEN_DEV_F1,
-        "frozen_random_best_dev_f1": RANDOM_FROZEN_DEV_F1,
+        "frozen_s2_best_dev_f1": frozen_s2,
+        "frozen_random_best_dev_f1": frozen_random,
+        "frozen_random_minus_s2_f1": frozen_random - frozen_s2,
         "replay_delta": replay_delta,
         "replay_tolerance": REPLAY_TOLERANCE,
+        "recovery_denominator": denominator if denominator > 0.0 else None,
     }
     if abs(replay_delta) > REPLAY_TOLERANCE and not math.isclose(
         abs(replay_delta),
@@ -326,7 +616,7 @@ def classify_cause(
             "replacement_eligibility": "blocked",
             "required_next_step": "investigate replay mismatch before replacement",
         }
-    if replay >= RANDOM_FROZEN_DEV_F1:
+    if replay >= frozen_random:
         return {
             **common,
             "status": "determinate",
@@ -383,11 +673,173 @@ def classify_cause(
     }
 
 
+def aggregate_fraction_decisions(
+    decisions: Mapping[str, Mapping[str, object]],
+) -> dict[str, object]:
+    if set(decisions) != set(FROZEN_COMPARATOR_EXPERIMENTS):
+        raise BES2ContractError("fraction decisions do not cover f10 and f50")
+    classifications = {
+        tag: str(decisions[tag].get("classification"))
+        for tag in FROZEN_COMPARATOR_EXPERIMENTS
+    }
+    statuses = {
+        tag: str(decisions[tag].get("status"))
+        for tag in FROZEN_COMPARATOR_EXPERIMENTS
+    }
+    if any(status != "determinate" for status in statuses.values()):
+        affected = sorted(
+            tag for tag, status in statuses.items() if status != "determinate"
+        )
+        return {
+            "status": "indeterminate",
+            "classification": "fraction-replay-not-reproducible",
+            "fraction_classifications": classifications,
+            "concordant": False,
+            "replacement_eligibility": "blocked",
+            "required_next_step": (
+                "review replay mismatch; diagnostic-only random replay may be "
+                f"requested for {', '.join(affected)}"
+            ),
+        }
+    unique = set(classifications.values())
+    if len(unique) == 1:
+        representative = decisions[next(iter(FROZEN_COMPARATOR_EXPERIMENTS))]
+        return {
+            "status": "determinate",
+            "classification": next(iter(unique)),
+            "fraction_classifications": classifications,
+            "concordant": True,
+            "replacement_eligibility": representative[
+                "replacement_eligibility"
+            ],
+            "required_next_step": representative["required_next_step"],
+        }
+    return {
+        "status": "determinate",
+        "classification": "fraction-dependent-mixed-mechanism",
+        "fraction_classifications": classifications,
+        "concordant": False,
+        "replacement_eligibility": "blocked",
+        "required_next_step": (
+            "review fraction-dependent activation and optimization evidence; "
+            "do not approve a stem-reset replacement"
+        ),
+    }
+
+
+OPTIMIZATION_TRACE_STEPS = (1, 10, 100, 500)
+
+
+def validate_optimization_trace(
+    payload: object,
+    *,
+    require_complete: bool = True,
+) -> dict[str, object]:
+    if not isinstance(payload, Mapping) or set(payload) != {
+        "schema",
+        "milestones",
+        "records",
+    }:
+        raise BES2ContractError("diagnostic optimization trace schema is invalid")
+    records = payload.get("records")
+    observed_steps = (
+        [
+            record.get("optimizer_step")
+            for record in records
+            if isinstance(record, Mapping)
+        ]
+        if isinstance(records, list)
+        else None
+    )
+    expected_steps = list(OPTIMIZATION_TRACE_STEPS)
+    if (
+        payload.get("schema") != 1
+        or payload.get("milestones") != expected_steps
+        or not isinstance(records, list)
+        or observed_steps
+        != (expected_steps if require_complete else expected_steps[: len(records)])
+    ):
+        raise BES2ContractError(
+            "diagnostic optimization milestones are invalid or incomplete"
+        )
+    required_groups = {
+        "stem",
+        "stage_0",
+        "stage_1",
+        "stage_2",
+        "stage_3",
+        "detector_head",
+    }
+    group_fields = {
+        "parameter_count",
+        "parameter_norm_before",
+        "gradient_norm",
+        "gradient_to_parameter_norm",
+        "lr_min",
+        "lr_max",
+        "lr_scale_min",
+        "lr_scale_max",
+        "update_norm",
+        "relative_update_norm",
+    }
+    first_fields = {
+        "name",
+        "parameter_count",
+        "parameter_norm_before",
+        "gradient_norm",
+        "gradient_to_parameter_norm",
+        "lr",
+        "lr_scale",
+        "update_norm",
+        "relative_update_norm",
+    }
+    for record in records:
+        if not isinstance(record, Mapping) or set(record) != {
+            "optimizer_step",
+            "groups",
+            "first_convolution",
+        }:
+            raise BES2ContractError("optimization trace record is invalid")
+        groups = record.get("groups")
+        first = record.get("first_convolution")
+        if (
+            not isinstance(groups, Mapping)
+            or not required_groups <= set(groups)
+            or not isinstance(first, Mapping)
+            or set(first) != first_fields
+            or first.get("name") != "backbone.model.stem.0.weight"
+        ):
+            raise BES2ContractError("optimization trace groups are invalid")
+        for name, item in [*groups.items(), ("first_convolution", first)]:
+            expected = first_fields if name == "first_convolution" else group_fields
+            if not isinstance(item, Mapping) or set(item) != expected:
+                raise BES2ContractError(f"optimization trace {name} schema is invalid")
+            count = item.get("parameter_count")
+            if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
+                raise BES2ContractError(
+                    f"optimization trace {name} parameter count is invalid"
+                )
+            for field, value in item.items():
+                if field in {"name", "parameter_count"}:
+                    continue
+                if (
+                    isinstance(value, bool)
+                    or not isinstance(value, (int, float))
+                    or not math.isfinite(float(value))
+                    or float(value) < 0.0
+                ):
+                    raise BES2ContractError(
+                        f"optimization trace {name}.{field} is invalid"
+                    )
+    return dict(payload)
+
+
 def validate_training_metrics(
     path: str | Path,
     *,
     expected_variant: str,
     expected_stage: str,
+    expected_fraction: float,
     candidate_floor: float,
 ) -> tuple[dict[str, object], Path]:
     marker_path = Path(path)
@@ -397,19 +849,25 @@ def validate_training_metrics(
         "purpose",
         "variant",
         "stage",
+        "fraction",
         "trainer_max_epochs",
         "schedule_horizon_epochs",
         "initialization",
         "dev_history",
+        "optimization_trace",
         "runtime",
         "training_result",
     }
     if (
         set(payload) != expected_top
-        or payload.get("diagnostic_run_schema") != 1
+        or payload.get("diagnostic_run_schema") != 2
         or payload.get("purpose") != "bes2-root-cause-training"
         or payload.get("variant") != expected_variant
         or payload.get("stage") != expected_stage
+        or fraction_tag(payload.get("fraction"))
+        != fraction_tag(expected_fraction)
+        or marker_path.parent.name
+        != diagnostic_run_id(expected_variant, expected_stage, expected_fraction)
     ):
         raise BES2ContractError("diagnostic training marker identity is invalid")
     expected_epochs = 5 if expected_stage == "probe" else 50
@@ -418,6 +876,7 @@ def validate_training_metrics(
         or payload.get("schedule_horizon_epochs") != 50
     ):
         raise BES2ContractError("diagnostic 5/50 epoch contract is invalid")
+    validate_optimization_trace(payload.get("optimization_trace"))
 
     run_dir = marker_path.parent
     if (run_dir / "final_metrics.json").exists() or (
@@ -498,12 +957,14 @@ def validate_diagnostic_metrics(
     path: str | Path,
     *,
     expected_variant: str,
+    expected_fraction: float,
     expected_stage: str = "full",
 ) -> dict[str, object]:
     payload = read_regular_json(path, "diagnostic metrics")
     return validate_diagnostic_metrics_payload(
         payload,
         expected_variant=expected_variant,
+        expected_fraction=expected_fraction,
         expected_stage=expected_stage,
     )
 
@@ -512,6 +973,7 @@ def validate_diagnostic_metrics_payload(
     payload: Mapping[str, object],
     *,
     expected_variant: str,
+    expected_fraction: float,
     expected_stage: str = "full",
 ) -> dict[str, object]:
     """Validate diagnostic evidence without requiring its original Judy path."""
@@ -522,6 +984,7 @@ def validate_diagnostic_metrics_payload(
         "purpose",
         "variant",
         "stage",
+        "fraction",
         "created_utc",
         "readiness",
         "training",
@@ -539,12 +1002,24 @@ def validate_diagnostic_metrics_payload(
         or payload.get("purpose") != "bes2-root-cause"
         or payload.get("variant") != expected_variant
         or payload.get("stage") != expected_stage
+        or fraction_tag(payload.get("fraction"))
+        != fraction_tag(expected_fraction)
     ):
         raise BES2ContractError("diagnostic metrics identity is invalid")
     training = payload.get("training")
     dev = payload.get("dev_evidence")
     if not isinstance(training, Mapping) or not isinstance(dev, Mapping):
         raise BES2ContractError("diagnostic metrics evidence is incomplete")
+    if (
+        training.get("variant") != expected_variant
+        or training.get("stage") != expected_stage
+        or fraction_tag(training.get("fraction"))
+        != fraction_tag(expected_fraction)
+    ):
+        raise BES2ContractError(
+            "diagnostic metrics training identity is inconsistent"
+        )
+    validate_optimization_trace(training.get("optimization_trace"))
     best = training.get("training_result")
     if (
         not isinstance(best, Mapping)
@@ -564,38 +1039,105 @@ def validate_diagnostic_metrics_payload(
     return dict(payload)
 
 
-def summarize_payload(
-    replay: Mapping[str, object],
-    reset: Mapping[str, object],
-    *,
-    replay_binding: Mapping[str, str],
-    reset_binding: Mapping[str, str],
-) -> dict[str, object]:
-    replay_training = replay["training"]
-    reset_training = reset["training"]
-    if not isinstance(replay_training, Mapping) or not isinstance(
-        reset_training, Mapping
+def _validate_summary_binding(
+    binding: Mapping[str, object], description: str
+) -> dict[str, str]:
+    if (
+        set(binding) != {"path", "sha256"}
+        or not isinstance(binding.get("path"), str)
+        or not binding.get("path")
+        or not _HEX64.fullmatch(str(binding.get("sha256")))
     ):
-        raise BES2ContractError("summary training evidence is absent")
-    replay_result = replay_training.get("training_result")
-    reset_result = reset_training.get("training_result")
-    if not isinstance(replay_result, Mapping) or not isinstance(
-        reset_result, Mapping
-    ):
-        raise BES2ContractError("summary schema-2 training results are absent")
+        raise BES2ContractError(f"{description} binding is invalid")
+    return {"path": str(binding["path"]), "sha256": str(binding["sha256"])}
 
-    decision = classify_cause(
-        replay_result.get("best_dev_f1"),
-        reset_result.get("best_dev_f1"),
-    )
+
+def summarize_payload(
+    metrics: Mapping[str, Mapping[str, Mapping[str, object]]],
+    *,
+    run_bindings: Mapping[str, Mapping[str, Mapping[str, object]]],
+    comparator_receipt: Mapping[str, object],
+    comparator_binding: Mapping[str, object],
+) -> dict[str, object]:
+    """Build the no-pooling f10/f50 root-cause decision."""
+
+    comparator = validate_frozen_comparator_payload(comparator_receipt)
+    expected_tags = set(FROZEN_COMPARATOR_EXPERIMENTS)
+    if set(metrics) != expected_tags or set(run_bindings) != expected_tags:
+        raise BES2ContractError("summary inputs do not cover f10 and f50")
+
+    decisions: dict[str, dict[str, object]] = {}
+    runs: dict[str, dict[str, dict[str, str]]] = {}
+    supporting: dict[str, dict[str, object]] = {}
+    for tag, specification in FROZEN_COMPARATOR_EXPERIMENTS.items():
+        fraction = float(specification["fraction"])
+        fraction_metrics = metrics[tag]
+        fraction_bindings = run_bindings[tag]
+        if (
+            set(fraction_metrics) != set(DIAGNOSTIC_VARIANTS)
+            or set(fraction_bindings) != set(DIAGNOSTIC_VARIANTS)
+        ):
+            raise BES2ContractError(f"{tag} summary variants are incomplete")
+
+        validated: dict[str, dict[str, object]] = {}
+        runs[tag] = {}
+        for variant in DIAGNOSTIC_VARIANTS:
+            validated[variant] = validate_diagnostic_metrics_payload(
+                fraction_metrics[variant],
+                expected_variant=variant,
+                expected_stage="full",
+                expected_fraction=fraction,
+            )
+            runs[tag][variant] = _validate_summary_binding(
+                fraction_bindings[variant], f"{tag}/{variant}"
+            )
+
+        replay_training = validated["current_replay"].get("training")
+        reset_training = validated["first_conv_reset"].get("training")
+        if not isinstance(replay_training, Mapping) or not isinstance(
+            reset_training, Mapping
+        ):
+            raise BES2ContractError(f"{tag} summary training evidence is absent")
+        replay_result = replay_training.get("training_result")
+        reset_result = reset_training.get("training_result")
+        if not isinstance(replay_result, Mapping) or not isinstance(
+            reset_result, Mapping
+        ):
+            raise BES2ContractError(
+                f"{tag} summary schema-2 training results are absent"
+            )
+
+        decisions[tag] = classify_cause(
+            replay_result.get("best_dev_f1"),
+            reset_result.get("best_dev_f1"),
+            fraction=fraction,
+            comparator=comparator["fractions"][tag],
+        )
+        supporting[tag] = {}
+        for variant, training, result in (
+            ("current_replay", replay_training, replay_result),
+            ("first_conv_reset", reset_training, reset_result),
+        ):
+            metric = validated[variant]
+            supporting[tag][variant] = {
+                "best_dev": result.get("best_dev"),
+                "dev_evidence": metric.get("dev_evidence"),
+                "activation_statistics": metric.get("activation_statistics"),
+                "layer_drift": metric.get("layer_drift"),
+                "optimization_trace": training.get("optimization_trace"),
+            }
+
+    aggregate = aggregate_fraction_decisions(decisions)
     return {
         "root_cause_schema": ROOT_CAUSE_SCHEMA,
-        "status": decision["status"],
+        "status": aggregate["status"],
         "purpose": "bes2-root-cause-decision",
         "created_utc": utc_now(),
         "scope": {
             "split": "TRAIN+fixed-DEV8-only",
-            "fraction": 1.0,
+            "fractions": list(DIAGNOSTIC_FRACTIONS),
+            "probe_fractions": list(PROBE_FRACTIONS),
+            "analysis_unit": "per-fraction-no-pooling",
             "seed": 0,
             "single_seed_point_estimates": True,
             "significance_claims": False,
@@ -605,23 +1147,26 @@ def summarize_payload(
                 "compliance issue"
             ),
         },
-        "runs": {
-            "current_replay": dict(replay_binding),
-            "first_conv_reset": dict(reset_binding),
-        },
-        "decision": decision,
-        "supporting_evidence": {
-            "current_replay": {
-                "best_dev": replay_result.get("best_dev"),
-                "dev_evidence": replay.get("dev_evidence"),
-                "activation_statistics": replay.get("activation_statistics"),
-                "layer_drift": replay.get("layer_drift"),
-            },
-            "first_conv_reset": {
-                "best_dev": reset_result.get("best_dev"),
-                "dev_evidence": reset.get("dev_evidence"),
-                "activation_statistics": reset.get("activation_statistics"),
-                "layer_drift": reset.get("layer_drift"),
+        "comparators": {
+            "receipt": _validate_summary_binding(
+                comparator_binding, "frozen comparator"
+            ),
+            "campaign_git_sha": comparator["campaign_git_sha"],
+            "fractions": {
+                tag: {
+                    "fraction": comparator["fractions"][tag]["fraction"],
+                    "bigearthnet_s2": comparator["fractions"][tag][
+                        "bigearthnet_s2"
+                    ],
+                    "cnn_random": comparator["fractions"][tag]["cnn_random"],
+                }
+                for tag in FROZEN_COMPARATOR_EXPERIMENTS
             },
         },
+        "runs": runs,
+        "decision": {
+            "per_fraction": decisions,
+            "aggregate": aggregate,
+        },
+        "supporting_evidence": supporting,
     }

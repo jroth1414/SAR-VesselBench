@@ -25,6 +25,13 @@ from typing import Sequence
 
 from lightning.pytorch.callbacks import Callback
 
+from src.analysis.bes2_contract import (
+    DIAGNOSTIC_VARIANTS,
+    OPTIMIZATION_TRACE_STEPS,
+    diagnostic_run_id,
+    stage_fractions,
+    validate_optimization_trace,
+)
 from src.eval.result_contract import (
     RESULT_SCHEMA,
     ResultContractError,
@@ -44,9 +51,8 @@ INIT_SHORT = {
     "bigearthnet_s1": "beS1",
     "cnn_imagenet": "cnnin1k",
 }
-DIAGNOSTIC_VARIANTS = ("current_replay", "first_conv_reset")
 DIAGNOSTIC_STAGES = ("probe", "full")
-DIAGNOSTIC_RUN_SCHEMA = 1
+DIAGNOSTIC_RUN_SCHEMA = 2
 DIAGNOSTIC_PROBE_EPOCHS = 5
 DIAGNOSTIC_SCHEDULE_EPOCHS = 50
 
@@ -73,12 +79,19 @@ def _diagnostic_layout(args, det_cfg, parser):
         )
     if (
         args.init != "bigearthnet_s2"
-        or args.label_frac != 1.0
         or args.seed != 0
     ):
         parser.error(
             "BigEarthNet-S2 diagnostics require --init bigearthnet_s2, "
-            "--label_frac 1.0, and --seed 0"
+            "and --seed 0"
+        )
+    if not any(
+        math.isclose(args.label_frac, allowed, rel_tol=0.0, abs_tol=1.0e-12)
+        for allowed in stage_fractions(args.diagnostic_stage)
+    ):
+        parser.error(
+            f"BigEarthNet-S2 {args.diagnostic_stage} diagnostics authorize "
+            f"label fractions {stage_fractions(args.diagnostic_stage)}"
         )
     forbidden = {
         "--epochs": args.epochs,
@@ -132,8 +145,8 @@ def _diagnostic_layout(args, det_cfg, parser):
     if resolved_root == core_root or resolved_root.is_relative_to(core_root):
         parser.error("diagnostic runs must be outside the core runs namespace")
 
-    run_id = (
-        f"bes2-{args.diagnostic_variant}-{args.diagnostic_stage}-f100-s0"
+    run_id = diagnostic_run_id(
+        args.diagnostic_variant, args.diagnostic_stage, args.label_frac
     )
     trainer_epochs = (
         DIAGNOSTIC_PROBE_EPOCHS
@@ -145,6 +158,7 @@ def _diagnostic_layout(args, det_cfg, parser):
         "run_dir": resolved_root / run_id,
         "trainer_epochs": trainer_epochs,
         "schedule_epochs": DIAGNOSTIC_SCHEDULE_EPOCHS,
+        "fraction": args.label_frac,
     }
 
 
@@ -334,6 +348,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         # consumers must follow best_checkpoint.relative_path from schema 2.
         enable_version_counter=False,
     )
+    optimization_trace = (
+        DiagnosticOptimizationTrace() if diagnostic is not None else None
+    )
     callbacks = [
         dev_eval,
         checkpoint_callback,
@@ -353,6 +370,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
         LearningRateMonitor(logging_interval="epoch"),
     ]
+    if optimization_trace is not None:
+        callbacks.append(optimization_trace)
 
     h100_pre_trainer = None
     h100_runtime_contract = None
@@ -412,6 +431,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "schema": DIAGNOSTIC_RUN_SCHEMA,
             "variant": args.diagnostic_variant,
             "stage": args.diagnostic_stage,
+            "fraction": args.label_frac,
             "trainer_max_epochs": trainer_epochs,
             "schedule_horizon_epochs": schedule_epochs,
             "core_completion_marker_forbidden": True,
@@ -497,10 +517,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             "purpose": "bes2-root-cause-training",
             "variant": args.diagnostic_variant,
             "stage": args.diagnostic_stage,
+            "fraction": args.label_frac,
             "trainer_max_epochs": trainer_epochs,
             "schedule_horizon_epochs": schedule_epochs,
             "initialization": module.diagnostic_initialization,
             "dev_history": dev_eval.history,
+            "optimization_trace": (
+                optimization_trace.payload()
+                if optimization_trace is not None
+                else None
+            ),
             "runtime": {
                 "gpu_count": 1,
                 "seconds": runtime_seconds,
@@ -524,6 +550,263 @@ def _git_sha() -> str:
         text=True,
         check=True,
     ).stdout.strip()
+
+
+class DiagnosticOptimizationTrace(Callback):
+    """Observe early gradients and actual parameter updates without mutation."""
+
+    FIRST_CONVOLUTION = "backbone.model.stem.0.weight"
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.records: list[dict[str, object]] = []
+        self._pending: dict[str, object] | None = None
+        self._pending_trainer = None
+
+    @staticmethod
+    def _logical_group(name: str) -> str:
+        if name.startswith("backbone.model.stem."):
+            return "stem"
+        for stage in range(4):
+            if name.startswith(f"backbone.model.stages.{stage}."):
+                return f"stage_{stage}"
+        if name.startswith("backbone.model."):
+            return "backbone_other"
+        if name.startswith("head."):
+            return "detector_head"
+        raise RuntimeError(
+            f"unclassified diagnostic trainable parameter: {name}"
+        )
+
+    @staticmethod
+    def _squared_norm(tensor) -> float:
+        return float(tensor.detach().float().square().sum().item())
+
+    @staticmethod
+    def _ratio(numerator: float, denominator: float) -> float:
+        return numerator / denominator if denominator > 0.0 else 0.0
+
+    @staticmethod
+    def _new_accumulator() -> dict[str, object]:
+        return {
+            "parameter_count": 0,
+            "parameter_norm_sq": 0.0,
+            "gradient_norm_sq": 0.0,
+            "update_norm_sq": 0.0,
+            "lrs": [],
+            "lr_scales": [],
+        }
+
+    @classmethod
+    def _group_payload(cls, accumulator: dict[str, object]) -> dict[str, object]:
+        parameter_norm = math.sqrt(float(accumulator["parameter_norm_sq"]))
+        gradient_norm = math.sqrt(float(accumulator["gradient_norm_sq"]))
+        update_norm = math.sqrt(float(accumulator["update_norm_sq"]))
+        lrs = [float(value) for value in accumulator["lrs"]]
+        lr_scales = [
+            float(value) for value in accumulator["lr_scales"]
+        ]
+        if not lrs or not lr_scales:
+            raise RuntimeError("diagnostic optimization group has no parameters")
+        return {
+            "parameter_count": int(accumulator["parameter_count"]),
+            "parameter_norm_before": parameter_norm,
+            "gradient_norm": gradient_norm,
+            "gradient_to_parameter_norm": cls._ratio(
+                gradient_norm, parameter_norm
+            ),
+            "lr_min": min(lrs),
+            "lr_max": max(lrs),
+            "lr_scale_min": min(lr_scales),
+            "lr_scale_max": max(lr_scales),
+            "update_norm": update_norm,
+            "relative_update_norm": cls._ratio(update_norm, parameter_norm),
+        }
+
+    def _snapshot(self, pl_module, optimizer, step: int) -> dict[str, object]:
+        import torch
+
+        optimizer_metadata: dict[int, tuple[float, float]] = {}
+        for optimizer_group in optimizer.param_groups:
+            lr = float(optimizer_group["lr"])
+            lr_scale = float(optimizer_group.get("lr_scale", 1.0))
+            if (
+                not math.isfinite(lr)
+                or not math.isfinite(lr_scale)
+                or lr < 0.0
+                or lr_scale < 0.0
+            ):
+                raise RuntimeError(
+                    "diagnostic optimizer contains a non-finite learning rate"
+                )
+            for parameter in optimizer_group["params"]:
+                identity = id(parameter)
+                if identity in optimizer_metadata:
+                    raise RuntimeError(
+                        "diagnostic parameter appears in multiple optimizer groups"
+                    )
+                optimizer_metadata[identity] = (lr, lr_scale)
+
+        groups: dict[str, dict[str, object]] = {}
+        entries: list[dict[str, object]] = []
+        first: dict[str, object] | None = None
+        with torch.no_grad():
+            for name, parameter in pl_module.named_parameters():
+                if not parameter.requires_grad:
+                    continue
+                metadata = optimizer_metadata.get(id(parameter))
+                if metadata is None:
+                    raise RuntimeError(
+                        f"diagnostic trainable parameter is absent from optimizer: {name}"
+                    )
+                lr, lr_scale = metadata
+                logical = self._logical_group(name)
+                accumulator = groups.setdefault(
+                    logical, self._new_accumulator()
+                )
+                parameter_norm_sq = self._squared_norm(parameter)
+                gradient_norm_sq = (
+                    self._squared_norm(parameter.grad)
+                    if parameter.grad is not None
+                    else 0.0
+                )
+                accumulator["parameter_count"] = int(
+                    accumulator["parameter_count"]
+                ) + parameter.numel()
+                accumulator["parameter_norm_sq"] = float(
+                    accumulator["parameter_norm_sq"]
+                ) + parameter_norm_sq
+                accumulator["gradient_norm_sq"] = float(
+                    accumulator["gradient_norm_sq"]
+                ) + gradient_norm_sq
+                accumulator["lrs"].append(lr)
+                accumulator["lr_scales"].append(lr_scale)
+                entry = {
+                    "name": name,
+                    "logical_group": logical,
+                    "parameter": parameter,
+                    "before": parameter.detach().clone(),
+                    "lr": lr,
+                    "lr_scale": lr_scale,
+                    "parameter_norm_sq": parameter_norm_sq,
+                    "gradient_norm_sq": gradient_norm_sq,
+                }
+                entries.append(entry)
+                if name == self.FIRST_CONVOLUTION:
+                    first = entry
+
+        if first is None:
+            raise RuntimeError(
+                "diagnostic first-convolution parameter was not found"
+            )
+        return {
+            "optimizer_step": step,
+            "groups": groups,
+            "entries": entries,
+            "first": first,
+        }
+
+    def on_before_optimizer_step(self, trainer, pl_module, optimizer) -> None:
+        step = int(trainer.global_step) + 1
+        completed = {
+            int(record["optimizer_step"]) for record in self.records
+        }
+        if step not in OPTIMIZATION_TRACE_STEPS or step in completed:
+            return
+        if self._pending is not None:
+            raise RuntimeError("diagnostic optimization snapshot is still pending")
+        self._pending = self._snapshot(pl_module, optimizer, step)
+        self._pending_trainer = trainer
+
+    def _finalize_pending(self) -> None:
+        if self._pending is None:
+            return
+        import torch
+
+        pending = self._pending
+        with torch.no_grad():
+            for entry in pending["entries"]:
+                update_sq = self._squared_norm(
+                    entry["parameter"].detach() - entry["before"]
+                )
+                accumulator = pending["groups"][entry["logical_group"]]
+                accumulator["update_norm_sq"] = float(
+                    accumulator["update_norm_sq"]
+                ) + update_sq
+                entry["update_norm_sq"] = update_sq
+
+        groups = {
+            name: self._group_payload(accumulator)
+            for name, accumulator in sorted(pending["groups"].items())
+        }
+        first = pending["first"]
+        parameter_norm = math.sqrt(float(first["parameter_norm_sq"]))
+        gradient_norm = math.sqrt(float(first["gradient_norm_sq"]))
+        update_norm = math.sqrt(float(first["update_norm_sq"]))
+        record = {
+            "optimizer_step": int(pending["optimizer_step"]),
+            "groups": groups,
+            "first_convolution": {
+                "name": self.FIRST_CONVOLUTION,
+                "parameter_count": int(first["parameter"].numel()),
+                "parameter_norm_before": parameter_norm,
+                "gradient_norm": gradient_norm,
+                "gradient_to_parameter_norm": self._ratio(
+                    gradient_norm, parameter_norm
+                ),
+                "lr": float(first["lr"]),
+                "lr_scale": float(first["lr_scale"]),
+                "update_norm": update_norm,
+                "relative_update_norm": self._ratio(
+                    update_norm, parameter_norm
+                ),
+            },
+        }
+        self.records.append(record)
+        self._pending = None
+        self._pending_trainer = None
+        validate_optimization_trace(self._payload(), require_complete=False)
+
+    def on_train_batch_end(
+        self, trainer, pl_module, outputs, batch, batch_idx
+    ) -> None:
+        del trainer, pl_module, outputs, batch, batch_idx
+        self._finalize_pending()
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "schema": 1,
+            "milestones": list(OPTIMIZATION_TRACE_STEPS),
+            "records": self.records,
+        }
+
+    def payload(self) -> dict[str, object]:
+        if self._pending is not None:
+            raise RuntimeError("diagnostic optimization update remains pending")
+        return validate_optimization_trace(self._payload())
+
+    def state_dict(self) -> dict[str, object]:
+        if self._pending is not None:
+            trainer = self._pending_trainer
+            if trainer is None:
+                raise RuntimeError(
+                    "diagnostic optimizer snapshot lacks trainer state"
+                )
+            if int(trainer.global_step) >= int(
+                self._pending["optimizer_step"]
+            ):
+                self._finalize_pending()
+        return validate_optimization_trace(
+            self._payload(), require_complete=False
+        )
+
+    def load_state_dict(self, state_dict) -> None:
+        payload = validate_optimization_trace(
+            state_dict, require_complete=False
+        )
+        self.records = [dict(record) for record in payload["records"]]
+        self._pending = None
+        self._pending_trainer = None
 
 
 class DevSceneEval(Callback):

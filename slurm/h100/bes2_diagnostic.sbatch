@@ -421,44 +421,80 @@ if [[ ! -f "$control/BES2_DIAGNOSTIC_READY.json" ||
 fi
 if [[ "$mode" == "full" && ( ! -f "$control/BES2_PROBES_COMPLETE.json" ||
       -L "$control/BES2_PROBES_COMPLETE.json" ) ]]; then
-  echo "full diagnostic requires both finite five-epoch probes" >&2
+  echo "full diagnostic requires both finite f50 five-epoch probes" >&2
   exit 1
 fi
 
 controller_pid=""
+preemption_requested=0
 forward_usr1() {
+  preemption_requested=1
   if [[ -n "$controller_pid" ]]; then
     kill -USR1 "$controller_pid" 2>/dev/null || true
   fi
 }
 trap forward_usr1 USR1
 
-cd "$repo"
-"${native_env[@]}" "$H100_VENV_ROOT/bin/python" -B \
-  -m scripts.h100.bes2_diagnostic controller \
-  --repo "$repo" \
-  --diagnostic-root "$BES2_DIAGNOSTIC_ROOT" \
-  --original-runs-root "$BES2_ORIGINAL_RUNS_ROOT" \
-  --expected-git-sha "$BES2_EXPECTED_GIT_SHA" \
-  --stage "$mode" \
-  --data-view-root "$payload" \
-  --data-view-receipt "$view_ready" \
-  --data-config "$repo/configs/data.yaml" \
-  --weights-root "$payload/data/weights" \
-  --workers 6 \
-  --checkpoint-timeout 600 &
-controller_pid="$!"
-set +e
-wait "$controller_pid"
-controller_rc="$?"
-set -e
-if [[ "$controller_rc" -eq 75 ]]; then
+request_outer_requeue() {
   assert_final_unconsumed
   check_sha "$BES2_H100_READY_SHA256" "$h100_ready"
   remove_allocation_scratch
   trap - EXIT
   "${H100_REAL_SCONTROL:-/usr/bin/scontrol}" requeue "$SLURM_JOB_ID"
   exit 0
+}
+
+run_controller_wave() {
+  local fraction="${1:?fraction wave is required}"
+  if [[ "$preemption_requested" -eq 1 ]]; then
+    request_outer_requeue
+  fi
+  cd "$repo"
+  "${native_env[@]}" "$H100_VENV_ROOT/bin/python" -B \
+    -m scripts.h100.bes2_diagnostic controller \
+    --repo "$repo" \
+    --diagnostic-root "$BES2_DIAGNOSTIC_ROOT" \
+    --original-runs-root "$BES2_ORIGINAL_RUNS_ROOT" \
+    --expected-git-sha "$BES2_EXPECTED_GIT_SHA" \
+    --stage "$mode" \
+    --fraction "$fraction" \
+    --data-view-root "$payload" \
+    --data-view-receipt "$view_ready" \
+    --data-config "$repo/configs/data.yaml" \
+    --weights-root "$payload/data/weights" \
+    --workers 6 \
+    --checkpoint-timeout 600 &
+  controller_pid="$!"
+  if [[ "$preemption_requested" -eq 1 ]]; then
+    kill -TERM "$controller_pid" 2>/dev/null || true
+    set +e
+    wait "$controller_pid"
+    set -e
+    controller_pid=""
+    request_outer_requeue
+  fi
+  set +e
+  wait "$controller_pid"
+  controller_rc="$?"
+  set -e
+  controller_pid=""
+  if [[ "$controller_rc" -eq 0 && "$preemption_requested" -eq 0 ]]; then
+    return 0
+  fi
+  if [[ "$controller_rc" -ne 75 ]]; then
+    if [[ "$controller_rc" -eq 0 && "$preemption_requested" -eq 1 ]]; then
+      request_outer_requeue
+    fi
+    return "$controller_rc"
+  fi
+  request_outer_requeue
+}
+
+if [[ "$mode" == "probe" ]]; then
+  run_controller_wave 0.5
+else
+  run_controller_wave 0.1
+  run_controller_wave 0.5
 fi
 assert_final_unconsumed
-exit "$controller_rc"
+exit 0

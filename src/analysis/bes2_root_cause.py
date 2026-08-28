@@ -17,21 +17,29 @@ import yaml
 
 from src.analysis.bes2_contract import (
     BES2ContractError,
+    DIAGNOSTIC_FRACTIONS,
     DIAGNOSTIC_METRICS_SCHEMA,
     DIAGNOSTIC_READY_SCHEMA,
+    DIAGNOSTIC_VARIANTS,
+    FROZEN_COMPARATOR_EXPERIMENTS,
     H100_CAMPAIGN_GIT_SHA,
-    RANDOM_FROZEN_DEV_F1,
-    S2_FROZEN_DEV_F1,
+    OPTIMIZATION_TRACE_STEPS,
+    PROBE_FRACTIONS,
     assert_no_final_consumption,
     canonical_json,
+    diagnostic_run_id,
+    fraction_tag,
+    frozen_comparator_payload,
     hash_binding,
     payload_sha256,
     read_regular_json,
     sha256_file,
+    stage_fractions,
     summarize_payload,
     utc_now,
     validate_diagnostic_metrics,
     validate_forecast_hours,
+    validate_frozen_comparator_payload,
     validate_training_metrics,
     verify_training_path_identity,
     write_new_immutable,
@@ -45,6 +53,7 @@ from src.analysis.bes2_evidence import (
     batch16_forward_backward_probe,
     build_sample_manifest,
     collect_dev_evidence,
+    equivalent_two_channel_stem,
     input_covariance_statistics,
     layer_drift,
     load_sample_images,
@@ -54,9 +63,9 @@ from src.analysis.bes2_evidence import (
     validate_h100_ready,
 )
 from src.models.bes2_diagnostic import (
-    DIAGNOSTIC_VARIANTS,
     SOURCE_CHECKPOINT_SHA256,
 )
+from src.data.datasets import nested_fraction_scenes
 from src.train.datamodule import FineTuneDataModule
 
 AUDIT_SCHEMA = 1
@@ -65,6 +74,7 @@ DATA_VIEW_RECEIPT_SCHEMA = 1
 READY_FILENAME = "BES2_DIAGNOSTIC_READY.json"
 AUDIT_FILENAME = "BES2_AUDIT.json"
 SAMPLE_FILENAME = "BES2_SAMPLE_MANIFEST.json"
+COMPARATOR_FILENAME = "BES2_FROZEN_COMPARATORS.json"
 ROOT_CAUSE_FILENAME = "BES2_ROOT_CAUSE.json"
 REPORT_FILENAME = "BES2_ROOT_CAUSE.md"
 
@@ -108,16 +118,88 @@ def _scope_identity(scope: Mapping[str, object]) -> dict[str, object]:
     }
     if not required <= set(scope):
         raise BES2ContractError("diagnostic data scope identity is incomplete")
+    train_value = scope.get("train_scene_ids")
+    dev_value = scope.get("dev_scene_ids")
+    label_scene_count = scope.get("label_scene_count")
+    train = list(map(str, train_value)) if isinstance(train_value, list) else []
+    dev = list(map(str, dev_value)) if isinstance(dev_value, list) else []
+    hashes = (scope.get("splits_sha256"), scope.get("stats_sha256"))
+    if (
+        len(train) != 111
+        or len(dev) != 8
+        or train != sorted(set(train))
+        or dev != sorted(set(dev))
+        or set(train) & set(dev)
+        or isinstance(label_scene_count, bool)
+        or label_scene_count != 119
+        or any(
+            not isinstance(value, str)
+            or len(value) != 64
+            or any(character not in "0123456789abcdef" for character in value)
+            for value in hashes
+        )
+    ):
+        raise BES2ContractError(
+            "diagnostic scope must bind exact 111-TRAIN/fixed-DEV8 identity"
+        )
     identity = {
         "contract": TRAINING_VIEW_CONTRACT,
         "splits_sha256": scope["splits_sha256"],
         "stats_sha256": scope["stats_sha256"],
-        "train_scene_ids": list(scope["train_scene_ids"]),
-        "dev_scene_ids": list(scope["dev_scene_ids"]),
-        "label_scene_count": scope["label_scene_count"],
+        "train_scene_ids": train,
+        "dev_scene_ids": dev,
+        "label_scene_count": label_scene_count,
     }
     identity["sha256"] = payload_sha256(identity)
     return identity
+
+
+def _fraction_scene_contract(
+    scope_identity: Mapping[str, object],
+) -> dict[str, object]:
+    train_scene_ids = list(map(str, scope_identity["train_scene_ids"]))
+    result: dict[str, object] = {}
+    for fraction in DIAGNOSTIC_FRACTIONS:
+        tag = fraction_tag(fraction)
+        scene_ids = nested_fraction_scenes(
+            train_scene_ids,
+            fraction,
+            frac_seed=0,
+        )
+        result[tag] = {
+            "fraction": fraction,
+            "scene_count": len(scene_ids),
+            "scene_ids": scene_ids,
+            "scene_ids_sha256": payload_sha256(scene_ids),
+        }
+    return result
+
+
+def _diagnostic_recipe(
+    scope_identity: Mapping[str, object],
+) -> dict[str, object]:
+    return {
+        "variants": list(DIAGNOSTIC_VARIANTS),
+        "stages": {"probe_epochs": 5, "full_max_epochs": 50},
+        "fractions": {
+            "probe": list(PROBE_FRACTIONS),
+            "full": list(DIAGNOSTIC_FRACTIONS),
+        },
+        "fraction_analysis": "per-fraction-no-pooling",
+        "schedule_horizon_epochs": 50,
+        "seed": 0,
+        "fraction_seed": 0,
+        "train_scenes": _fraction_scene_contract(scope_identity),
+        "dev_scene_count": 8,
+        "micro_batch": 16,
+        "gradient_accumulation": 1,
+        "effective_batch": 16,
+        "layer_decay": 0.65,
+        "precision": "32-true",
+        "devices_per_run": 1,
+        "ddp": False,
+        "optimization_trace_steps": list(OPTIMIZATION_TRACE_STEPS),
+    }
 
 
 def _build_module(
@@ -267,7 +349,7 @@ def _diagnostic_dataset(
         stats_path=_resolve_config_path(
             repo, data_config["paths"]["stats"]
         ),
-        label_frac=1.0,
+        label_frac=0.5,
         frac_seed=int(data_config["seed"]),
         batch_size=16,
         num_workers=0,
@@ -348,8 +430,9 @@ def _audit(args: argparse.Namespace) -> int:
         path.name
         for variant in DIAGNOSTIC_VARIANTS
         for stage in ("probe", "full")
+        for fraction in stage_fractions(stage)
         if (
-            path := root / f"bes2-{variant}-{stage}-f100-s0"
+            path := root / diagnostic_run_id(variant, stage, fraction)
         ).exists()
     ]
     if occupied:
@@ -360,6 +443,20 @@ def _audit(args: argparse.Namespace) -> int:
 
     forecast = validate_forecast_hours(args.forecast_gpu_hours)
     final_gate = assert_no_final_consumption(args.original_runs_root)
+    comparator_path = control / COMPARATOR_FILENAME
+    current_comparators = frozen_comparator_payload(args.original_runs_root)
+    if comparator_path.exists() and not comparator_path.is_symlink():
+        comparators = validate_frozen_comparator_payload(
+            read_regular_json(comparator_path, "frozen H100 comparators")
+        )
+        current_comparators["created_utc"] = comparators["created_utc"]
+        if current_comparators != comparators:
+            raise BES2ContractError(
+                "existing frozen comparator receipt differs from H100 results"
+            )
+    else:
+        comparators = current_comparators
+        write_new_immutable(comparator_path, comparators)
     training_identity = verify_training_path_identity(
         repo, require_dev_ref=False
     )
@@ -373,8 +470,16 @@ def _audit(args: argparse.Namespace) -> int:
 
     detector_path = repo / "configs/detector.yaml"
     detector = _load_yaml(detector_path, "frozen detector config")
+    if comparators["detector_sha256"] != sha256_file(detector_path):
+        raise BES2ContractError(
+            "frozen H100 comparators bind different detector bytes"
+        )
     data_config_path = args.data_config.resolve()
     data_config = _load_yaml(data_config_path, "diagnostic data config")
+    if data_config.get("seed") != 0:
+        raise BES2ContractError(
+            "diagnostic nested label fractions require frozen data seed 0"
+        )
     view_receipt = _validate_data_view_receipt(
         args.data_view_receipt,
         source_sha=source_sha,
@@ -442,6 +547,7 @@ def _audit(args: argparse.Namespace) -> int:
 
     initializations: dict[str, object] = {}
     initial_activations: dict[str, object] = {}
+    equivalent_stems: dict[str, object] = {}
     batch_probes: dict[str, object] = {}
     value_sensitive = None
     for variant in DIAGNOSTIC_VARIANTS:
@@ -456,6 +562,19 @@ def _audit(args: argparse.Namespace) -> int:
                 current_model=model,
                 weights_root=args.weights_root,
             )
+        stem_weight = model.backbone.model.stem[0].weight
+        equivalent_stems[variant] = {
+            "raw_db_exact_channel_relation": equivalent_two_channel_stem(
+                stem_weight,
+                covariance["raw_db"]["covariance"],
+                covariance["raw_db"]["mean"],
+            ),
+            "normalized_input_covariance_projection": equivalent_two_channel_stem(
+                stem_weight,
+                covariance["normalized"]["covariance"],
+                covariance["normalized"]["mean"],
+            ),
+        }
         initial_activations[variant] = activation_statistics(
             model,
             normalized_images,
@@ -514,14 +633,13 @@ def _audit(args: argparse.Namespace) -> int:
         },
         "input_statistics": covariance,
         "initializations": initializations,
+        "equivalent_two_channel_stems": equivalent_stems,
         "value_sensitive_s2_load": value_sensitive,
         "initial_activation_statistics": initial_activations,
         "batch16_forward_backward": batch_probes,
-        "original_comparator": {
-            "scope": "owner-frozen-numerical-comparators-only",
-            "bigearthnet_s2_best_dev_f1": S2_FROZEN_DEV_F1,
-            "random_best_dev_f1": RANDOM_FROZEN_DEV_F1,
-            "original_campaign_artifacts_read": False,
+        "frozen_comparators": {
+            "binding": hash_binding(comparator_path),
+            "receipt": comparators,
         },
         "final_access_gate": final_gate,
         "forecast_gpu_hours": forecast,
@@ -554,22 +672,8 @@ def _audit(args: argparse.Namespace) -> int:
         "sample_manifest": hash_binding(sample_path),
         "audit": hash_binding(audit_path),
         "test_suite": hash_binding(args.test_receipt),
-        "recipe": {
-            "variants": list(DIAGNOSTIC_VARIANTS),
-            "stages": {"probe_epochs": 5, "full_max_epochs": 50},
-            "schedule_horizon_epochs": 50,
-            "fraction": 1.0,
-            "seed": 0,
-            "train_scene_count": 111,
-            "dev_scene_count": 8,
-            "micro_batch": 16,
-            "gradient_accumulation": 1,
-            "effective_batch": 16,
-            "layer_decay": 0.65,
-            "precision": "32-true",
-            "devices_per_run": 1,
-            "ddp": False,
-        },
+        "frozen_comparators": hash_binding(comparator_path),
+        "recipe": _diagnostic_recipe(scope_identity),
         "forecast_gpu_hours": forecast,
         "final_access_gate": final_gate,
         "canonical_h100_ready_unchanged": {
@@ -603,6 +707,7 @@ def validate_readiness(
         "sample_manifest",
         "audit",
         "test_suite",
+        "frozen_comparators",
         "recipe",
         "forecast_gpu_hours",
         "final_access_gate",
@@ -619,22 +724,6 @@ def validate_readiness(
         "cuda_matmul_fp32_precision": "ieee",
         "cudnn_conv_fp32_precision": "ieee",
         "cudnn_rnn_fp32_precision": "ieee",
-    }
-    expected_recipe = {
-        "variants": list(DIAGNOSTIC_VARIANTS),
-        "stages": {"probe_epochs": 5, "full_max_epochs": 50},
-        "schedule_horizon_epochs": 50,
-        "fraction": 1.0,
-        "seed": 0,
-        "train_scene_count": 111,
-        "dev_scene_count": 8,
-        "micro_batch": 16,
-        "gradient_accumulation": 1,
-        "effective_batch": 16,
-        "layer_decay": 0.65,
-        "precision": "32-true",
-        "devices_per_run": 1,
-        "ddp": False,
     }
     if (
         set(payload) != expected
@@ -673,7 +762,6 @@ def validate_readiness(
         or Path(str(payload.get("diagnostic_root"))).resolve()
         != diagnostic_root.resolve()
         or not isinstance(recipe, Mapping)
-        or dict(recipe) != expected_recipe
     ):
         raise BES2ContractError("BES2 diagnostic readiness identity is invalid")
     data_view = payload.get("data_view")
@@ -705,7 +793,14 @@ def validate_readiness(
         or _scope_identity(scope_identity) != dict(scope_identity)
     ):
         raise BES2ContractError("BES2 diagnostic data-view identity is invalid")
-    for name in ("sample_manifest", "audit", "test_suite"):
+    if dict(recipe) != _diagnostic_recipe(scope_identity):
+        raise BES2ContractError("BES2 diagnostic fraction recipe is invalid")
+    for name in (
+        "sample_manifest",
+        "audit",
+        "test_suite",
+        "frozen_comparators",
+    ):
         binding = payload.get(name)
         if (
             not isinstance(binding, Mapping)
@@ -715,6 +810,12 @@ def validate_readiness(
             raise BES2ContractError(
                 f"BES2 diagnostic readiness {name} binding drifted"
             )
+    comparator_binding = payload["frozen_comparators"]
+    validate_frozen_comparator_payload(
+        read_regular_json(
+            comparator_binding["path"], "frozen H100 comparators"
+        )
+    )
     validate_forecast_hours(payload.get("forecast_gpu_hours"))
     return payload
 
@@ -727,12 +828,13 @@ def _probe_prerequisites(
     for variant in DIAGNOSTIC_VARIANTS:
         path = (
             root
-            / f"bes2-{variant}-probe-f100-s0"
+            / diagnostic_run_id(variant, "probe", 0.5)
             / "diagnostic_metrics.json"
         )
         metrics = validate_diagnostic_metrics(
             path,
             expected_variant=variant,
+            expected_fraction=0.5,
             expected_stage="probe",
         )
         binding = metrics.get("readiness")
@@ -750,6 +852,8 @@ def _run(args: argparse.Namespace) -> int:
     repo = args.repo.resolve()
     source_sha = _git_sha(repo)
     root = args.diagnostic_root.resolve()
+    fraction = float(args.fraction)
+    run_id = diagnostic_run_id(args.variant, args.stage, fraction)
     ready_path = root / ".control" / READY_FILENAME
     ready = validate_readiness(
         ready_path,
@@ -832,14 +936,22 @@ def _run(args: argparse.Namespace) -> int:
     variant = args.variant
     if stage == "full":
         _probe_prerequisites(root, readiness_sha256=ready_sha256)
-    run_dir = root / f"bes2-{variant}-{stage}-f100-s0"
+    run_dir = root / run_id
     output_path = run_dir / "diagnostic_metrics.json"
     if output_path.exists() and not output_path.is_symlink():
         payload = validate_diagnostic_metrics(
             output_path,
             expected_variant=variant,
+            expected_fraction=fraction,
             expected_stage=stage,
         )
+        if payload.get("readiness") != {
+            "path": str(ready_path),
+            "sha256": ready_sha256,
+        }:
+            raise BES2ContractError(
+                "existing diagnostic metrics bind different readiness"
+            )
         print(json.dumps(payload, indent=1))
         return 0
 
@@ -854,7 +966,7 @@ def _run(args: argparse.Namespace) -> int:
                 "--init",
                 "bigearthnet_s2",
                 "--label_frac",
-                "1.0",
+                str(fraction),
                 "--seed",
                 "0",
                 "--git-sha",
@@ -883,6 +995,7 @@ def _run(args: argparse.Namespace) -> int:
     training, checkpoint = validate_training_metrics(
         training_marker,
         expected_variant=variant,
+        expected_fraction=fraction,
         expected_stage=stage,
         candidate_floor=float(detector["decode"]["candidate_floor"]),
     )
@@ -950,6 +1063,7 @@ def _run(args: argparse.Namespace) -> int:
         "purpose": "bes2-root-cause",
         "variant": variant,
         "stage": stage,
+        "fraction": fraction,
         "created_utc": utc_now(),
         "readiness": {
             "path": str(ready_path),
@@ -975,6 +1089,7 @@ def _run(args: argparse.Namespace) -> int:
     validate_diagnostic_metrics(
         output_path,
         expected_variant=variant,
+        expected_fraction=fraction,
         expected_stage=stage,
     )
     print(json.dumps(metrics, indent=1))
@@ -989,13 +1104,9 @@ def _range(values: Sequence[float]) -> str:
 
 def _markdown_report(payload: Mapping[str, object]) -> str:
     decision = payload["decision"]
+    aggregate = decision["aggregate"]
+    per_fraction = decision["per_fraction"]
     support = payload["supporting_evidence"]
-    replay = support["current_replay"]
-    reset = support["first_conv_reset"]
-    replay_best = replay["best_dev"]
-    reset_best = reset["best_dev"]
-    recovery = decision.get("recovery")
-    recovery_text = "not applicable" if recovery is None else f"{float(recovery):.6f}"
 
     def loo_ranges(item: Mapping[str, object]) -> tuple[str, str]:
         entries = item["dev_evidence"]["leave_one_dev_scene_out"].values()
@@ -1005,55 +1116,85 @@ def _markdown_report(payload: Mapping[str, object]) -> str:
         thresholds = [float(entry["threshold"]) for entry in entries]
         return _range(retained), _range(thresholds)
 
-    replay_loo, replay_tau = loo_ranges(replay)
-    reset_loo, reset_tau = loo_ranges(reset)
-    replay_row = (
-        f"| current_replay | {float(replay_best['f1']):.10f} | "
-        f"{float(replay_best['precision']):.10f} | "
-        f"{float(replay_best['recall']):.10f} | "
-        f"{float(replay_best['threshold']):.10f} |"
-    )
-    reset_row = (
-        f"| first_conv_reset | {float(reset_best['f1']):.10f} | "
-        f"{float(reset_best['precision']):.10f} | "
-        f"{float(reset_best['recall']):.10f} | "
-        f"{float(reset_best['threshold']):.10f} |"
-    )
+    result_rows = []
+    decision_rows = []
+    sensitivity = []
+    for tag in FROZEN_COMPARATOR_EXPERIMENTS:
+        fraction_decision = per_fraction[tag]
+        for variant in DIAGNOSTIC_VARIANTS:
+            item = support[tag][variant]
+            best = item["best_dev"]
+            result_rows.append(
+                f"| {tag} | {variant} | {float(best['f1']):.10f} | "
+                f"{float(best['precision']):.10f} | "
+                f"{float(best['recall']):.10f} | "
+                f"{float(best['threshold']):.10f} |"
+            )
+            loo_f1, loo_threshold = loo_ranges(item)
+            sensitivity.append(
+                f"- {tag} {variant}: leave-one-DEV-scene-out retained-seven "
+                f"F1 range {loo_f1}; threshold range {loo_threshold}."
+            )
+        recovery = fraction_decision.get("recovery")
+        recovery_text = (
+            "not applicable"
+            if recovery is None
+            else f"{float(recovery):.6f}"
+        )
+        denominator = fraction_decision.get("recovery_denominator")
+        denominator_text = (
+            "not applicable"
+            if denominator is None
+            else f"{float(denominator):.10f}"
+        )
+        decision_rows.append(
+            f"| {tag} | "
+            f"{float(fraction_decision['frozen_s2_best_dev_f1']):.10f} | "
+            f"{float(fraction_decision['frozen_random_best_dev_f1']):.10f} | "
+            f"{denominator_text} | "
+            f"{recovery_text} | {fraction_decision['classification']} |"
+        )
+    reproduction_root = Path(
+        str(payload["runs"]["f10"]["current_replay"]["path"])
+    ).parent.parent
     return f"""# BigEarthNet-S2 root-cause diagnostic
 
 Status: **{payload['status']}**
 
-Classification: **{decision['classification']}**
+Aggregate classification: **{aggregate['classification']}**
 
 This is a single-seed TRAIN+fixed-DEV8 diagnostic. It makes no significance,
 error-bar, or seed-variance claim. TEST and verified-final data were not used.
+The f10 and f50 decisions are computed independently and are never pooled.
 
-## Paired result
+## Paired results
 
-| Variant | Best DEV F1 | Precision | Recall | Threshold |
-|---|---:|---:|---:|---:|
-{replay_row}
-{reset_row}
+| Fraction | Variant | Best DEV F1 | Precision | Recall | Threshold |
+|---|---|---:|---:|---:|---:|
+{chr(10).join(result_rows)}
 
-Frozen current-S2 comparator: {float(decision['frozen_s2_best_dev_f1']):.10f}
+## Per-fraction decisions
 
-Frozen random comparator: {float(decision['frozen_random_best_dev_f1']):.10f}
+| Fraction | Frozen S2 F1 | Frozen random F1 | Recovery denominator | Recovery | Classification |
+|---|---:|---:|---:|---:|---|
+{chr(10).join(decision_rows)}
 
-Recovery: {recovery_text}
+Aggregate concordance: **{aggregate['concordant']}**
 
-Replacement eligibility: **{decision['replacement_eligibility']}**
+Replacement eligibility: **{aggregate['replacement_eligibility']}**
 
-Required next step: {decision['required_next_step']}
+Required next step: {aggregate['required_next_step']}
 
 ## Sensitivity and mechanism evidence
 
-- Current replay leave-one-DEV-scene-out retained-seven F1 range:
-  {replay_loo}; threshold range: {replay_tau}.
-- First-convolution reset leave-one-DEV-scene-out retained-seven F1 range:
-  {reset_loo}; threshold range: {reset_tau}.
+{chr(10).join(sensitivity)}
+
 - Exact candidate-threshold curves, score distributions, per-scene metrics,
-  activation statistics, and initialization-to-best layer drift are embedded
-  in the bound per-run `diagnostic_metrics.json` artifacts.
+  frozen-scorer localization-distance distributions, activation statistics,
+  early gradient/update traces, and initialization-to-best layer drift are
+  embedded in the bound per-run `diagnostic_metrics.json` artifacts.
+- The readiness audit contains the exact two-channel stem projection,
+  cancellation ratios, input covariance, and initial activation evidence.
 - BigEarthNet-S1 was not modified or tested. Its use of the shared conversion
   helper remains a separate unresolved compliance issue.
 
@@ -1061,10 +1202,11 @@ Required next step: {decision['required_next_step']}
 
 ```bash
 python -B -m src.analysis.bes2_root_cause summarize \
-  --diagnostic-root {payload['runs']['current_replay']['path'].rsplit('/', 2)[0]}
+  --diagnostic-root {reproduction_root}
 ```
 
-The JSON decision and this report are content-bound to both full-run artifacts.
+The JSON decision and this report are content-bound to all four full-run
+artifacts and the immutable four-result H100 DEV comparator receipt.
 """
 
 
@@ -1086,31 +1228,58 @@ def _write_new_text(path: Path, text: str) -> None:
 
 
 def _summary_from_runs(root: Path) -> dict[str, object]:
-    replay_path = (
-        root
-        / "bes2-current_replay-full-f100-s0"
-        / "diagnostic_metrics.json"
+    metrics: dict[str, dict[str, dict[str, object]]] = {}
+    bindings: dict[str, dict[str, dict[str, str]]] = {}
+    readiness_sha256: str | None = None
+    ready_path = root / ".control" / READY_FILENAME
+    for tag, specification in FROZEN_COMPARATOR_EXPERIMENTS.items():
+        fraction = float(specification["fraction"])
+        metrics[tag] = {}
+        bindings[tag] = {}
+        for variant in DIAGNOSTIC_VARIANTS:
+            path = (
+                root
+                / diagnostic_run_id(variant, "full", fraction)
+                / "diagnostic_metrics.json"
+            )
+            metric = validate_diagnostic_metrics(
+                path,
+                expected_variant=variant,
+                expected_fraction=fraction,
+            )
+            readiness = metric.get("readiness")
+            if (
+                not isinstance(readiness, Mapping)
+                or readiness.get("path") != str(ready_path)
+                or readiness.get("sha256") != sha256_file(ready_path)
+            ):
+                raise BES2ContractError(
+                    f"{tag}/{variant} binds a different readiness receipt"
+                )
+            if readiness_sha256 is None:
+                readiness_sha256 = str(readiness["sha256"])
+            elif readiness_sha256 != readiness["sha256"]:
+                raise BES2ContractError(
+                    "four full runs bind different readiness receipts"
+                )
+            metrics[tag][variant] = metric
+            bindings[tag][variant] = hash_binding(path)
+
+    readiness = read_regular_json(ready_path, "BES2 diagnostic readiness")
+    comparator_path = root / ".control" / COMPARATOR_FILENAME
+    comparator_binding = hash_binding(comparator_path)
+    if readiness.get("frozen_comparators") != comparator_binding:
+        raise BES2ContractError(
+            "readiness does not bind the frozen comparator receipt"
+        )
+    comparator_receipt = validate_frozen_comparator_payload(
+        read_regular_json(comparator_path, "frozen H100 comparators")
     )
-    reset_path = (
-        root
-        / "bes2-first_conv_reset-full-f100-s0"
-        / "diagnostic_metrics.json"
-    )
-    replay = validate_diagnostic_metrics(
-        replay_path,
-        expected_variant="current_replay",
-    )
-    reset = validate_diagnostic_metrics(
-        reset_path,
-        expected_variant="first_conv_reset",
-    )
-    if replay["readiness"]["sha256"] != reset["readiness"]["sha256"]:
-        raise BES2ContractError("paired full runs bind different readiness receipts")
     return summarize_payload(
-        replay,
-        reset,
-        replay_binding=hash_binding(replay_path),
-        reset_binding=hash_binding(reset_path),
+        metrics,
+        run_bindings=bindings,
+        comparator_receipt=comparator_receipt,
+        comparator_binding=comparator_binding,
     )
 
 
@@ -1185,6 +1354,9 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--original-runs-root", type=Path, required=True)
     run.add_argument("--variant", choices=DIAGNOSTIC_VARIANTS, required=True)
     run.add_argument("--stage", choices=("probe", "full"), required=True)
+    run.add_argument(
+        "--fraction", type=float, choices=DIAGNOSTIC_FRACTIONS, required=True
+    )
     run.add_argument("--data-view-root", type=Path, required=True)
     run.add_argument("--data-view-receipt", type=Path, required=True)
     run.add_argument("--data-config", type=Path, required=True)

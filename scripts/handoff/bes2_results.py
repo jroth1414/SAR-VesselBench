@@ -19,21 +19,31 @@ from scripts.h100.bes2_diagnostic import (
     PROBE_COMPLETE,
     TEST_RECEIPT,
     _test_receipt_valid,
+    _validate_stage_marker as _validate_runtime_stage_marker,
 )
 from src.analysis.bes2_contract import (
     BES2ContractError,
+    DIAGNOSTIC_FRACTIONS,
+    DIAGNOSTIC_VARIANTS,
+    FROZEN_COMPARATOR_EXPERIMENTS,
+    PROBE_FRACTIONS,
     assert_no_final_consumption,
     canonical_json,
+    diagnostic_run_id,
+    fraction_tag,
     hash_binding,
     read_regular_json,
     sha256_file,
     summarize_payload,
     validate_diagnostic_metrics,
     validate_diagnostic_metrics_payload,
+    validate_frozen_comparator_payload,
     validate_training_metrics,
+    stage_fractions,
 )
 from src.analysis.bes2_root_cause import (
     AUDIT_FILENAME,
+    COMPARATOR_FILENAME,
     READY_FILENAME,
     REPORT_FILENAME,
     ROOT_CAUSE_FILENAME,
@@ -41,8 +51,6 @@ from src.analysis.bes2_root_cause import (
     _markdown_report,
     validate_readiness,
 )
-from src.models.bes2_diagnostic import DIAGNOSTIC_VARIANTS
-
 from .bes2_amendment import _artifact_paths
 from .package import (
     PackageError,
@@ -65,6 +73,7 @@ CONTROL_JSON = (
     READY_FILENAME,
     AUDIT_FILENAME,
     SAMPLE_FILENAME,
+    COMPARATOR_FILENAME,
     TEST_RECEIPT,
     PROBE_COMPLETE,
     EXECUTION_COMPLETE,
@@ -118,12 +127,19 @@ def _git_sha(repo: Path) -> str:
         raise PackageError("cannot resolve BES2 result source SHA") from exc
 
 
-def _run_dir(root: Path, variant: str, stage: str) -> Path:
-    return root / f"bes2-{variant}-{stage}-f100-s0"
+def _run_dir(
+    root: Path, variant: str, stage: str, fraction: float
+) -> Path:
+    return root / diagnostic_run_id(variant, stage, fraction)
 
 
-def _logical_run_file(variant: str, stage: str, filename: str) -> str:
-    return f"diagnostic_runs/{variant}/{stage}/{filename}"
+def _logical_run_file(
+    variant: str, stage: str, fraction: float, filename: str
+) -> str:
+    return (
+        f"diagnostic_runs/{fraction_tag(fraction)}/"
+        f"{variant}/{stage}/{filename}"
+    )
 
 
 def _regular_file(path: Path, description: str) -> Path:
@@ -161,96 +177,17 @@ def _stage_marker(
     stage: str,
     readiness_sha256: str,
 ) -> dict[str, object]:
-    payload = read_regular_json(path, f"BES2 {stage} completion")
-    expected_purpose = f"bes2-{stage}-pair"
-    variants = payload.get("variants")
-    required = {
-        "schema",
-        "status",
-        "purpose",
-        "created_utc",
-        "readiness_sha256",
-        "variants",
-        "gpu_hours",
-    }
-    if stage == "full":
-        required |= {
-            "probe_pair",
-            "root_cause",
-            "report",
-            "total_pair_gpu_hours",
-        }
-    if (
-        set(payload) != required
-        or payload.get("schema") != 1
-        or payload.get("status") != "complete"
-        or payload.get("purpose") != expected_purpose
-        or payload.get("readiness_sha256") != readiness_sha256
-        or not isinstance(variants, Mapping)
-        or set(variants) != set(DIAGNOSTIC_VARIANTS)
-    ):
-        raise PackageError(f"BES2 {stage} completion marker is invalid")
-    validated_metrics: dict[str, dict[str, object]] = {}
-    for variant in DIAGNOSTIC_VARIANTS:
-        metrics_path = (
-            _run_dir(root, variant, stage) / "diagnostic_metrics.json"
+    try:
+        return _validate_runtime_stage_marker(
+            path,
+            root=root,
+            stage=stage,
+            readiness_sha256=readiness_sha256,
         )
-        metrics = validate_diagnostic_metrics(
-            metrics_path,
-            expected_variant=variant,
-            expected_stage=stage,
-        )
-        readiness = metrics.get("readiness")
-        if (
-            not isinstance(readiness, Mapping)
-            or readiness.get("sha256") != readiness_sha256
-        ):
-            raise PackageError(
-                f"{variant}/{stage} does not bind the packaged readiness"
-            )
-        expected = hash_binding(
-            metrics_path,
-            relative_to=root,
-        )
-        if variants.get(variant) != expected:
-            raise PackageError(f"BES2 {stage} marker metric binding drifted")
-        validated_metrics[variant] = metrics
-    expected_gpu_hours = sum(
-        float(validated_metrics[variant]["gpu_hours"])
-        for variant in DIAGNOSTIC_VARIANTS
-    )
-    value = payload.get("gpu_hours")
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, (int, float))
-        or not math.isfinite(float(value))
-        or float(value) <= 0.0
-        or not math.isclose(
-            float(value), expected_gpu_hours, rel_tol=1.0e-12, abs_tol=1.0e-12
-        )
-    ):
-        raise PackageError(f"BES2 {stage} marker GPU-hours are invalid")
-    if stage == "full":
-        expected_bindings = {
-            "probe_pair": hash_binding(
-                root / ".control" / PROBE_COMPLETE,
-                relative_to=root,
-            ),
-            "root_cause": hash_binding(
-                root / ".control" / ROOT_CAUSE_FILENAME,
-                relative_to=root,
-            ),
-            "report": hash_binding(
-                root / ".control" / REPORT_FILENAME,
-                relative_to=root,
-            ),
-        }
-        if any(
-            payload.get(name) != binding
-            for name, binding in expected_bindings.items()
-        ):
-            raise PackageError("BES2 full completion binding drifted")
-    return payload
+    except BES2ContractError as exc:
+        raise PackageError(
+            f"BES2 {stage} completion marker is invalid"
+        ) from exc
 
 
 def _hardware_json(path: Path) -> None:
@@ -298,7 +235,7 @@ def _collect_evidence(
     readiness_sha256 = sha256_file(readiness_path)
     _test_receipt_valid(control / TEST_RECEIPT, source_sha)
 
-    metrics: dict[tuple[str, str], dict[str, object]] = {}
+    metrics: dict[tuple[str, str, str], dict[str, object]] = {}
     evidence: dict[str, Path] = {}
     for filename in CONTROL_JSON:
         evidence[f"control/{filename}"] = _regular_file(
@@ -310,37 +247,44 @@ def _collect_evidence(
         )
 
     for stage in RUN_STAGES:
-        for variant in DIAGNOSTIC_VARIANTS:
-            run = _run_dir(root, variant, stage)
-            metric_path = run / "diagnostic_metrics.json"
-            metric = validate_diagnostic_metrics(
-                metric_path,
-                expected_variant=variant,
-                expected_stage=stage,
-            )
-            training, _checkpoint = validate_training_metrics(
-                run / "training_metrics.json",
-                expected_variant=variant,
-                expected_stage=stage,
-                candidate_floor=0.05,
-            )
-            if metric.get("training") != training:
-                raise PackageError(
-                    f"{variant}/{stage} diagnostic/training evidence differs"
+        for fraction in stage_fractions(stage):
+            tag = fraction_tag(fraction)
+            for variant in DIAGNOSTIC_VARIANTS:
+                run = _run_dir(root, variant, stage, fraction)
+                metric_path = run / "diagnostic_metrics.json"
+                metric = validate_diagnostic_metrics(
+                    metric_path,
+                    expected_variant=variant,
+                    expected_fraction=fraction,
+                    expected_stage=stage,
                 )
-            initialization = read_regular_json(
-                run / "initialization.json",
-                f"{variant}/{stage} initialization",
-            )
-            if training.get("initialization") != initialization:
-                raise PackageError(
-                    f"{variant}/{stage} initialization binding drifted"
+                training, _checkpoint = validate_training_metrics(
+                    run / "training_metrics.json",
+                    expected_variant=variant,
+                    expected_fraction=fraction,
+                    expected_stage=stage,
+                    candidate_floor=0.05,
                 )
-            metrics[(variant, stage)] = metric
-            for filename in RUN_FILES:
-                evidence[_logical_run_file(variant, stage, filename)] = (
-                    _regular_file(run / filename, f"{variant}/{stage} {filename}")
+                if metric.get("training") != training:
+                    raise PackageError(
+                        f"{tag}/{variant}/{stage} diagnostic/training evidence differs"
+                    )
+                initialization = read_regular_json(
+                    run / "initialization.json",
+                    f"{tag}/{variant}/{stage} initialization",
                 )
+                if training.get("initialization") != initialization:
+                    raise PackageError(
+                        f"{tag}/{variant}/{stage} initialization binding drifted"
+                    )
+                metrics[(tag, variant, stage)] = metric
+                for filename in RUN_FILES:
+                    evidence[
+                        _logical_run_file(variant, stage, fraction, filename)
+                    ] = _regular_file(
+                        run / filename,
+                        f"{tag}/{variant}/{stage} {filename}",
+                    )
 
     probe_marker = _stage_marker(
         control / PROBE_COMPLETE,
@@ -354,32 +298,47 @@ def _collect_evidence(
         stage="full",
         readiness_sha256=readiness_sha256,
     )
-    if full_marker.get("probe_pair") != hash_binding(
+    if full_marker.get("probe_matrix") != hash_binding(
         control / PROBE_COMPLETE, relative_to=root
     ):
-        raise PackageError("full completion does not bind the probe pair")
+        raise PackageError("full completion does not bind the probe matrix")
     expected_total = float(probe_marker["gpu_hours"]) + float(
         full_marker["gpu_hours"]
     )
     if not math.isclose(
-        float(full_marker.get("total_pair_gpu_hours", float("nan"))),
+        float(
+            full_marker.get(
+                "total_diagnostic_gpu_hours", float("nan")
+            )
+        ),
         expected_total,
         rel_tol=1.0e-12,
         abs_tol=1.0e-12,
     ):
-        raise PackageError("BES2 full completion total GPU-hours drifted")
+        raise PackageError("BES2 total diagnostic GPU-hours drifted")
 
-    replay_path = _run_dir(
-        root, "current_replay", "full"
-    ) / "diagnostic_metrics.json"
-    reset_path = _run_dir(
-        root, "first_conv_reset", "full"
-    ) / "diagnostic_metrics.json"
+    full_metrics: dict[str, dict[str, dict[str, object]]] = {}
+    full_bindings: dict[str, dict[str, dict[str, str]]] = {}
+    for tag, specification in FROZEN_COMPARATOR_EXPERIMENTS.items():
+        fraction = float(specification["fraction"])
+        full_metrics[tag] = {}
+        full_bindings[tag] = {}
+        for variant in DIAGNOSTIC_VARIANTS:
+            path = (
+                _run_dir(root, variant, "full", fraction)
+                / "diagnostic_metrics.json"
+            )
+            full_metrics[tag][variant] = metrics[(tag, variant, "full")]
+            full_bindings[tag][variant] = hash_binding(path)
+    comparator_path = control / COMPARATOR_FILENAME
+    comparator_receipt = validate_frozen_comparator_payload(
+        read_regular_json(comparator_path, "frozen H100 comparators")
+    )
     expected_summary = summarize_payload(
-        metrics[("current_replay", "full")],
-        metrics[("first_conv_reset", "full")],
-        replay_binding=hash_binding(replay_path),
-        reset_binding=hash_binding(reset_path),
+        full_metrics,
+        run_bindings=full_bindings,
+        comparator_receipt=comparator_receipt,
+        comparator_binding=hash_binding(comparator_path),
     )
     observed_summary = read_regular_json(
         control / ROOT_CAUSE_FILENAME, "BES2 root-cause decision"
@@ -388,7 +347,9 @@ def _collect_evidence(
     if expected_summary != observed_summary:
         raise PackageError("BES2 root-cause JSON is not reproducible")
     report = (control / REPORT_FILENAME).read_text(encoding="utf-8")
-    classification = str(observed_summary["decision"]["classification"])
+    classification = str(
+        observed_summary["decision"]["aggregate"]["classification"]
+    )
     if report != _markdown_report(observed_summary):
         raise PackageError("BES2 Markdown report is not reproducible from JSON")
 
@@ -432,11 +393,13 @@ def _collect_evidence(
         "classification": classification,
         "decision_status": observed_summary["status"],
         "replacement_eligibility": observed_summary["decision"][
-            "replacement_eligibility"
-        ],
+            "aggregate"
+        ]["replacement_eligibility"],
         "probe_gpu_hours": probe_marker["gpu_hours"],
         "full_gpu_hours": full_marker["gpu_hours"],
-        "total_pair_gpu_hours": full_marker["total_pair_gpu_hours"],
+        "total_diagnostic_gpu_hours": full_marker[
+            "total_diagnostic_gpu_hours"
+        ],
         "created_utc": observed_summary["created_utc"],
     }
 
@@ -449,7 +412,7 @@ def _contract(max_part_bytes: int) -> dict[str, object]:
     ):
         raise PackageError("BES2 result max part size must be positive")
     return {
-        "schema": 2,
+        "schema": 3,
         "production": True,
         "scope": "train111-fixed-dev8-only",
         "evidence_only": True,
@@ -458,17 +421,25 @@ def _contract(max_part_bytes: int) -> dict[str, object]:
         "credentials": 0,
         "variants": list(DIAGNOSTIC_VARIANTS),
         "stages": list(RUN_STAGES),
+        "training_fractions": {
+            "probe": list(PROBE_FRACTIONS),
+            "full": list(DIAGNOSTIC_FRACTIONS),
+        },
+        "fraction_analysis": "per-fraction-no-pooling",
+        "diagnostic_run_count": 6,
         "allowed_suffixes": sorted(_ALLOWED_SUFFIXES),
         "maximum_physical_file_bytes": max_part_bytes,
     }
+
 
 def _expected_logical_names(names: set[str]) -> None:
     base = {
         *(f"control/{name}" for name in CONTROL_JSON),
         *(f"control/{name}" for name in CONTROL_TEXT),
         *(
-            _logical_run_file(variant, stage, filename)
+            _logical_run_file(variant, stage, fraction, filename)
             for stage in RUN_STAGES
+            for fraction in stage_fractions(stage)
             for variant in DIAGNOSTIC_VARIANTS
             for filename in RUN_FILES
         ),
@@ -595,7 +566,7 @@ def _verify(
             expected_sums[str(part["path"])] = str(part["sha256"])
 
     expected_identity = {
-        "schema": 2,
+        "schema": 3,
         "source_git_sha": source_sha,
         "readiness_sha256": source.get("readiness_sha256"),
         "root_cause_sha256": source.get("root_cause_sha256"),
@@ -604,7 +575,7 @@ def _verify(
         "replacement_eligibility": source.get("replacement_eligibility"),
         "probe_gpu_hours": source.get("probe_gpu_hours"),
         "full_gpu_hours": source.get("full_gpu_hours"),
-        "total_pair_gpu_hours": source.get("total_pair_gpu_hours"),
+        "total_diagnostic_gpu_hours": source.get("total_diagnostic_gpu_hours"),
         "evidence_digest_index": digest_index,
     }
     identity_sha = hashlib.sha256(canonical_json(expected_identity)).hexdigest()
@@ -651,18 +622,22 @@ def _verify(
         "readiness JSON",
     )
     decision = root_cause.get("decision")
+    aggregate = (
+        decision.get("aggregate") if isinstance(decision, Mapping) else None
+    )
     ready_source = readiness.get("source")
     runs = root_cause.get("runs")
     if (
         not isinstance(decision, Mapping)
+        or not isinstance(aggregate, Mapping)
         or not isinstance(ready_source, Mapping)
         or not isinstance(runs, Mapping)
     ):
         raise PackageError("BES2 packaged decision/readiness schema is invalid")
     if (
         root_cause.get("status") != source.get("decision_status")
-        or decision.get("classification") != source.get("classification")
-        or decision.get("replacement_eligibility")
+        or aggregate.get("classification") != source.get("classification")
+        or aggregate.get("replacement_eligibility")
         != source.get("replacement_eligibility")
         or ready_source.get("git_sha") != source_sha
     ):
@@ -670,61 +645,136 @@ def _verify(
     evidence_hash = {
         item["path"]: item["sha256"] for item in digest_index
     }
-    packaged_metrics: dict[tuple[str, str], dict[str, object]] = {}
+    packaged_metrics: dict[tuple[str, str, str], dict[str, object]] = {}
     readiness_sha256 = source.get("readiness_sha256")
     for stage in RUN_STAGES:
-        for variant in DIAGNOSTIC_VARIANTS:
-            logical = _logical_run_file(
-                variant, stage, "diagnostic_metrics.json"
-            )
-            metrics_payload = _json_bytes(
-                logical_payloads[logical],
-                f"{variant}/{stage} diagnostic metrics",
-            )
-            try:
-                validated = validate_diagnostic_metrics_payload(
-                    metrics_payload,
-                    expected_variant=variant,
-                    expected_stage=stage,
+        for fraction in stage_fractions(stage):
+            tag = fraction_tag(fraction)
+            for variant in DIAGNOSTIC_VARIANTS:
+                logical = _logical_run_file(
+                    variant, stage, fraction, "diagnostic_metrics.json"
                 )
-            except BES2ContractError as exc:
-                raise PackageError(
-                    f"invalid packaged {variant}/{stage} diagnostic metrics"
-                ) from exc
-            metrics_readiness = validated.get("readiness")
+                metrics_payload = _json_bytes(
+                    logical_payloads[logical],
+                    f"{tag}/{variant}/{stage} diagnostic metrics",
+                )
+                try:
+                    validated = validate_diagnostic_metrics_payload(
+                        metrics_payload,
+                        expected_variant=variant,
+                        expected_fraction=fraction,
+                        expected_stage=stage,
+                    )
+                except BES2ContractError as exc:
+                    raise PackageError(
+                        f"invalid packaged {tag}/{variant}/{stage} diagnostic metrics"
+                    ) from exc
+                metrics_readiness = validated.get("readiness")
+                if (
+                    not isinstance(metrics_readiness, Mapping)
+                    or metrics_readiness.get("sha256") != readiness_sha256
+                ):
+                    raise PackageError(
+                        f"{tag}/{variant}/{stage} readiness binding differs from package"
+                    )
+                training_logical = _logical_run_file(
+                    variant, stage, fraction, "training_metrics.json"
+                )
+                initialization_logical = _logical_run_file(
+                    variant, stage, fraction, "initialization.json"
+                )
+                training_payload = _json_bytes(
+                    logical_payloads[training_logical],
+                    f"{tag}/{variant}/{stage} training metrics",
+                )
+                initialization_payload = _json_bytes(
+                    logical_payloads[initialization_logical],
+                    f"{tag}/{variant}/{stage} initialization",
+                )
+                if validated.get("training") != training_payload:
+                    raise PackageError(
+                        f"{tag}/{variant}/{stage} packaged training evidence differs"
+                    )
+                if training_payload.get("initialization") != initialization_payload:
+                    raise PackageError(
+                        f"{tag}/{variant}/{stage} packaged initialization differs"
+                    )
+                packaged_metrics[(tag, variant, stage)] = validated
+
+    if set(runs) != set(FROZEN_COMPARATOR_EXPERIMENTS):
+        raise PackageError("BES2 root-cause fraction bindings are incomplete")
+    run_bindings: dict[str, dict[str, dict[str, object]]] = {}
+    full_metrics: dict[str, dict[str, dict[str, object]]] = {}
+    for tag, specification in FROZEN_COMPARATOR_EXPERIMENTS.items():
+        fraction = float(specification["fraction"])
+        fraction_runs = runs.get(tag)
+        if (
+            not isinstance(fraction_runs, Mapping)
+            or set(fraction_runs) != set(DIAGNOSTIC_VARIANTS)
+        ):
+            raise PackageError("BES2 root-cause variant bindings are incomplete")
+        run_bindings[tag] = {}
+        full_metrics[tag] = {}
+        for variant in DIAGNOSTIC_VARIANTS:
+            binding = fraction_runs.get(variant)
+            if not isinstance(binding, Mapping) or set(binding) != {
+                "path",
+                "sha256",
+            }:
+                raise PackageError("BES2 root-cause run binding is invalid")
+            expected_path = _logical_run_file(
+                variant, "full", fraction, "diagnostic_metrics.json"
+            )
+            expected_suffix = (
+                diagnostic_run_id(variant, "full", fraction)
+                + "/diagnostic_metrics.json"
+            )
             if (
-                not isinstance(metrics_readiness, Mapping)
-                or metrics_readiness.get("sha256") != readiness_sha256
+                binding.get("sha256") != evidence_hash[expected_path]
+                or not str(binding.get("path", "")).endswith(expected_suffix)
             ):
                 raise PackageError(
-                    f"{variant}/{stage} readiness binding differs from package"
+                    "BES2 root-cause run hash differs from package"
                 )
-            packaged_metrics[(variant, stage)] = validated
+            run_bindings[tag][variant] = dict(binding)
+            full_metrics[tag][variant] = packaged_metrics[
+                (tag, variant, "full")
+            ]
 
-    for variant in DIAGNOSTIC_VARIANTS:
-        binding = runs.get(variant)
-        if not isinstance(binding, Mapping) or set(binding) != {
-            "path",
-            "sha256",
-        }:
-            raise PackageError("BES2 root-cause run binding is invalid")
-        expected_path = _logical_run_file(
-            variant, "full", "diagnostic_metrics.json"
+    comparator_logical = f"control/{COMPARATOR_FILENAME}"
+    try:
+        comparator_receipt = validate_frozen_comparator_payload(
+            _json_bytes(
+                logical_payloads[comparator_logical],
+                "frozen H100 comparators",
+            )
         )
-        expected_suffix = (
-            f"bes2-{variant}-full-f100-s0/diagnostic_metrics.json"
+    except BES2ContractError as exc:
+        raise PackageError("packaged comparator receipt is invalid") from exc
+    comparator_summary = root_cause.get("comparators")
+    comparator_binding = (
+        comparator_summary.get("receipt")
+        if isinstance(comparator_summary, Mapping)
+        else None
+    )
+    readiness_comparator = readiness.get("frozen_comparators")
+    if (
+        not isinstance(comparator_binding, Mapping)
+        or set(comparator_binding) != {"path", "sha256"}
+        or comparator_binding.get("sha256")
+        != evidence_hash[comparator_logical]
+        or not str(comparator_binding.get("path", "")).endswith(
+            f".control/{COMPARATOR_FILENAME}"
         )
-        if (
-            binding.get("sha256") != evidence_hash[expected_path]
-            or not str(binding.get("path", "")).endswith(expected_suffix)
-        ):
-            raise PackageError("BES2 root-cause run hash differs from package")
+        or readiness_comparator != comparator_binding
+    ):
+        raise PackageError("packaged comparator binding is invalid")
     try:
         expected_root_cause = summarize_payload(
-            packaged_metrics[("current_replay", "full")],
-            packaged_metrics[("first_conv_reset", "full")],
-            replay_binding=dict(runs["current_replay"]),
-            reset_binding=dict(runs["first_conv_reset"]),
+            full_metrics,
+            run_bindings=run_bindings,
+            comparator_receipt=comparator_receipt,
+            comparator_binding=dict(comparator_binding),
         )
     except BES2ContractError as exc:
         raise PackageError(
@@ -864,10 +914,10 @@ def build_bes2_results(
             "replacement_eligibility": summary["replacement_eligibility"],
             "probe_gpu_hours": summary["probe_gpu_hours"],
             "full_gpu_hours": summary["full_gpu_hours"],
-            "total_pair_gpu_hours": summary["total_pair_gpu_hours"],
+            "total_diagnostic_gpu_hours": summary["total_diagnostic_gpu_hours"],
         }
         identity = {
-            "schema": 2,
+            "schema": 3,
             "source_git_sha": source["git_commit"],
             "readiness_sha256": source["readiness_sha256"],
             "root_cause_sha256": source["root_cause_sha256"],
@@ -876,7 +926,7 @@ def build_bes2_results(
             "replacement_eligibility": source["replacement_eligibility"],
             "probe_gpu_hours": source["probe_gpu_hours"],
             "full_gpu_hours": source["full_gpu_hours"],
-            "total_pair_gpu_hours": source["total_pair_gpu_hours"],
+            "total_diagnostic_gpu_hours": source["total_diagnostic_gpu_hours"],
             "evidence_digest_index": digest_index,
         }
         identity_sha = hashlib.sha256(canonical_json(identity)).hexdigest()

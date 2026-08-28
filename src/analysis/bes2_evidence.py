@@ -24,7 +24,11 @@ from src.analysis.bes2_contract import (
     read_regular_json,
     sha256_file,
 )
-from src.data.datasets import FineTuneDataset, _channel_stats
+from src.data.datasets import (
+    FineTuneDataset,
+    _channel_stats,
+    nested_fraction_scenes,
+)
 from src.data.transforms import normalize
 from src.eval.ground_truth import ground_truth_from_labels
 from src.eval.infer_scene import infer_scene
@@ -168,21 +172,23 @@ def validate_data_scope(
 
     chip_dirs = sorted(path.name for path in chips.iterdir() if path.is_dir())
     missing_train = sorted(set(train) - set(chip_dirs))
-    forbidden_chip_dirs = sorted((set(chip_dirs) & (test | final)))
-    if missing_train or forbidden_chip_dirs:
+    unexpected_chip_dirs = sorted(set(chip_dirs) - set(train))
+    if missing_train or unexpected_chip_dirs:
         raise BES2ContractError(
             "diagnostic chip scope is invalid: "
-            f"missing_train={missing_train[:3]}, heldout={forbidden_chip_dirs[:3]}"
+            f"missing_train={missing_train[:3]}, "
+            f"unexpected={unexpected_chip_dirs[:3]}"
         )
 
     grd = _resolve_within(root, raw / "GRD", "DEV GRD root")
     raster_dirs = {path.name for path in grd.iterdir() if path.is_dir()}
     missing_dev = sorted(set(dev8) - raster_dirs)
-    forbidden_rasters = sorted(raster_dirs & (test | final))
-    if missing_dev or forbidden_rasters:
+    unexpected_rasters = sorted(raster_dirs - set(dev8))
+    if missing_dev or unexpected_rasters:
         raise BES2ContractError(
             "diagnostic raster scope is invalid: "
-            f"missing_dev8={missing_dev[:3]}, heldout={forbidden_rasters[:3]}"
+            f"missing_dev8={missing_dev[:3]}, "
+            f"unexpected={unexpected_rasters[:3]}"
         )
 
     label_scene_ids: set[str] = set()
@@ -193,7 +199,7 @@ def validate_data_scope(
         for row in reader:
             label_scene_ids.add(str(row["scene_id"]))
     authorized_labels = set(train) | set(dev8)
-    if not set(dev8) <= label_scene_ids or label_scene_ids - authorized_labels:
+    if label_scene_ids != authorized_labels:
         raise BES2ContractError(
             "diagnostic labels are not the exact TRAIN+DEV8 scope"
         )
@@ -264,7 +270,12 @@ def build_sample_manifest(
     data_root = Path(str(scope["root"]))
     foreground: list[tuple[str, Path]] = []
     background: list[tuple[str, Path]] = []
-    for scene_id in scope["train_scene_ids"]:
+    sample_train_scenes = nested_fraction_scenes(
+        list(map(str, scope["train_scene_ids"])),
+        0.5,
+        frac_seed=0,
+    )
+    for scene_id in sample_train_scenes:
         scene_dir = chips_root / str(scene_id)
         for chip in sorted(scene_dir.glob("*.npy")):
             sidecar = chip.with_suffix(".json")
@@ -368,6 +379,11 @@ def build_sample_manifest(
         "seed": SAMPLE_SEED,
         "selection": {
             "train_per_class": TRAIN_SAMPLES_PER_CLASS,
+            "train_fraction": 0.5,
+            "train_fraction_seed": 0,
+            "train_fraction_scene_ids_sha256": hashlib.sha256(
+                canonical_json(sample_train_scenes)
+            ).hexdigest(),
             "dev_windows_per_scene": DEV_WINDOWS_PER_SCENE,
             "crop_px": crop_px,
             "pixel_subsample_stride": PIXEL_SUBSAMPLE_STRIDE,
@@ -464,29 +480,35 @@ def _covariance_evidence(values: np.ndarray) -> dict[str, object]:
     correlation = np.corrcoef(values, rowvar=False)
     eigenvalues = np.linalg.eigvalsh(covariance)
     tolerance = max(float(eigenvalues[-1]), 1.0) * 1.0e-10
+    mean = values.mean(axis=0)
+    centered = values - mean
+    coefficients = np.linalg.pinv(
+        covariance[:2, :2], rcond=1.0e-12
+    ) @ covariance[:2, 2]
+    centered_residual = (
+        centered[:, 2] - centered[:, :2] @ coefficients
+    )
+    raw_formula_residual = values[:, 2] - (values[:, 0] - values[:, 1])
     return {
         "sample_count": int(values.shape[0]),
-        "mean": values.mean(axis=0).tolist(),
+        "mean": mean.tolist(),
         "variance": values.var(axis=0, ddof=1).tolist(),
         "covariance": covariance.tolist(),
         "correlation": correlation.tolist(),
         "eigenvalues": eigenvalues.tolist(),
         "effective_matrix_rank": int((eigenvalues > tolerance).sum()),
-        "vh_minus_vv_redundancy": {
+        "centered_linear_redundancy": {
+            "third_from_first_two_coefficients": coefficients.tolist(),
             "max_abs_residual": float(
-                np.max(np.abs(values[:, 2] - (values[:, 0] - values[:, 1])))
+                np.max(np.abs(centered_residual))
             ),
-            "rmse": float(
-                np.sqrt(
-                    np.mean(
-                        (
-                            values[:, 2]
-                            - (values[:, 0] - values[:, 1])
-                        )
-                        ** 2
-                    )
-                )
+            "rmse": float(np.sqrt(np.mean(centered_residual**2))),
+        },
+        "raw_vh_minus_vv_formula": {
+            "max_abs_residual": float(
+                np.max(np.abs(raw_formula_residual))
             ),
+            "rmse": float(np.sqrt(np.mean(raw_formula_residual**2))),
         },
     }
 
@@ -511,6 +533,186 @@ def input_covariance_statistics(
         "pixel_subsample_stride": step,
         "raw_db": _covariance_evidence(np.concatenate(raw_rows)),
         "normalized": _covariance_evidence(np.concatenate(normalized_rows)),
+    }
+
+
+def _array_distribution(values: np.ndarray) -> dict[str, object]:
+    flat = np.asarray(values, dtype=np.float64).reshape(-1)
+    if not np.isfinite(flat).all() or flat.size == 0:
+        raise BES2ContractError("diagnostic numeric distribution is invalid")
+    return {
+        "count": int(flat.size),
+        "minimum": float(flat.min()),
+        "maximum": float(flat.max()),
+        "mean": float(flat.mean()),
+        "standard_deviation": float(flat.std()),
+        "quantiles": {
+            str(level): float(np.quantile(flat, level))
+            for level in (0.0, 0.25, 0.5, 0.75, 1.0)
+        },
+    }
+
+
+def equivalent_two_channel_stem(
+    weight: torch.Tensor,
+    covariance: Sequence[Sequence[float]],
+    means: Sequence[float] | None = None,
+) -> dict[str, object]:
+    """Collapse a covariance-exact redundant third channel onto the first two."""
+
+    source = weight.detach().cpu().double().numpy()
+    matrix = np.asarray(covariance, dtype=np.float64)
+    mean = (
+        np.zeros(3, dtype=np.float64)
+        if means is None
+        else np.asarray(means, dtype=np.float64)
+    )
+    if source.ndim != 4 or source.shape[1] != 3:
+        raise BES2ContractError(
+            f"stem audit requires OIHW with three inputs, got {source.shape}"
+        )
+    if (
+        matrix.shape != (3, 3)
+        or mean.shape != (3,)
+        or not np.isfinite(source).all()
+        or not np.isfinite(matrix).all()
+        or not np.isfinite(mean).all()
+        or not np.allclose(matrix, matrix.T, rtol=0.0, atol=1.0e-10)
+    ):
+        raise BES2ContractError("stem audit covariance is invalid")
+
+    independent_covariance = matrix[:2, :2]
+    cross_covariance = matrix[:2, 2]
+    coefficients = np.linalg.pinv(
+        independent_covariance, rcond=1.0e-12
+    ) @ cross_covariance
+    residual_variance = float(
+        matrix[2, 2] - cross_covariance @ coefficients
+    )
+    residual_tolerance = 1.0e-8 * max(1.0, abs(float(matrix[2, 2])))
+    if abs(residual_variance) > residual_tolerance:
+        raise BES2ContractError(
+            "stem audit third channel is not covariance-redundant"
+        )
+    effective = np.stack(
+        [
+            source[:, 0] + coefficients[0] * source[:, 2],
+            source[:, 1] + coefficients[1] * source[:, 2],
+        ],
+        axis=1,
+    )
+    affine_intercept = float(mean[2] - coefficients @ mean[:2])
+    effective_bias_shift = (
+        affine_intercept * source[:, 2].sum(axis=(1, 2))
+    )
+    source_flat = source.transpose(1, 0, 2, 3).reshape(3, -1)
+    effective_flat = effective.transpose(1, 0, 2, 3).reshape(2, -1)
+    source_gram = source_flat @ source_flat.T
+    effective_gram = effective_flat @ effective_flat.T
+    source_eigenvalues = np.linalg.eigvalsh(source_gram)
+    effective_eigenvalues = np.linalg.eigvalsh(effective_gram)
+
+    def cosine(left: np.ndarray, right: np.ndarray) -> float:
+        denominator = float(np.linalg.norm(left) * np.linalg.norm(right))
+        return (
+            float(np.dot(left.reshape(-1), right.reshape(-1)) / denominator)
+            if denominator > 0.0
+            else 0.0
+        )
+
+    def cancellation(left: np.ndarray, right: np.ndarray) -> float:
+        denominator = float(np.linalg.norm(left) + np.linalg.norm(right))
+        return (
+            float(np.linalg.norm(left + right) / denominator)
+            if denominator > 0.0
+            else 0.0
+        )
+
+    three_channel_variance = np.einsum(
+        "oihw,ij,ojhw->o", source, matrix, source
+    )
+    two_channel_variance = np.einsum(
+        "oihw,ij,ojhw->o",
+        effective,
+        independent_covariance,
+        effective,
+    )
+    if (
+        (three_channel_variance < -1.0e-8).any()
+        or (two_channel_variance < -1.0e-8).any()
+    ):
+        raise BES2ContractError("stem audit predicted a negative variance")
+    three_channel_variance = np.maximum(three_channel_variance, 0.0)
+    two_channel_variance = np.maximum(two_channel_variance, 0.0)
+    source_norms = np.linalg.norm(source_flat, axis=1)
+    effective_norms = np.linalg.norm(effective_flat, axis=1)
+    digest = hashlib.sha256()
+    digest.update(str(effective.dtype).encode("ascii"))
+    digest.update(str(tuple(effective.shape)).encode("ascii"))
+    digest.update(np.ascontiguousarray(effective).tobytes())
+    minimum = float(source_eigenvalues.min())
+    return {
+        "relation": (
+            "centered x2 = a*x0 + b*x1; "
+            "K0_effective = K0 + a*K2; K1_effective = K1 + b*K2"
+        ),
+        "covariance_relation": {
+            "third_from_first_two_coefficients": coefficients.tolist(),
+            "third_channel_affine_intercept": affine_intercept,
+            "third_channel_residual_variance": residual_variance,
+            "residual_variance_tolerance": residual_tolerance,
+            "raw_vh_vv_difference_identity": bool(
+                np.allclose(
+                    coefficients,
+                    np.asarray([1.0, -1.0]),
+                    rtol=0.0,
+                    atol=1.0e-6,
+                )
+            ),
+        },
+        "effective_bias_shift": _array_distribution(effective_bias_shift),
+        "source_shape": list(source.shape),
+        "effective_shape": list(effective.shape),
+        "effective_tensor_sha256": digest.hexdigest(),
+        "source_channel_norms": source_norms.tolist(),
+        "effective_channel_norms": effective_norms.tolist(),
+        "source_channel_gram": source_gram.tolist(),
+        "source_channel_gram_eigenvalues": source_eigenvalues.tolist(),
+        "source_channel_gram_condition_number": (
+            float(source_eigenvalues.max() / minimum)
+            if minimum > 0.0
+            else None
+        ),
+        "effective_channel_gram": effective_gram.tolist(),
+        "effective_channel_gram_eigenvalues": effective_eigenvalues.tolist(),
+        "cancellation": {
+            "first_channel_combination_ratio": cancellation(
+                source[:, 0], coefficients[0] * source[:, 2]
+            ),
+            "second_channel_combination_ratio": cancellation(
+                source[:, 1], coefficients[1] * source[:, 2]
+            ),
+            "cosine_first_vs_weighted_third": cosine(
+                source[:, 0], coefficients[0] * source[:, 2]
+            ),
+            "cosine_second_vs_weighted_third": cosine(
+                source[:, 1], coefficients[1] * source[:, 2]
+            ),
+        },
+        "predicted_output_variance": {
+            "three_channel": _array_distribution(three_channel_variance),
+            "two_channel_projection": _array_distribution(
+                two_channel_variance
+            ),
+            "total_projection_ratio": (
+                float(two_channel_variance.sum() / three_channel_variance.sum())
+                if three_channel_variance.sum() > 0.0
+                else 0.0
+            ),
+            "per_output_absolute_difference": _array_distribution(
+                np.abs(two_channel_variance - three_channel_variance)
+            ),
+        },
     }
 
 
@@ -875,6 +1077,33 @@ def _prediction_distribution(
     }
 
 
+def _match_distance_distribution(selected) -> dict[str, object]:
+    by_outcome: dict[str, list[float]] = defaultdict(list)
+    per_scene: dict[str, dict[str, object]] = {}
+    for scene_id, result in sorted(selected.scene_results.items()):
+        scene_outcomes: dict[str, list[float]] = defaultdict(list)
+        for match in result.matches:
+            if match.distance_m is None:
+                continue
+            distance = float(match.distance_m)
+            if not math.isfinite(distance) or distance < 0.0:
+                raise BES2ContractError("frozen scorer returned invalid distance")
+            by_outcome[match.outcome].append(distance)
+            scene_outcomes[match.outcome].append(distance)
+        per_scene[scene_id] = {
+            outcome: _array_distribution(np.asarray(values))
+            for outcome, values in sorted(scene_outcomes.items())
+        }
+    return {
+        "source": "frozen-scorer-selected-threshold-matches",
+        "by_outcome": {
+            outcome: _array_distribution(np.asarray(values))
+            for outcome, values in sorted(by_outcome.items())
+        },
+        "per_scene": per_scene,
+    }
+
+
 def collect_dev_evidence(
     model: torch.nn.Module,
     *,
@@ -983,6 +1212,7 @@ def collect_dev_evidence(
         "selected_operating_point": selected_operating_point,
         "candidate_threshold_curve": curve,
         "score_distribution": _prediction_distribution(predictions),
+        "matched_localization_distance_m": _match_distance_distribution(selected),
         "per_scene_at_selected_threshold": per_scene,
         "leave_one_dev_scene_out": leave_one_out,
     }
@@ -1028,19 +1258,20 @@ def manifest_train_indices(
         path.resolve(): index for index, path in enumerate(dataset.chip_paths)
     }
     indices = []
-    data_root = None
     for entry in manifest["entries"]:
         if entry.get("kind") != "chip":
             continue
-        if data_root is None:
-            # FineTuneDataset paths are already absolute/resolved on Judy.
-            candidates = [
-                path
-                for path in by_path
-                if path.as_posix().endswith(str(entry["path"]))
-            ]
-        else:
-            candidates = []
+        # The fixed covariance sample spans all 111 TRAIN scenes, while the
+        # audit's forward/backward probe intentionally uses the f50 subset.
+        # Skip fixed samples outside that subset, but reject ambiguous suffix
+        # matches and require a complete batch from the retained entries.
+        candidates = [
+            path
+            for path in by_path
+            if path.as_posix().endswith(str(entry["path"]))
+        ]
+        if not candidates:
+            continue
         if len(candidates) != 1:
             raise BES2ContractError(
                 f"could not bind manifest chip to FineTuneDataset: {entry['path']}"

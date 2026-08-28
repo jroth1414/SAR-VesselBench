@@ -97,7 +97,7 @@ def _contract(maximum_physical_file_bytes: int) -> dict[str, object]:
     ):
         raise PackageError("BES2 maximum physical file size must be positive")
     return {
-        "schema": 1,
+        "schema": 2,
         "production": True,
         "payload": "one-git-bundle-plus-control-json",
         "data_artifacts": 0,
@@ -115,6 +115,12 @@ def _contract(maximum_physical_file_bytes: int) -> dict[str, object]:
         "processes_per_gpu": 1,
         "ddp": False,
         "diagnostic_scope": "train111-fixed-dev8-only",
+        "training_fractions": {
+            "probe": [0.5],
+            "full": [0.1, 0.5],
+        },
+        "fraction_analysis": "per-fraction-no-pooling",
+        "diagnostic_run_count": {"probe": 2, "full": 4},
         "variants": ["current_replay", "first_conv_reset"],
         "maximum_physical_file_bytes": maximum_physical_file_bytes,
     }

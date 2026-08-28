@@ -26,12 +26,17 @@ from scripts.h100.lightning_contract import assert_launch_process_contract
 from scripts.h100.precision import assert_sitecustomize_active
 from src.analysis.bes2_contract import (
     BES2ContractError,
+    DIAGNOSTIC_FRACTIONS,
+    DIAGNOSTIC_VARIANTS,
     H100_CAMPAIGN_GIT_SHA,
     assert_no_final_consumption,
+    diagnostic_run_id,
+    fraction_tag,
     hash_binding,
     payload_sha256,
     read_regular_json,
     sha256_file,
+    stage_fractions,
     utc_now,
     validate_diagnostic_metrics,
     write_new_immutable,
@@ -46,7 +51,6 @@ from src.analysis.bes2_root_cause import (
     main as root_cause_main,
     validate_readiness,
 )
-from src.models.bes2_diagnostic import DIAGNOSTIC_VARIANTS
 
 PREEMPTED_EXIT_CODE = 75
 DATA_VIEW_READY = "BES2_DATA_VIEW_READY.json"
@@ -277,24 +281,33 @@ def run_test_gate(args: argparse.Namespace) -> int:
     return 0
 
 
-def _run_dir(root: Path, variant: str, stage: str) -> Path:
-    return root / f"bes2-{variant}-{stage}-f100-s0"
+def _run_dir(
+    root: Path, variant: str, stage: str, fraction: float
+) -> Path:
+    return root / diagnostic_run_id(variant, stage, fraction)
 
 
-def _metrics_path(root: Path, variant: str, stage: str) -> Path:
-    return _run_dir(root, variant, stage) / "diagnostic_metrics.json"
+def _metrics_path(
+    root: Path, variant: str, stage: str, fraction: float
+) -> Path:
+    return (
+        _run_dir(root, variant, stage, fraction)
+        / "diagnostic_metrics.json"
+    )
 
 
 def _validated_completion(
     root: Path,
     variant: str,
     stage: str,
+    fraction: float,
     *,
     readiness_sha256: str | None = None,
 ) -> dict[str, object]:
     payload = validate_diagnostic_metrics(
-        _metrics_path(root, variant, stage),
+        _metrics_path(root, variant, stage, fraction),
         expected_variant=variant,
+        expected_fraction=fraction,
         expected_stage=stage,
     )
     binding = payload.get("readiness")
@@ -303,7 +316,8 @@ def _validated_completion(
         or binding.get("sha256") != readiness_sha256
     ):
         raise BES2ContractError(
-            f"{variant}/{stage} is not bound to current BES2 readiness"
+            f"{fraction_tag(fraction)}/{variant}/{stage} is not bound to "
+            "current BES2 readiness"
         )
     return payload
 
@@ -329,11 +343,14 @@ def run_worker(args: argparse.Namespace) -> int:
     repo = args.repo.resolve()
     _require_source(repo, args.expected_git_sha)
     root = args.diagnostic_root.resolve()
+    diagnostic_run_id(args.variant, args.stage, args.fraction)
     preempted = False
     process: subprocess.Popen | None = None
 
     def request_completion_race() -> None:
-        _validated_completion(root, args.variant, args.stage)
+        _validated_completion(
+            root, args.variant, args.stage, args.fraction
+        )
         _request_requeue()
 
     def on_usr1(_signum, _frame) -> None:
@@ -374,6 +391,8 @@ def run_worker(args: argparse.Namespace) -> int:
             args.variant,
             "--stage",
             args.stage,
+            "--fraction",
+            str(args.fraction),
             "--data-view-root",
             str(args.data_view_root),
             "--data-view-receipt",
@@ -393,7 +412,9 @@ def run_worker(args: argparse.Namespace) -> int:
             return PREEMPTED_EXIT_CODE
         if code != 0:
             return code
-        _validated_completion(root, args.variant, args.stage)
+        _validated_completion(
+            root, args.variant, args.stage, args.fraction
+        )
         return 0
     finally:
         signal.signal(signal.SIGUSR1, old_usr1)
@@ -424,16 +445,16 @@ def _execution_state(path: Path, source_sha: str) -> dict[str, object]:
     if path.exists() or path.is_symlink():
         payload = read_regular_json(path, "BES2 execution state")
         if (
-            payload.get("schema") != 1
-            or payload.get("purpose") != "bes2-paired-h100-execution"
+            payload.get("schema") != 2
+            or payload.get("purpose") != "bes2-fraction-matrix-h100-execution"
             or payload.get("source_git_sha") != source_sha
             or not isinstance(payload.get("events"), list)
         ):
             raise BES2ContractError("BES2 execution state is invalid")
         return payload
     return {
-        "schema": 1,
-        "purpose": "bes2-paired-h100-execution",
+        "schema": 2,
+        "purpose": "bes2-fraction-matrix-h100-execution",
         "source_git_sha": source_sha,
         "events": [],
     }
@@ -462,33 +483,34 @@ def _stage_receipt(
     stage: str,
     readiness_sha256: str,
 ) -> dict[str, object]:
-    metrics = {
-        variant: _validated_completion(
-            root,
-            variant,
-            stage,
-            readiness_sha256=readiness_sha256,
-        )
-        for variant in DIAGNOSTIC_VARIANTS
-    }
-    variants = {
-        variant: hash_binding(
-            _metrics_path(root, variant, stage),
-            relative_to=root,
-        )
-        for variant in DIAGNOSTIC_VARIANTS
-    }
+    runs: dict[str, dict[str, object]] = {}
+    gpu_hours = 0.0
+    for fraction in stage_fractions(stage):
+        tag = fraction_tag(fraction)
+        runs[tag] = {}
+        for variant in DIAGNOSTIC_VARIANTS:
+            metrics = _validated_completion(
+                root,
+                variant,
+                stage,
+                fraction,
+                readiness_sha256=readiness_sha256,
+            )
+            runs[tag][variant] = hash_binding(
+                _metrics_path(root, variant, stage, fraction),
+                relative_to=root,
+            )
+            gpu_hours += float(metrics["gpu_hours"])
     payload: dict[str, object] = {
-        "schema": 1,
+        "schema": 2,
         "status": "complete",
-        "purpose": f"bes2-{stage}-pair",
+        "purpose": f"bes2-{stage}-fraction-matrix",
         "created_utc": utc_now(),
         "readiness_sha256": readiness_sha256,
-        "variants": variants,
-        "gpu_hours": sum(
-            float(metrics[variant]["gpu_hours"])
-            for variant in DIAGNOSTIC_VARIANTS
-        ),
+        "fractions": list(stage_fractions(stage)),
+        "runs": runs,
+        "run_count": len(stage_fractions(stage)) * len(DIAGNOSTIC_VARIANTS),
+        "gpu_hours": gpu_hours,
     }
     return payload
 
@@ -518,15 +540,17 @@ def _validate_stage_marker(
         "purpose",
         "created_utc",
         "readiness_sha256",
-        "variants",
+        "fractions",
+        "runs",
+        "run_count",
         "gpu_hours",
     }
     if stage == "full":
         required |= {
-            "probe_pair",
+            "probe_matrix",
             "root_cause",
             "report",
-            "total_pair_gpu_hours",
+            "total_diagnostic_gpu_hours",
         }
     expected = _stage_receipt(root, stage, readiness_sha256)
     observed_hours = _positive_hours(
@@ -535,11 +559,13 @@ def _validate_stage_marker(
     )
     if (
         set(payload) != required
-        or payload.get("schema") != 1
+        or payload.get("schema") != 2
         or payload.get("status") != "complete"
-        or payload.get("purpose") != f"bes2-{stage}-pair"
+        or payload.get("purpose") != f"bes2-{stage}-fraction-matrix"
         or payload.get("readiness_sha256") != readiness_sha256
-        or payload.get("variants") != expected["variants"]
+        or payload.get("fractions") != expected["fractions"]
+        or payload.get("runs") != expected["runs"]
+        or payload.get("run_count") != expected["run_count"]
         or not math.isclose(
             observed_hours,
             float(expected["gpu_hours"]),
@@ -557,7 +583,7 @@ def _validate_stage_marker(
             readiness_sha256=readiness_sha256,
         )
         expected_bindings = {
-            "probe_pair": hash_binding(probe_path, relative_to=root),
+            "probe_matrix": hash_binding(probe_path, relative_to=root),
             "root_cause": hash_binding(
                 root / ".control" / "BES2_ROOT_CAUSE.json",
                 relative_to=root,
@@ -571,8 +597,8 @@ def _validate_stage_marker(
             probe["gpu_hours"]
         )
         observed_total = _positive_hours(
-            payload.get("total_pair_gpu_hours"),
-            "BES2 full completion total GPU-hours",
+            payload.get("total_diagnostic_gpu_hours"),
+            "BES2 diagnostic completion total GPU-hours",
         )
         bindings_differ = any(
             payload.get(name) != binding
@@ -613,10 +639,10 @@ def _finalize_stage(
             raise BES2ContractError("BES2 root-cause summarize returned nonzero")
         probe = read_regular_json(
             root / ".control" / PROBE_COMPLETE,
-            "BES2 probe-pair completion",
+            "BES2 probe-matrix completion",
         )
         payload = _stage_receipt(root, stage, readiness_sha256)
-        payload["probe_pair"] = hash_binding(
+        payload["probe_matrix"] = hash_binding(
             root / ".control" / PROBE_COMPLETE,
             relative_to=root,
         )
@@ -628,10 +654,10 @@ def _finalize_stage(
             root / ".control" / "BES2_ROOT_CAUSE.md",
             relative_to=root,
         )
-        payload["total_pair_gpu_hours"] = (
+        payload["total_diagnostic_gpu_hours"] = (
             float(payload["gpu_hours"]) + float(probe["gpu_hours"])
         )
-        if not math.isfinite(float(payload["total_pair_gpu_hours"])):
+        if not math.isfinite(float(payload["total_diagnostic_gpu_hours"])):
             raise BES2ContractError("BES2 total GPU-hours are nonfinite")
     write_new_immutable(marker, payload)
     return _validate_stage_marker(
@@ -642,7 +668,84 @@ def _finalize_stage(
     )
 
 
-def _worker_command(args: argparse.Namespace, variant: str) -> list[str]:
+def _stage_is_complete(
+    *,
+    root: Path,
+    stage: str,
+    readiness_sha256: str,
+) -> bool:
+    for fraction in stage_fractions(stage):
+        for variant in DIAGNOSTIC_VARIANTS:
+            path = _metrics_path(root, variant, stage, fraction)
+            if path.is_symlink():
+                raise BES2ContractError(
+                    "diagnostic metrics must not be a symlink"
+                )
+            if not path.is_file():
+                return False
+            _validated_completion(
+                root,
+                variant,
+                stage,
+                fraction,
+                readiness_sha256=readiness_sha256,
+            )
+    return True
+
+
+def _finish_fraction_or_stage(
+    *,
+    root: Path,
+    stage: str,
+    fraction: float,
+    readiness_sha256: str,
+) -> dict[str, object]:
+    if _stage_is_complete(
+        root=root,
+        stage=stage,
+        readiness_sha256=readiness_sha256,
+    ):
+        return _finalize_stage(
+            root=root,
+            stage=stage,
+            readiness_sha256=readiness_sha256,
+        )
+    tag = fraction_tag(fraction)
+    metrics = {
+        variant: _validated_completion(
+            root,
+            variant,
+            stage,
+            fraction,
+            readiness_sha256=readiness_sha256,
+        )
+        for variant in DIAGNOSTIC_VARIANTS
+    }
+    return {
+        "schema": 1,
+        "status": "fraction-complete",
+        "purpose": "bes2-fraction-wave",
+        "stage": stage,
+        "fraction": fraction,
+        "fraction_tag": tag,
+        "readiness_sha256": readiness_sha256,
+        "runs": {
+            variant: hash_binding(
+                _metrics_path(root, variant, stage, fraction),
+                relative_to=root,
+            )
+            for variant in DIAGNOSTIC_VARIANTS
+        },
+        "gpu_hours": sum(
+            float(metrics[variant]["gpu_hours"])
+            for variant in DIAGNOSTIC_VARIANTS
+        ),
+    }
+
+
+def _worker_command(
+    args: argparse.Namespace, variant: str, fraction: float
+) -> list[str]:
     return [
         sys.executable,
         "-B",
@@ -661,6 +764,8 @@ def _worker_command(args: argparse.Namespace, variant: str) -> list[str]:
         variant,
         "--stage",
         args.stage,
+        "--fraction",
+        str(fraction),
         "--data-view-root",
         str(args.data_view_root),
         "--data-view-receipt",
@@ -688,6 +793,7 @@ def run_controller(args: argparse.Namespace) -> int:
     repo = args.repo.resolve()
     source_sha = _require_source(repo, args.expected_git_sha)
     root = args.diagnostic_root.resolve()
+    diagnostic_run_id(DIAGNOSTIC_VARIANTS[0], args.stage, args.fraction)
     assert_no_final_consumption(args.original_runs_root)
     readiness_path = root / ".control" / READY_FILENAME
     validate_readiness(
@@ -717,7 +823,7 @@ def run_controller(args: argparse.Namespace) -> int:
 
     incomplete = []
     for variant in DIAGNOSTIC_VARIANTS:
-        metrics = _metrics_path(root, variant, args.stage)
+        metrics = _metrics_path(root, variant, args.stage, args.fraction)
         if metrics.is_symlink():
             raise BES2ContractError("diagnostic metrics must not be a symlink")
         if metrics.is_file():
@@ -725,14 +831,16 @@ def run_controller(args: argparse.Namespace) -> int:
                 root,
                 variant,
                 args.stage,
+                args.fraction,
                 readiness_sha256=readiness_sha256,
             )
         else:
             incomplete.append(variant)
     if not incomplete:
-        payload = _finalize_stage(
+        payload = _finish_fraction_or_stage(
             root=root,
             stage=args.stage,
+            fraction=args.fraction,
             readiness_sha256=readiness_sha256,
         )
         print(json.dumps(payload, indent=2, sort_keys=True))
@@ -752,7 +860,7 @@ def run_controller(args: argparse.Namespace) -> int:
     running: dict[int, tuple[subprocess.Popen, str]] = {}
     for gpu, variant in enumerate(incomplete):
         _clear_request(request_dir, gpu)
-        log = _run_dir(root, variant, args.stage) / "controller.log"
+        log = _run_dir(root, variant, args.stage, args.fraction) / "controller.log"
         log.parent.mkdir(parents=True, exist_ok=True)
         output = log.open("a", encoding="utf-8")
         env = {
@@ -763,7 +871,7 @@ def run_controller(args: argparse.Namespace) -> int:
             "PATH": f"{repo / 'slurm/h100/shims'}:{os.environ['PATH']}",
         }
         process = subprocess.Popen(
-            _worker_command(args, variant),
+            _worker_command(args, variant, args.fraction),
             cwd=repo,
             env=env,
             stdout=output,
@@ -776,6 +884,7 @@ def run_controller(args: argparse.Namespace) -> int:
             state,
             "worker-launched",
             stage=args.stage,
+            fraction=args.fraction,
             variant=variant,
             gpu=gpu,
             pid=process.pid,
@@ -797,17 +906,19 @@ def run_controller(args: argparse.Namespace) -> int:
                         state,
                         "worker-failed",
                         stage=args.stage,
+                        fraction=args.fraction,
                         variant=variant,
                         gpu=gpu,
                         exit_code=code,
                     )
                     return code
-                _validated_completion(root, variant, args.stage)
+                _validated_completion(root, variant, args.stage, args.fraction)
                 _record(
                     state_path,
                     state,
                     "worker-complete",
                     stage=args.stage,
+                    fraction=args.fraction,
                     variant=variant,
                     gpu=gpu,
                 )
@@ -849,18 +960,19 @@ def run_controller(args: argparse.Namespace) -> int:
                     f"BES2 checkpoint barrier timed out for GPUs {missing}"
                 )
             for gpu, (process, variant) in running.items():
-                metrics = _metrics_path(root, variant, args.stage)
+                metrics = _metrics_path(root, variant, args.stage, args.fraction)
                 if metrics.is_file() and not metrics.is_symlink():
-                    _validated_completion(root, variant, args.stage)
+                    _validated_completion(root, variant, args.stage, args.fraction)
                 else:
                     checkpoint = promote_hpc_checkpoint(
-                        _run_dir(root, variant, args.stage)
+                        _run_dir(root, variant, args.stage, args.fraction)
                     )
                     _record(
                         state_path,
                         state,
                         "checkpoint-promoted",
                         stage=args.stage,
+                        fraction=args.fraction,
                         variant=variant,
                         gpu=gpu,
                         checkpoint_sha256=sha256_file(checkpoint),
@@ -880,12 +992,14 @@ def run_controller(args: argparse.Namespace) -> int:
                 state,
                 "host-requeue-required",
                 stage=args.stage,
+                fraction=args.fraction,
             )
             return PREEMPTED_EXIT_CODE
 
-        payload = _finalize_stage(
+        payload = _finish_fraction_or_stage(
             root=root,
             stage=args.stage,
+            fraction=args.fraction,
             readiness_sha256=readiness_sha256,
         )
         print(json.dumps(payload, indent=2, sort_keys=True))
@@ -937,9 +1051,15 @@ def _parser() -> argparse.ArgumentParser:
     worker = commands.add_parser("worker")
     _common_run_arguments(worker)
     worker.add_argument("--variant", choices=DIAGNOSTIC_VARIANTS, required=True)
+    worker.add_argument(
+        "--fraction", type=float, choices=DIAGNOSTIC_FRACTIONS, required=True
+    )
 
     controller = commands.add_parser("controller")
     _common_run_arguments(controller)
+    controller.add_argument(
+        "--fraction", type=float, choices=DIAGNOSTIC_FRACTIONS, required=True
+    )
     controller.add_argument(
         "--checkpoint-timeout",
         type=float,
