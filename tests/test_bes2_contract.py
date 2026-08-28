@@ -268,9 +268,12 @@ def test_final_consumption_gate_rejects_per_cell_final_results(tmp_path):
         assert_no_final_consumption(tmp_path)
 
 
-def test_dev_training_path_is_byte_identical_to_h100_campaign_revision():
+def test_approved_dev_base_training_path_is_byte_identical_to_h100_campaign_revision():
     repo = Path(__file__).resolve().parents[1]
-    identity = verify_training_path_identity(repo)
+    # Once Sprint 10a is merged, the dev ref necessarily advances.  The
+    # diagnostic contract remains bound to the approved pre-sprint dev object,
+    # which is also what the Judy audit verifies at runtime.
+    identity = verify_training_path_identity(repo, require_dev_ref=False)
 
     assert identity["status"] == "byte-identical"
     assert identity["blob_count"] > 0
