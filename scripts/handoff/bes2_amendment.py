@@ -37,8 +37,8 @@ from .package import (
 from .runtime_amendment import _verify_git_bundle_round_trip
 
 FORMAT_VERSION = 2
-BRANCH = "sprint-10b-bes2-budget-amendment"
-REQUIRED_ANCESTOR = "61bc8391a3baa19b053ffa85e201caf36e0f53a4"
+BRANCH = "sprint-10c-bes2-clone-ref-fix"
+REQUIRED_ANCESTOR = "15752bf74079655f0577c497dc1aac0458e7bfa3"
 BUNDLE_PATH = "code/xview3-bes2-diagnostic.bundle"
 CONTROL_PATH = "controls/BES2_AMENDMENT.json"
 S2_CHECKPOINT_RELATIVE = "bigearthnet_s2/model.safetensors"
