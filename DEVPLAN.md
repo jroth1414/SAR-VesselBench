@@ -38,6 +38,26 @@ Development plan for a coding agent (Claude Code or similar). Execute phases in 
   canonical `H100_READY.json`. External
   V100/reference/cutover/isolation controls are deferred to Phase-5
   completion/export/reporting; V100 remains untouched.
+- **Owner amendments, 2026-08-26 and 2026-08-27 — BigEarthNet-S2 diagnosis before final
+  access.** The unconsumed final-evaluation authorization is paused. Work may
+  proceed on `sprint-10a-bes2-root-cause`, branched from `dev`, with
+  TRAIN+fixed-DEV8-only Judy H100 diagnostics at seed 0. The 2026-08-27
+  amendment replaces the original `f100` pair with one five-epoch `f50`
+  probe pair followed by fresh full `f10` and `f50` pairs: production
+  BigEarthNet-S2 replay versus the documented timm unsupported-input-
+  convolution fallback (all downloaded encoder tensors except
+  `stem.0.weight`, which retains the seeded three-channel target
+  initialization). The two full fractions are classified independently and
+  never pooled; a reset-based replacement is conditionally eligible only when
+  both decisions are stem-dominant and concordant. This is diagnostic-only and
+  may not enter either core cohort. If and only if the predeclared diagnostic
+  decision admits an
+  owner-approved replacement, a later reviewed sprint must rerun all 32 core
+  cells from scratch in a separate Judy H100 cohort. Before any verified-final
+  byte is opened, both complete cohorts may then be bound into one prospective,
+  namespaced 64-cell authorization and evaluated in one no-requeue access.
+  Two final-data accesses remain forbidden. If no replacement is approved,
+  the existing bounded 32-cell authorization remains the fallback.
 - CI must trigger on `dev` (see the CI-trigger fix in §1b) or it never runs on the active branch.
 
 ### Status ledger (ground truth as of this revision)
@@ -49,6 +69,7 @@ Development plan for a coding agent (Claude Code or similar). Execute phases in 
 | 3 Detector | `sprint-3-detector` + `sprint-3b` + `sprint-3c-optimizer-fix` | **DONE — detector frozen + tagged `phase-3-done`; P3.6 PASSED** | the optimizer fix and Option-B plan-literal 50-epoch/early-stop budget decision are merged; historical P3.6 dev F1: ViT floor 0.788 < SatDINO 0.835 < SARMAE 0.858; CNN floor 0.677 < BigEarthNet-S2 0.726 < BigEarthNet-S1 0.819 (`runs/p36_summary.json`) | — |
 | 4 FM+floor arms+refs | `sprint-4/5/6` + `sprint-7c-fp32-grid` + `sprint-7d-h100-fp32` + `sprint-7e-judy-venv` + `sprint-7f-eval-contract` | **CORRECTED RELAUNCH PENDING — uniform H100 core restart; corrected V100 references** | the live V100 core campaign continues untouched only as non-reportable diagnostics; R2 preserves its exact weight and is rescored, while R3 requires a corrected-contract rerun | pass every Judy-local H100 launch gate, then rerun the 24 Phase-4 core cells from scratch; corrected R2/R3 evidence remains mandatory before Phase-5 completion/export/reporting |
 | 5 ImageNet arms+grid | `sprint-7-grid` + `sprint-7b-imagenet-arms` + `sprint-7c-fp32-grid` + `sprint-7d-h100-fp32` + `sprint-7e-judy-venv` + `sprint-7f-eval-contract` | **OWNER APPROVED, NOT LAUNCHED — corrected H100 strict-FP32 campaign gated** | strict evaluation-GT and exact schema-2 checkpoint binding are implemented; smoke 542536 passed, while acceptance 542596 completed staging and 406/407 sealed-venv tests before the portable-mode gate, so no `H100_READY.json`, GPU probe, or training exists | package/upload/pull the current runtime-only correction into a fresh namespace, pass fresh smoke plus all Judy-local numerical gates, run all 32 cells, then complete corrected references/cutover/isolation before Phase-5 completion, reverse export, analysis, or reporting |
+| 6a BigEarthNet-S2 diagnosis | `sprint-10a-bes2-root-cause` | **IMPLEMENTED IN SOURCE — REVIEW, TRANSFER, AND JUDY EXECUTION PENDING** | exact replay/single-tensor-reset loaders; f50 probe plus independent f10/f50 full contracts; immutable four-result H100 DEV comparator receipt; effective two-channel stem and early optimization evidence; path-independent TRAIN/DEV receipts; strict one/two-H100 gates; paired requeue controller; content-addressed amendment and evidence-only return packages; focused tests | review and merge; build/upload/pull the fresh amendment; run Judy audit, the f50 probe pair, and both full fraction pairs; return and verify the per-fraction causal result before any replacement decision |
 | 6 Final eval | `sprint-8-final-eval` | NOT STARTED | once-only tripwire and frozen 50 eval IDs exist; no lockfile has been written | the 50 eval-final raster scenes are not present on this node and must be acquired/extracted before the one allowed evaluation |
 | 7 Analysis | `sprint-9-analysis` | NOT STARTED | — | — |
 | 8 Contingent ref | — | **REMOVED** | former R1 ImageNet-ConvNeXt role is now represented symmetrically by core Arms 4/8 | — |
@@ -281,6 +302,7 @@ Each sprint branch carries a short `SPRINT.md` stating its goal, its acceptance 
 | `sprint-7d-h100-fp32` | Phase 5 | Spine | stacked H100 strict-IEEE-FP32 handoff/cutover amendment; all 32 core cells restart uniformly, while R2/R3 remain V100 references |
 | `sprint-7e-judy-venv` | Phase 5 | Spine | sealed native Judy Python-3.11.13 venv and separate-filesystem runtime contract |
 | `sprint-7f-eval-contract` | Phase 5 | **Foundation** | correct scorer inputs, checkpoint-bound operating points, immutable held-out cohort barrier, and Box control evidence |
+| `sprint-10a-bes2-root-cause` | Phase 5 diagnostic | Spine | TRAIN/DEV-only paired replay versus exact first-convolution reset on Judy; cannot create a core cohort or authorize replacement |
 | `sprint-8-final-eval` | Phase 6 | **Foundation** | touches the once-only verified-scene eval |
 | `sprint-9-analysis` | Phase 7 | Leaf | ViT-vs-CNN figures/slices; read the output, trust the code |
 
@@ -536,6 +558,96 @@ Owner: detector owner. Jul 29–Aug 11. Arms 4/8 load exact downloaded ImageNet 
 **Entry preconditions (Phase 5 / H100 launch):** frozen split/stats/scorer/detector guards green; centralized evaluation GT audit matches dev8 517/107/118, dev23 1,479/804/441, and test16 1,165/420/325 without reading final labels; `src/eval/threshold.py` and exact result schema 2 are enforced; the immutable Sprint-7d payload and committed Sprint-7f runtime amendment match their manifests and `SHA256SUMS`; at least two eligible DGX nodes report the same full base-Python runtime fingerprint and the compute-built final-path Python 3.11.13 venv passes tree/build/base-Python verification; the external-signal Slurm smoke passes; all six checkpoints and notes pass structural and H100 value-sensitive checks; both families pass finite strict-fp32 batch-16 train and full-scene inference probes with TF32 off; the finite positive 200-step H100 projection is accepted; the H100 core namespace and cohort path are empty; and the committed launch SHA/worktree are clean. No V100/reference/cutover path is a launch input. The historical LS split and all eval-final material are not H100 inputs.
 
 **Definition of Done — machine-checkable (Phase 5):** one immutable `TRAINING_COHORT.json` contains exactly the 32 manifest IDs and validates every schema-2 checkpoint-bound marker; 32 separate immutable `test_metrics.json` files carry exact test support and cohort provenance; `grid.csv` contains exactly those IDs, seed 0, zero NaNs, populated count columns, no `vitsup`/`cnnsup` rows, and `monotonicity_ok == true` for all arms; the eight-curve figure renders. Corrected `yolo26-f100` and `locateanything-zs`, current V100 diagnostic context, `CUTOVER_READY.json`, and `V100_DIAGNOSTIC_ISOLATION.json` independently validate before reverse export, analysis, or reporting. Exactly 34 total experiment records then exist. Tag `phase-5-done` only after this deferred barrier passes.
+
+### Sprint 10a — BigEarthNet-S2 root-cause diagnostic
+
+**Authority and isolation.** This owner-approved sprint is diagnostic only. It
+does not change configs/detector.yaml, the frozen scorer/splits/statistics, an
+existing H100/V100 result, a core arm name, or either 32-cell cohort contract.
+The live V100 campaign is never leased, signaled, paused, or read as a resume
+namespace. Before every submit/allocation/result handoff, the sprint rejects
+any existing verified-final lock, data-view/consumption receipt, completion
+receipt, or per-cell final output.
+
+**Exact paired intervention.** current_replay calls the unchanged production
+bigearthnet_s2 loader. first_conv_reset constructs the seed-0 three-channel
+target, loads the S2 stem bias, stem normalization, and every post-stem tensor,
+and excludes exactly stem.0.weight; that retained tensor must remain
+byte-identical to the fresh seed-0 target. The detector head, parameter count,
+stride-4 geometry, data order, optimizer, 50-epoch schedule horizon, layer
+decay 0.65, precision, and all evaluation machinery remain paired.
+
+**Judy contract.** A code/control-only schema-2 amendment binds the reviewed
+source SHA, accepted canonical H100_READY.json, BigEarthNet-S2 checkpoint,
+prospective TRAIN+fixed-DEV8 view, strict IEEE FP32 state, and sealed native
+venv. Each allocation reconstructs the deterministic TRAIN/DEV view through a
+dedicated empty no-cohort staging namespace; TEST and eval-final artifacts are
+never staged. The audit runs the complete sealed-venv tests, value-sensitive S2
+load, strict-FP32 gate, covariance/activation audit, and batch-16
+forward/backward probes. It also snapshots exactly four canonical immutable
+H100 `final_metrics.json` files—BigEarthNet-S2 and CNN-random at f10 and
+f50—as numerical best-DEV comparators only; it never opens their checkpoints,
+cohort, TEST metrics, or final-evaluation material. The f50 five-epoch probe
+pair retains the original 50-epoch schedule horizon. The full stage runs a
+fresh f10 pair and then a fresh f50 pair; the two variants within each
+fraction execute concurrently on two H100s, one process per GPU and no DDP,
+with host-owned requeue only after both live workers have checkpointed.
+
+**Mechanism evidence.** The readiness audit derives the exact two-independent-
+channel kernel implied by raw `[VH, VV, VH−VV]`:
+`K_VH = K0 + K2` and `K_VV = K1 − K2`, then derives the corresponding
+scale- and bias-aware coefficients for the normalized model input. It records
+kernel cancellation, Gram/effective-rank evidence, covariance-projected
+variance, and initial pre/post-stem and per-stage activations. Every training
+run records
+observational gradient and actual-update norms at optimizer steps 1, 10, 100,
+and 500 for the stem, four stages, detector head, and exact first convolution;
+these callbacks do not alter the optimizer, schedule, or accumulation.
+
+**Predeclared cause decision.** For each fraction independently, current replay
+must fall within 0.02 of that fraction's immutable frozen S2 best-DEV F1 or
+the result is indeterminate. If replay no longer trails that fraction's
+frozen random result, the deficit did not reproduce. Otherwise compute
+`(F1_reset - F1_replay) / (F1_frozen_random - F1_replay)`: recovery at
+least 0.50 is stem-dominant; at most 0.20 is
+reset-insufficient/post-stem-primary; values between are mixed; negative
+recovery rejects the conversion as the performance cause while retaining its
+compliance concern. No score, denominator, trajectory, or evidence is pooled
+across f10 and f50. Conditional stem-reset eligibility requires two
+determinate, concordant stem-dominant decisions; disagreement becomes a
+blocked fraction-dependent mixed mechanism. Evidence is single-seed
+TRAIN/DEV point estimation only, with no significance, variance, confidence
+interval, or error-bar claim.
+
+**Budget and outputs.** Forecast GPU-hours must be finite, positive, and no more
+than the owner-approved 125 hours; a forecast above 125 is a STOP for approval,
+and the ordinary mandatory STOP remains near 250 hours. The persistent Judy
+namespace holds large checkpoints. The narrow return package contains only
+validated diagnostic JSON, the Markdown report, and necessary logs, publishes
+READY.json last, and explicitly excludes checkpoints, TEST/final/cohort
+artifacts, credentials, tokens, URLs, and Box runtime settings.
+
+**Conditional boundary.** Sprint 10a can classify the cause and report
+replacement eligibility; it cannot approve or implement a replacement.
+First-convolution-reset transfer additionally requires a stem-dominant result
+at both fractions and an explicit owner amendment approving the documented
+timm fallback semantics. Mixed/reset-insufficient or fraction-dependent
+findings require a licensed, downloaded, native-three-channel optical-RS
+ConvNeXt-V2-Base checkpoint; absence of one blocks replacement. A diagnostic
+CNN-random replay or a shared layer-decay ablation is evidence-triggered
+follow-up only and requires a separate bounded owner amendment; neither is
+silently launched by Sprint 10a. BigEarthNet-S1 remains unmodified and
+untested, with its shared-helper use recorded as a separate compliance issue.
+
+Any approved replacement belongs to a later reviewed sprint and a new empty
+Judy namespace. It restarts all 32 cells from scratch and freezes its own
+cohort/TEST/grid identity; no cells are spliced into the original cohort. Only
+after both independent cohorts and TEST grids validate may a later
+final-evaluation sprint replace the still-unconsumed authorization with one
+prospective composite registry of exactly 64 namespaced cells and one
+no-requeue final-data access. If replacement is not approved, retain the
+original bounded authorization. The existing 32-cell validators are never
+weakened or generalized by Sprint 10a.
 
 ## 8. Phase 6 — Final eval
 

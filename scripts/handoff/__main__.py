@@ -215,6 +215,97 @@ def _build_parser() -> argparse.ArgumentParser:
     download_control.add_argument("--expected-sha256sums-sha256", required=True)
     download_control.add_argument("--expected-package-id", required=True)
 
+    build_bes2 = commands.add_parser(
+        "build-bes2-amendment", help="build the code-only Judy diagnostic amendment"
+    )
+    build_bes2.add_argument("--repo", type=Path, required=True)
+    build_bes2.add_argument("--h100-ready-json", type=Path, required=True)
+    build_bes2.add_argument("--weights-root", type=Path, required=True)
+    build_bes2.add_argument("--output-dir", type=Path, required=True)
+    build_bes2.add_argument("--max-part-bytes", type=int)
+
+    verify_bes2 = commands.add_parser(
+        "verify-bes2-amendment", help="verify the BES2 diagnostic amendment"
+    )
+    verify_bes2.add_argument("--package-root", type=Path, required=True)
+    verify_bes2.add_argument("--expected-h100-ready-sha256", required=True)
+
+    upload_bes2 = commands.add_parser(
+        "upload-bes2-amendment", help="verified READY-last BES2 Box upload"
+    )
+    upload_bes2.add_argument("--repo", type=Path, required=True)
+    upload_bes2.add_argument("--package-root", type=Path, required=True)
+    upload_bes2.add_argument("--expected-h100-ready-sha256", required=True)
+    upload_bes2.add_argument("--receipt", type=Path, required=True)
+
+    bootstrap_bes2 = commands.add_parser(
+        "build-bes2-bootstrap", help="generate the hash-pinned Judy BES2 puller"
+    )
+    bootstrap_bes2.add_argument("--repo", type=Path, required=True)
+    bootstrap_bes2.add_argument("--package-root", type=Path, required=True)
+    bootstrap_bes2.add_argument("--expected-h100-ready-sha256", required=True)
+    bootstrap_bes2.add_argument("--output", type=Path, required=True)
+
+    build_bes2_results = commands.add_parser(
+        "build-bes2-results",
+        help="build the JSON/report/log-only BES2 Judy return package",
+    )
+    build_bes2_results.add_argument("--repo", type=Path, required=True)
+    build_bes2_results.add_argument(
+        "--diagnostic-root", type=Path, required=True
+    )
+    build_bes2_results.add_argument(
+        "--original-runs-root", type=Path, required=True
+    )
+    build_bes2_results.add_argument("--job-log-dir", type=Path, required=True)
+    build_bes2_results.add_argument("--output-dir", type=Path, required=True)
+    build_bes2_results.add_argument(
+        "--max-part-bytes", type=int, required=True
+    )
+
+    verify_bes2_results = commands.add_parser(
+        "verify-bes2-results", help="verify the BES2 evidence-only return package"
+    )
+    verify_bes2_results.add_argument("--package-root", type=Path, required=True)
+    verify_bes2_results.add_argument(
+        "--expected-source-git-sha", required=True
+    )
+
+    upload_bes2_results = commands.add_parser(
+        "upload-bes2-results",
+        help="verified READY-last upload of the BES2 return package",
+    )
+    upload_bes2_results.add_argument("--repo", type=Path, required=True)
+    upload_bes2_results.add_argument(
+        "--package-root", type=Path, required=True
+    )
+    upload_bes2_results.add_argument(
+        "--expected-source-git-sha", required=True
+    )
+    upload_bes2_results.add_argument("--receipt", type=Path, required=True)
+
+    download_bes2_results = commands.add_parser(
+        "download-bes2-results",
+        help="atomically download and verify the BES2 return package",
+    )
+    download_bes2_results.add_argument("--repo", type=Path, required=True)
+    download_bes2_results.add_argument(
+        "--package-root", type=Path, required=True
+    )
+    download_bes2_results.add_argument(
+        "--expected-source-git-sha", required=True
+    )
+    download_bes2_results.add_argument(
+        "--expected-ready-sha256", required=True
+    )
+    download_bes2_results.add_argument(
+        "--expected-manifest-sha256", required=True
+    )
+    download_bes2_results.add_argument(
+        "--expected-sha256sums-sha256", required=True
+    )
+    download_bes2_results.add_argument("--expected-package-id", required=True)
+
     results = commands.add_parser(
         "build-results", help="package all 32 completed H100 cells for return"
     )
@@ -409,6 +500,155 @@ def main(argv: list[str] | None = None) -> int:
                 output=args.output,
             )
             _print(result)
+        elif args.command == "build-bes2-amendment":
+            from .bes2_amendment import build_bes2_amendment
+
+            repo = args.repo.resolve()
+            client, folder_id = _client(repo)
+            result = preflight_box(client, folder_id, minimum_free_bytes=0)
+            requested = args.max_part_bytes or result.maximum_file_bytes
+            maximum = min(requested, result.maximum_file_bytes)
+            package = build_bes2_amendment(
+                repo_root=repo,
+                h100_ready_json=args.h100_ready_json.resolve(),
+                weights_root=args.weights_root.resolve(),
+                output_dir=args.output_dir.resolve(),
+                maximum_physical_file_bytes=maximum,
+            )
+            manifest = json.loads(
+                (package / "manifest.json").read_text(encoding="utf-8")
+            )
+            _print(
+                {
+                    "package_root": str(package),
+                    "package_id": manifest["package_id"],
+                    "ready_sha256": _hash_file(package / "READY.json"),
+                    "manifest_sha256": _hash_file(package / "manifest.json"),
+                    "sha256sums_sha256": _hash_file(package / "SHA256SUMS"),
+                    "box_preflight": result.as_dict(),
+                    "part_bytes": maximum,
+                }
+            )
+        elif args.command == "verify-bes2-amendment":
+            from .bes2_amendment import verify_bes2_amendment
+
+            manifest = verify_bes2_amendment(
+                args.package_root,
+                expected_h100_ready_sha256=args.expected_h100_ready_sha256,
+            )
+            _print(
+                {
+                    "status": "verified",
+                    "package_id": manifest["package_id"],
+                    "amendment_identity_sha256": manifest[
+                        "amendment_identity_sha256"
+                    ],
+                }
+            )
+        elif args.command == "upload-bes2-amendment":
+            from .bes2_amendment import prepare_bes2_verifier
+
+            client, folder_id = _client(args.repo)
+            result = upload_package_with_verifier(
+                client,
+                folder_id,
+                args.package_root,
+                repo_root=args.repo,
+                receipt_path=args.receipt,
+                verifier=prepare_bes2_verifier(
+                    args.expected_h100_ready_sha256
+                ),
+                minimum_free_bytes=0,
+            )
+            _print(result)
+        elif args.command == "build-bes2-bootstrap":
+            from .bes2_amendment import generate_bes2_bootstrap
+
+            result = generate_bes2_bootstrap(
+                repo_root=args.repo,
+                package_root=args.package_root,
+                output=args.output,
+                expected_h100_ready_sha256=args.expected_h100_ready_sha256,
+            )
+            _print(result)
+        elif args.command == "build-bes2-results":
+            from .bes2_results import build_bes2_results
+
+            package = build_bes2_results(
+                repo=args.repo,
+                diagnostic_root=args.diagnostic_root,
+                original_runs_root=args.original_runs_root,
+                job_log_dir=args.job_log_dir,
+                output_dir=args.output_dir,
+                max_part_bytes=args.max_part_bytes,
+            )
+            manifest = json.loads(
+                (package / "manifest.json").read_text(encoding="utf-8")
+            )
+            _print(
+                {
+                    "package_root": str(package),
+                    "package_id": manifest["package_id"],
+                    "ready_sha256": _hash_file(package / "READY.json"),
+                    "manifest_sha256": _hash_file(package / "manifest.json"),
+                    "sha256sums_sha256": _hash_file(package / "SHA256SUMS"),
+                    "result_identity_sha256": manifest[
+                        "result_identity_sha256"
+                    ],
+                }
+            )
+        elif args.command == "verify-bes2-results":
+            from .bes2_results import verify_bes2_results
+
+            manifest = verify_bes2_results(
+                args.package_root,
+                expected_source_git_sha=args.expected_source_git_sha,
+            )
+            _print(
+                {
+                    "status": "verified",
+                    "package_id": manifest["package_id"],
+                    "result_identity_sha256": manifest[
+                        "result_identity_sha256"
+                    ],
+                }
+            )
+        elif args.command == "upload-bes2-results":
+            from .bes2_results import prepare_bes2_results_verifier
+
+            client, folder_id = _client(args.repo)
+            result = upload_package_with_verifier(
+                client,
+                folder_id,
+                args.package_root,
+                repo_root=args.repo,
+                receipt_path=args.receipt,
+                verifier=prepare_bes2_results_verifier(
+                    args.expected_source_git_sha
+                ),
+                minimum_free_bytes=0,
+            )
+            _print(result)
+        elif args.command == "download-bes2-results":
+            from .bes2_results import prepare_bes2_results_verifier
+
+            client, folder_id = _client(args.repo)
+            downloaded = download_package_with_verifier(
+                client,
+                folder_id,
+                args.package_root,
+                repo_root=args.repo,
+                expected_ready_sha256=args.expected_ready_sha256,
+                expected_manifest_sha256=args.expected_manifest_sha256,
+                expected_sha256sums_sha256=(
+                    args.expected_sha256sums_sha256
+                ),
+                expected_package_id=args.expected_package_id,
+                verifier=prepare_bes2_results_verifier(
+                    args.expected_source_git_sha
+                ),
+            )
+            _print({"package_root": str(downloaded)})
         elif args.command == "build-control":
             # Lazy import keeps Box-only bootstrap environments independent
             # from the training dependency graph.

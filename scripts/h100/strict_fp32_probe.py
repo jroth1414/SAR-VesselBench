@@ -1,4 +1,4 @@
-"""Assert eight H100s and exercise IEEE FP32 matmul/cuDNN in child processes."""
+"""Assert H100 inventory and exercise IEEE FP32 matmul/cuDNN in child processes."""
 
 from __future__ import annotations
 
@@ -171,7 +171,59 @@ def bind_child_probes(
     return bound
 
 
-def parent_probe(expected_gpus: int) -> dict:
+def validate_diagnostic_gpu_inventory(
+    devices: list[dict], expected_gpus: int
+) -> list[dict]:
+    """Validate only the approved one/two-GPU, nonreportable diagnostic lane."""
+
+    if expected_gpus not in (1, 2) or len(devices) != expected_gpus:
+        raise RuntimeError(
+            "diagnostic strict-FP32 probe requires exactly one or two H100s"
+        )
+    seen: set[str] = set()
+    names: set[str] = set()
+    memory_sizes: set[int] = set()
+    for index, device in enumerate(devices):
+        name = str(device.get("name", ""))
+        capability = tuple(device.get("compute_capability", ()))
+        identifier = str(device.get("uuid", "")).strip()
+        try:
+            memory = int(device.get("total_memory_bytes", 0))
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                "diagnostic H100 memory identity is invalid"
+            ) from exc
+        if (
+            "H100" not in name.upper()
+            or capability != EXPECTED_COMPUTE_CAPABILITY
+            or not identifier
+            or identifier in seen
+            or memory <= 0
+        ):
+            raise RuntimeError(
+                f"diagnostic device {index} is not one unique CC-9.0 H100"
+            )
+        seen.add(identifier)
+        names.add(name)
+        memory_sizes.add(memory)
+    if len(names) != 1 or len(memory_sizes) != 1:
+        raise RuntimeError(
+            "diagnostic H100 allocation is not one hardware class"
+        )
+    return [dict(device) for device in devices]
+
+
+def _visible_device_tokens(expected_gpus: int) -> list[str]:
+    raw = os.environ.get("CUDA_VISIBLE_DEVICES")
+    if raw is None or not raw.strip():
+        return [str(index) for index in range(expected_gpus)]
+    tokens = [token.strip() for token in raw.split(",")]
+    if len(tokens) != expected_gpus or any(not token for token in tokens):
+        raise RuntimeError("CUDA_VISIBLE_DEVICES differs from H100 inventory")
+    return tokens
+
+
+def parent_probe(expected_gpus: int, *, diagnostic: bool = False) -> dict:
     import torch
 
     backend = assert_sitecustomize_active(torch)
@@ -182,9 +234,12 @@ def parent_probe(expected_gpus: int) -> dict:
     if not torch.cuda.is_available():
         raise RuntimeError("torch.cuda.is_available() is false")
     inventory = [_device_record(torch, index) for index in range(torch.cuda.device_count())]
-    if expected_gpus != EXPECTED_GPU_COUNT:
-        raise RuntimeError("the reportable H100 lane requires exactly eight GPUs")
-    validate_gpu_inventory(inventory)
+    if diagnostic:
+        validate_diagnostic_gpu_inventory(inventory, expected_gpus)
+    else:
+        if expected_gpus != EXPECTED_GPU_COUNT:
+            raise RuntimeError("the reportable H100 lane requires exactly eight GPUs")
+        validate_gpu_inventory(inventory)
     driver_lines = subprocess.run(
         [
             "nvidia-smi",
@@ -196,12 +251,17 @@ def parent_probe(expected_gpus: int) -> dict:
         check=True,
     ).stdout.splitlines()
     drivers = {line.strip() for line in driver_lines if line.strip()}
-    if len(driver_lines) != expected_gpus or len(drivers) != 1:
+    if (
+        (not diagnostic and len(driver_lines) != expected_gpus)
+        or not driver_lines
+        or len(drivers) != 1
+    ):
         raise RuntimeError("H100 allocation does not expose one exact driver version")
 
     children: list[object] = []
+    device_tokens = _visible_device_tokens(expected_gpus)
     for gpu in range(expected_gpus):
-        env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(gpu))
+        env = dict(os.environ, CUDA_VISIBLE_DEVICES=device_tokens[gpu])
         completed = subprocess.run(
             [sys.executable, "-m", "scripts.h100.strict_fp32_probe", "--child"],
             env=env,
@@ -215,7 +275,7 @@ def parent_probe(expected_gpus: int) -> dict:
         children,
         expected_backend=backend,
     )
-    return {
+    payload = {
         "torch": torch.__version__,
         "cuda_build": torch.version.cuda,
         "driver_version": drivers.pop(),
@@ -223,14 +283,28 @@ def parent_probe(expected_gpus: int) -> dict:
         "devices": inventory,
         "child_probes": bound_children,
     }
+    if diagnostic:
+        payload["diagnostic_scope"] = "bes2-train-dev-only"
+    return payload
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--expected-gpus", type=int, default=EXPECTED_GPU_COUNT)
+    parser.add_argument(
+        "--diagnostic",
+        action="store_true",
+        help="allow only the BES2 diagnostic's one/two-H100 allocations",
+    )
     parser.add_argument("--child", action="store_true")
     args = parser.parse_args()
-    payload = child_probe() if args.child else parent_probe(args.expected_gpus)
+    if args.child and args.diagnostic:
+        parser.error("--diagnostic is parent-only")
+    payload = (
+        child_probe()
+        if args.child
+        else parent_probe(args.expected_gpus, diagnostic=args.diagnostic)
+    )
     print(json.dumps(payload, sort_keys=True))
     return 0
 

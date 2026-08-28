@@ -1,137 +1,92 @@
-# Sprint 7f — Evaluation-contract correction and Judy H100 relaunch
+# Sprint 10a — BigEarthNet-S2 root-cause diagnostic
 
-Branch: `sprint-7f-eval-contract` (Foundation review)
-Base: `26bece168cd3b9b262ffec5939b836df21b352cd`
-Phase: 5 — corrected, gated, uniform-H100 restart of the 32-cell core grid
+Branch: `sprint-10a-bes2-root-cause` (Spine review)
+Base: `322dea060a37ec793f1df3d49a7513dfd90b324f` (`dev`)
+Phase: 5 diagnostic — TRAIN+fixed-DEV8 only
 
 ## Goal
 
-Correct the held-out evaluation contract before Judy training, reuse the
-verified Sprint-7d payload and Sprint-7e native venv, and deliver the exact
-Sprint-7f code and control receipts through Box. The live V100 campaign remains
-untouched as a non-reportable diagnostic while all 32 reportable core cells
-restart uniformly on Judy H100s.
+Determine whether Arm 6's BigEarthNet-S2 deficit is primarily caused by the
+current 10-to-3-channel stem conversion. Run one fresh, seed-0, full-`f100`
+pair on Judy H100s: an exact production replay and an exact reset of only
+`stem.0.weight`.
 
-## Owner-approved runtime amendment
+This sprint never acquires or controls a V100 lease, never mutates the live
+V100 diagnostic campaign, and never reads TEST or verified-final data.
 
-- Native `python -m venv --copies` is the H100 runtime. Apptainer, Enroot,
-  Pyxis, SIF, OCI, BF16, TF32, FP16, DDP, and per-arm exceptions are not part
-  of the Judy H100 execution path.
-- The Judy base interpreter is exactly Python 3.11.13 for every H100 cell.
-  Packages install entirely offline from Sprint 7d's verified wheelhouse;
-  torch remains `2.11.0+cu126` and the normalized freeze must match the exact
-  lock. Sprint 7d's Python-3.11.15 OCI and wheelhouse-resolution metadata stay
-  immutable base-payload provenance and are not the Judy runtime contract.
-- The venv is built at its final persistent path, bytecode-cleaned, sealed
-  read-only, tree-hashed, and bound to its executable/full base-Python-runtime,
-  verified Sprint-7d wheelhouse/extraction, and build-receipt hashes.
-  Judy's canonical libpython directory is a required, snapshotted site input
-  and the complete `LD_LIBRARY_PATH` under Slurm `--export=NONE`. Jobs invoke
-  the venv's `bin/python` directly under a clean environment; activation,
-  inherited loader paths, and user-site packages are forbidden.
-- All core training and model-forward inference remain Lightning `32-true`
-  with CUDA matmul/cuDNN TF32 disabled before CUDA initialization,
-  micro-batch 16, accumulation 1, effective batch 16, one process per GPU,
-  eight H100s, and no DDP.
-- Existing and future V100 core cells are non-reportable diagnostics. The owner
-  elected to leave that campaign running untouched; no Sprint-7f command may
-  stop, signal, pause, reconfigure, or archive it. Corrected R2/R3 references
-  remain separate V100 experiments. All 32 reportable core cells restart from
-  empty H100 namespaces only after the atomic cutover.
-- Judy and V100 have completely separate filesystems. Every Judy submission
-  uses `H100_V100_CONTROL_PLANE=box-transfer-v1`; no live-V100 or dummy path
-  is accepted. Smoke and H100 acceptance are Judy-local. Corrected-reference,
-  cutover, and diagnostic-isolation evidence crosses Box at the declared gates;
-  campaign has no mounted V100/reference path dependency. A stop/archive
-  receipt is not required for H100 launch.
-- Frozen detector, scorer, splits, stats, and historical LS-SSDD split are not
-  modified.
+## Exact intervention
 
-## Transfer identities
+- `current_replay` invokes the unchanged production `bigearthnet_s2` loader.
+- `first_conv_reset` constructs a seeded three-channel target and loads every
+  BigEarthNet-S2 backbone tensor except `stem.0.weight`.
+- The reset variant loads stem bias, stem normalization, and all post-stem
+  tensors, asserts the missing set is exactly `{stem.0.weight}`, and proves the
+  retained convolution is byte-identical to a fresh seed-0 target.
+- Detector head initialization, parameter count, adapter geometry, data order,
+  schedule, optimizer, layer decay, precision, and scoring are paired.
+- The reset name is diagnostic-only; it is absent from core arm manifests and
+  production initialization choices.
 
-The immutable base payload is
-`xview3-h100-fp32-2726199efcebbebc89156e708b89df2a3415468a`. Its data,
-weights, labels, wheelhouse, and historical Apptainer definition remain
-byte-for-byte Sprint 7d artifacts; the definition is not executed on Judy.
+## Judy execution contract
 
-Sprint 7f adds a separate schema-2 package containing one exact Git bundle,
-the deterministic source-audited 13,911-row TRAIN+fixed-DEV8 label CSV, and
-`manifest.json`, `SHA256SUMS`, and `READY.json`. It contains no TEST/eval-final
-row or imagery. Its identity binds the complete base-payload receipt, the
-required Sprint-7e ancestor, and the Sprint-7f commit. It is uploaded to a new
-empty Box child folder so prior payloads and runtime amendments remain
-immutable. The generated hash-pinned standalone runtime bootstrap is the
-mandatory Judy download/clone path. Full-base `download-runtime`,
-`verify-runtime`, and `extract-runtime` are source/setup-only and must never
-run in an H100 pre-cohort allocation.
+The schema-2 amendment contains only the reviewed Git bundle and controls. It
+binds the accepted canonical `H100_READY.json`, sealed native venv, checkpoint,
+source SHA, and prospective TRAIN+fixed-DEV8 data view. It is transferred
+through a fresh Box folder, verified by manifest and SHA-256, and publishes
+`READY.json` last. Runtime credentials, folder identifiers, tokens, and URLs
+are never recorded.
 
-Dynamic control evidence crosses Box in separate narrow, content-addressed
-JSON-only packages: five corrected-reference files travel V100 to Judy,
-`CUTOVER_READY.json` travels Judy to the V100 operator, and the human-authored
-`V100_DIAGNOSTIC_ISOLATION.json` returns to Judy. Judy must verify all three
-canonical receipts before campaign launch. These packages never include V100
-checkpoints, runs, credentials, or process-control commands, and no V100
-stop/archive receipt is required.
+Audit runs the complete sealed-venv tests, value-sensitive S2 loading, strict
+IEEE-FP32 checks, batch-16 forward/backward probes, deterministic input
+covariance, activations, initialization hashes, and update-drift prerequisites.
+Five-epoch probes retain the 50-epoch schedule horizon. Fresh full runs execute
+concurrently on two H100s, one process per GPU, without DDP. Persistent
+diagnostic checkpoints remain on Judy; the narrow return package contains only
+validated JSON, the reproducible Markdown report, and necessary logs.
 
-## Acceptance criteria
+The expected forecast is 103 GPU-hours. A forecast above 125 hours requires
+owner approval before submission; the mandatory compute STOP applies above
+approximately 250 hours.
 
-1. Source/setup acceptance re-verifies the Sprint-7d package unchanged,
-   including all 150 chip, 39 raster, label, six checkpoint, wheelhouse, and
-   control-file hashes. H100 pre-cohort allocations use control-only base
-   verification and phase-authorized archive hashes, never this full pass.
-2. The runtime amendment round-trips the exact clean Sprint-7f branch and
-   required Sprint-7e ancestor; contains exactly its Git bundle, audited
-   13,911-row TRAIN+fixed-DEV8 CSV, and three controls; contains no TEST/
-   eval-final rows or imagery, weights, wheelhouse, runs, environments, or
-   secrets; and publishes `READY.json` last.
-3. Judy builds the final-path venv only from the verified wheelhouse with
-   `--no-index`; `pip check`, exact freeze, base-Python identity, read-only
-   modes, receipt hash, and deterministic tree digest all pass before every
-   allocation.
-4. Exactly eight H100s at compute capability 9.0 pass strict-FP32 parent/child
-   assertions, the complete test suite, all six value-sensitive loads,
-   both-family batch-16 train/backward/optimizer/full-scene probes, and the
-   200-step timing gate.
-5. Slurm invokes the venv Python directly with `--export=NONE`, stages the
-   base payload and Sprint-7f bundle separately, proves batch-to-child
-   `SIGUSR1`, requeues, and resumes a durable checkpoint without a duplicate
-   cell.
-   The smoke and H100 acceptance snapshots contain no V100/reference filesystem
-   path and enforce the exact Box control-plane literal.
-6. The conservative H100 forecast, including per-allocation staging, beats the
-   current V100 forecast at acceptance and again at cutover; corrected schema-2
-   R2/R3 evidence and the external diagnostic-isolation attestation complete
-   verified Box round trips. Stopping or archiving the V100 diagnostic is not
-   required.
-7. Campaign, per-cell, cutover, and reverse-result receipts bind the code SHA,
-   base payload, runtime amendment, venv tree/build/base Python, strict-FP32
-   backend, H100 UUIDs, throughput, and per-cell runtime. Schema-1 SIF receipts
-   cannot satisfy these schema-2 gates.
-8. All 32 training markers validate and freeze into one immutable
-   `TRAINING_COHORT.json` before any held-out test raster, label, or metric is
-   accessed. A separate scoring phase writes immutable `test_metrics.json`
-   artifacts; only then may monotonicity be checked. The reverse Box bundle
-   contains only validated metrics, configs, logs, provenance, cohort/control
-   records, and best/last checkpoints.
+## Cause decision
+
+Replay must be within 0.02 of frozen S2 DEV F1 `0.8635917566`; otherwise the
+result is indeterminate. If replay does not trail frozen random DEV F1
+`0.8919449902`, the deficit did not reproduce. Otherwise:
+
+`recovery = (F1_reset - F1_replay) / (0.8919449902 - F1_replay)`
+
+- `recovery >= 0.50`: stem-dominant.
+- `recovery <= 0.20`: reset insufficient/post-stem primary.
+- `0.20 < recovery < 0.50`: mixed mechanism.
+- Negative recovery: stem conversion is not the performance cause, while the
+  compliance concern remains.
+
+The evidence includes DEV-only precision/recall, exact candidate-threshold
+curves, score distributions, trajectories, activation/drift evidence, and
+leave-one-DEV-scene-out sensitivity. It makes no significance, seed-variance,
+confidence-interval, or error-bar claim.
 
 ## Definition of done
 
-Source work is complete only after clean tests, exact bundle round trips, and
-reviewable commits. Operational cutover remains incomplete until the runtime
-amendment is independently uploaded/downloaded, Judy builds and verifies the
-venv (or re-verifies the already sealed matching venv), every H100 acceptance
-gate passes, the measured speed advantage still holds, transferred corrected
-R2/R3 evidence validates, and Judy verifies the human-authored diagnostic-
-isolation attestation against the actual empty canonical H100 runs root. All 32
-training markers must then freeze into one cohort before held-out test access.
-Until those gates pass, no H100 training/result is claimed and V100 continues
-untouched as a non-reportable diagnostic.
+Source work is complete when the diagnostic loader, evidence contracts, Judy
+controller, strict-FP32 diagnostic gate, Slurm entrypoints, content-addressed
+forward/return packages, tests, and runbook are reviewed and merged.
+Operational completion additionally requires Judy audit, paired probes, paired
+full runs, verified return transfer, and an immutable causal classification.
 
-## Review scope
+Sprint 10a cannot approve or implement a replacement. A stem-reset core arm
+requires a stem-dominant result plus a new explicit owner amendment. Mixed or
+reset-insufficient findings require an approved downloaded, licensed,
+native-three-channel optical-RS ConvNeXt-V2-Base checkpoint. Any replacement
+and fresh all-32 campaign belongs to a later reviewed sprint. A prospective
+joint 64-cell final-evaluation registry belongs to a still later sprint and is
+legal only if both exact-32 cohorts and TEST grids freeze before the first and
+only final-data access.
 
-Sprint 7f is an evaluation/control amendment stacked on the owner-accepted
-Sprint-7e native-venv commit and immutable Sprint-7d payload. It changes no
-frozen artifact or training recipe. Review covers corrected GT and checkpoint-
-bound operating points, held-out isolation, content-addressed cross-site
-controls, Judy namespace binding, schema-2 provenance/result contracts, tests,
-and documentation. Merge remains a human gate into `dev`.
+## Frozen and out of scope
+
+The scorer, detector config, splits, statistics, historical LS-SSDD split,
+existing H100 cohort/results, existing TEST results, verified-data locks, and
+all V100 state remain unchanged. BigEarthNet-S1 is recorded as a separate
+shared-helper compliance concern but is not modified or tested here.

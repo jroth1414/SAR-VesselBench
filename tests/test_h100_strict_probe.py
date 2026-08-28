@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+from pathlib import Path
 
 import pytest
 
@@ -11,7 +12,11 @@ from scripts.h100.lightning_contract import (
     PRECISION_PLUGIN,
     SINGLE_DEVICE_STRATEGY,
 )
-from scripts.h100.strict_fp32_probe import bind_child_probes
+from scripts.h100.strict_fp32_probe import (
+    _visible_device_tokens,
+    bind_child_probes,
+    validate_diagnostic_gpu_inventory,
+)
 
 
 BACKEND = {
@@ -126,3 +131,40 @@ def test_child_probe_mapping_rejects_mismatched_or_reused_devices(failure):
             children,
             expected_backend=BACKEND,
         )
+
+
+@pytest.mark.parametrize("count", [1, 2])
+def test_bes2_diagnostic_inventory_accepts_only_one_or_two_h100s(count):
+    inventory = _inventory()[:count]
+    assert validate_diagnostic_gpu_inventory(inventory, count) == inventory
+
+
+@pytest.mark.parametrize("count", [0, 3, 8])
+def test_bes2_diagnostic_inventory_rejects_other_allocation_sizes(count):
+    with pytest.raises(RuntimeError, match="one or two"):
+        validate_diagnostic_gpu_inventory(_inventory()[:count], count)
+
+
+def test_bes2_diagnostic_inventory_rejects_duplicate_gpu_identity():
+    inventory = _inventory()[:2]
+    inventory[1]["uuid"] = inventory[0]["uuid"]
+    with pytest.raises(RuntimeError, match="unique"):
+        validate_diagnostic_gpu_inventory(inventory, 2)
+
+
+def test_strict_probe_preserves_slurm_cuda_tokens(monkeypatch):
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "GPU-first,GPU-second")
+    assert _visible_device_tokens(2) == ["GPU-first", "GPU-second"]
+    with pytest.raises(RuntimeError, match="differs"):
+        _visible_device_tokens(1)
+
+
+def test_diagnostic_strict_mode_is_explicit_and_default_remains_eight_gpu():
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "scripts/h100/strict_fp32_probe.py"
+    ).read_text(encoding="utf-8")
+    assert "default=EXPECTED_GPU_COUNT" in source
+    assert "if expected_gpus != EXPECTED_GPU_COUNT:" in source
+    assert 'parser.add_argument(\n        "--diagnostic"' in source
+    assert "CUDA_VISIBLE_DEVICES=device_tokens[gpu]" in source
