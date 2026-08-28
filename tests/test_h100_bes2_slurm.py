@@ -31,6 +31,21 @@ def test_bes2_batch_is_train_dev_only_sealed_and_requeue_safe() -> None:
     assert "--expected-gpus" in source
     assert "-m src.analysis.bes2_root_cause audit" in source
     assert "-m scripts.h100.bes2_diagnostic controller" in source
+    assert '--fraction "$fraction"' in source
+    assert 'if [[ "$mode" == "probe" ]]; then\n  run_controller_wave 0.5' in source
+    full_waves = "else\n  run_controller_wave 0.1\n  run_controller_wave 0.5\nfi"
+    assert full_waves in source
+    assert "both finite f50 five-epoch probes" in source
+    assert "preemption_requested=1" in source
+    assert (
+        "if [[ \"$preemption_requested\" -eq 1 ]]; then\n"
+        "    request_outer_requeue"
+    ) in source
+    assert (
+        "controller_pid=\"$!\"\n"
+        "  if [[ \"$preemption_requested\" -eq 1 ]]; then\n"
+        "    kill -TERM \"$controller_pid\""
+    ) in source
     assert '"${H100_REAL_SCONTROL:-/usr/bin/scontrol}" requeue' in source
     assert "remove_allocation_scratch" in source
     assert "--acceptance" not in source

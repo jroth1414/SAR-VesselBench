@@ -20,6 +20,7 @@ def _worker_args(tmp_path: Path) -> SimpleNamespace:
         original_runs_root=tmp_path / "original",
         expected_git_sha="1" * 40,
         stage="probe",
+        fraction=0.5,
         data_view_root=tmp_path / "view",
         data_view_receipt=tmp_path / "view/BES2_DATA_VIEW_READY.json",
         data_config=tmp_path / "repo/configs/data.yaml",
@@ -123,7 +124,7 @@ def test_worker_requeue_rejects_symlink_request_root(
 
 def test_worker_command_rebinds_current_train_dev_view(tmp_path: Path) -> None:
     command = bes2_diagnostic._worker_command(
-        _worker_args(tmp_path), "current_replay"
+        _worker_args(tmp_path), "current_replay", 0.5
     )
     joined = " ".join(command)
 
@@ -155,6 +156,7 @@ def test_completion_rejects_stale_readiness(
             tmp_path,
             "current_replay",
             "probe",
+            0.5,
             readiness_sha256="b" * 64,
         )
 
@@ -163,12 +165,22 @@ def test_stage_receipt_recomputes_pair_gpu_hours(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     for variant in bes2_diagnostic.DIAGNOSTIC_VARIANTS:
-        path = bes2_diagnostic._metrics_path(tmp_path, variant, "probe")
+        path = bes2_diagnostic._metrics_path(
+            tmp_path, variant, "probe", 0.5
+        )
         path.parent.mkdir(parents=True)
         path.write_text(f"{variant}\n", encoding="utf-8")
     hours = {"current_replay": 2.5, "first_conv_reset": 3.5}
 
-    def validated(_root, variant, _stage, *, readiness_sha256=None):
+    def validated(
+        _root,
+        variant,
+        _stage,
+        fraction,
+        *,
+        readiness_sha256=None,
+    ):
+        assert fraction == 0.5
         assert readiness_sha256 == "c" * 64
         return {"gpu_hours": hours[variant]}
 
@@ -181,8 +193,46 @@ def test_stage_receipt_recomputes_pair_gpu_hours(
         "c" * 64,
     )
     assert receipt["gpu_hours"] == 6.0
-    assert set(receipt["variants"]) == set(
+    assert receipt["fractions"] == [0.5]
+    assert receipt["run_count"] == 2
+    assert set(receipt["runs"]["f50"]) == set(
         bes2_diagnostic.DIAGNOSTIC_VARIANTS
+    )
+
+
+def test_full_stage_requires_both_fraction_pairs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        bes2_diagnostic,
+        "_validated_completion",
+        lambda *_args, **_kwargs: {"gpu_hours": 1.0},
+    )
+    readiness_sha256 = "c" * 64
+    for variant in bes2_diagnostic.DIAGNOSTIC_VARIANTS:
+        path = bes2_diagnostic._metrics_path(
+            tmp_path, variant, "full", 0.1
+        )
+        path.parent.mkdir(parents=True)
+        path.write_text("f10 complete\n", encoding="utf-8")
+
+    assert not bes2_diagnostic._stage_is_complete(
+        root=tmp_path,
+        stage="full",
+        readiness_sha256=readiness_sha256,
+    )
+
+    for variant in bes2_diagnostic.DIAGNOSTIC_VARIANTS:
+        path = bes2_diagnostic._metrics_path(
+            tmp_path, variant, "full", 0.5
+        )
+        path.parent.mkdir(parents=True)
+        path.write_text("f50 complete\n", encoding="utf-8")
+
+    assert bes2_diagnostic._stage_is_complete(
+        root=tmp_path,
+        stage="full",
+        readiness_sha256=readiness_sha256,
     )
 
 
@@ -247,6 +297,8 @@ def test_root_cause_run_parser_requires_reconstructed_view() -> None:
             "current_replay",
             "--stage",
             "probe",
+            "--fraction",
+            "0.5",
             "--data-view-root",
             "/view",
             "--data-view-receipt",
@@ -258,3 +310,4 @@ def test_root_cause_run_parser_requires_reconstructed_view() -> None:
         ]
     )
     assert parsed.data_view_root == Path("/view")
+    assert parsed.fraction == 0.5

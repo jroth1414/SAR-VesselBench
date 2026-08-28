@@ -10,6 +10,9 @@ torch = pytest.importorskip("torch")
 pytest.importorskip("timm")
 
 from src.models import bes2_diagnostic as diagnostic  # noqa: E402
+from src.analysis.bes2_evidence import (  # noqa: E402
+    equivalent_two_channel_stem,
+)
 from src.models.heatmap_head import HeatmapHead  # noqa: E402
 from src.models.init_loaders import INIT_FAMILY, repeat_with_rescaling  # noqa: E402
 
@@ -243,3 +246,57 @@ def test_diagnostic_names_do_not_enter_core_initialization_registry():
         "cnn_imagenet",
     )
     assert not set(diagnostic.DIAGNOSTIC_VARIANTS) & set(INIT_FAMILY)
+
+
+def test_equivalent_stem_reconstructs_exact_vh_vv_kernel_projection():
+    weight = torch.tensor([[[[1.0]], [[2.0]], [[3.0]]]])
+    covariance = [
+        [1.0, 0.0, 1.0],
+        [0.0, 1.0, -1.0],
+        [1.0, -1.0, 2.0],
+    ]
+
+    audit = equivalent_two_channel_stem(
+        weight,
+        covariance,
+        means=[1.0, 2.0, -1.0],
+    )
+
+    assert audit["effective_shape"] == [1, 2, 1, 1]
+    assert audit["effective_channel_norms"] == pytest.approx([4.0, 1.0])
+    variance = audit["predicted_output_variance"]
+    assert variance["three_channel"]["mean"] == pytest.approx(17.0)
+    assert variance["two_channel_projection"]["mean"] == pytest.approx(17.0)
+    assert variance["total_projection_ratio"] == pytest.approx(1.0)
+    assert variance["per_output_absolute_difference"]["maximum"] == (
+        pytest.approx(0.0)
+    )
+    assert len(audit["effective_tensor_sha256"]) == 64
+
+
+def test_equivalent_stem_uses_scaled_relation_after_normalization():
+    weight = torch.tensor([[[[1.0]], [[2.0]], [[3.0]]]])
+    covariance = [
+        [1.0, 0.0, 2.0],
+        [0.0, 1.0, -0.5],
+        [2.0, -0.5, 4.25],
+    ]
+
+    audit = equivalent_two_channel_stem(
+        weight,
+        covariance,
+        means=[1.0, 2.0, 4.0],
+    )
+
+    relation = audit["covariance_relation"]
+    assert relation["third_from_first_two_coefficients"] == pytest.approx(
+        [2.0, -0.5]
+    )
+    assert relation["third_channel_affine_intercept"] == pytest.approx(3.0)
+    assert relation["raw_vh_vv_difference_identity"] is False
+    assert audit["effective_channel_norms"] == pytest.approx([7.0, 0.5])
+    assert audit["effective_bias_shift"]["mean"] == pytest.approx(9.0)
+    variance = audit["predicted_output_variance"]
+    assert variance["three_channel"]["mean"] == pytest.approx(49.25)
+    assert variance["two_channel_projection"]["mean"] == pytest.approx(49.25)
+    assert variance["total_projection_ratio"] == pytest.approx(1.0)

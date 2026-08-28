@@ -194,6 +194,17 @@ def test_bes2_amendment_is_deterministic_closed_bootstrapped_and_ready_last(
     assert manifest["contract"]["checkpoint_artifacts"] == 0
     assert manifest["contract"]["test_or_final_artifacts"] == 0
     assert manifest["contract"]["canonical_h100_ready_mutated"] is False
+    assert manifest["contract"]["training_fractions"] == {
+        "probe": [0.5],
+        "full": [0.1, 0.5],
+    }
+    assert manifest["contract"]["fraction_analysis"] == (
+        "per-fraction-no-pooling"
+    )
+    assert manifest["contract"]["diagnostic_run_count"] == {
+        "probe": 2,
+        "full": 4,
+    }
     assert manifest["checkpoint"]["relative_path"] == amendment.S2_CHECKPOINT_RELATIVE
     physical = set(_tree(first))
     assert physical == {

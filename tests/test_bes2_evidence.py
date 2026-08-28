@@ -16,6 +16,7 @@ from src.analysis.bes2_evidence import (  # noqa: E402
     _covariance_evidence,
     activation_statistics,
     layer_drift,
+    manifest_train_indices,
     validate_data_scope,
 )
 
@@ -29,8 +30,34 @@ def test_covariance_records_exact_third_channel_redundancy():
     evidence = _covariance_evidence(values)
 
     assert evidence["effective_matrix_rank"] == 2
-    assert evidence["vh_minus_vv_redundancy"]["max_abs_residual"] == 0.0
-    assert evidence["vh_minus_vv_redundancy"]["rmse"] == 0.0
+    assert evidence["raw_vh_minus_vv_formula"]["max_abs_residual"] == 0.0
+    assert evidence["raw_vh_minus_vv_formula"]["rmse"] == 0.0
+    assert evidence["centered_linear_redundancy"][
+        "third_from_first_two_coefficients"
+    ] == pytest.approx([1.0, -1.0])
+
+
+def test_covariance_records_scale_aware_normalized_redundancy():
+    rng = np.random.default_rng(1)
+    vh = rng.normal(size=512)
+    vv = rng.normal(size=512)
+    values = np.stack(
+        [
+            (vh - 2.0) / 3.0,
+            (vv + 1.0) / 4.0,
+            ((vh - vv) - 3.0) / 5.0,
+        ],
+        axis=1,
+    )
+
+    evidence = _covariance_evidence(values)
+
+    assert evidence["effective_matrix_rank"] == 2
+    assert evidence["centered_linear_redundancy"][
+        "third_from_first_two_coefficients"
+    ] == pytest.approx([3.0 / 5.0, -4.0 / 5.0])
+    assert evidence["centered_linear_redundancy"]["rmse"] < 1.0e-12
+    assert evidence["raw_vh_minus_vv_formula"]["rmse"] > 0.0
 
 
 class _TinyBackbone(torch.nn.Module):
@@ -173,9 +200,36 @@ def test_data_scope_accepts_train_dev8_and_rejects_test(tmp_path):
     assert len(scope["dev_scene_ids"]) == 8
 
     (root / "raw" / "GRD" / sorted(splits["test"])[0]).mkdir()
-    with pytest.raises(BES2ContractError, match="heldout"):
+    with pytest.raises(BES2ContractError, match="unexpected"):
         validate_data_scope(
             repo=repo,
             data_view_root=root,
             data_config=config,
         )
+
+
+def test_manifest_batch_binding_skips_samples_outside_fraction(tmp_path):
+    retained = []
+    entries = []
+    for index in range(16):
+        path = tmp_path / "chips" / f"scene-{index}" / f"chip-{index}.npy"
+        path.parent.mkdir(parents=True)
+        path.write_bytes(b"fixture")
+        retained.append(path)
+        entries.append(
+            {
+                "kind": "chip",
+                "path": f"chips/scene-{index}/chip-{index}.npy",
+            }
+        )
+    entries.append(
+        {
+            "kind": "chip",
+            "path": "chips/scene-outside-f50/missing.npy",
+        }
+    )
+    dataset = type("Dataset", (), {"chip_paths": retained})()
+
+    assert manifest_train_indices({"entries": entries}, dataset) == list(
+        range(16)
+    )
