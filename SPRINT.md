@@ -58,10 +58,10 @@ seed-variance, confidence-interval, or error-bar claim.
 
 ## Definition of done
 
-Source completion requires one consistent bundle/submit/compute branch,
-the regression test, DEVPLAN decision record, and runbook to be reviewed and
-merged. Operational completion additionally requires a fresh verified Sprint
-10c transfer and the unchanged Sprint 10a Judy audit/probe/full/result sequence.
+Source completion is merged: the builder, submitter, and compute clone bind one
+branch, and the regression test, DEVPLAN record, and runbook are committed.
+Operational completion requires a fresh verified Sprint 10c transfer and the
+unchanged Sprint 10a Judy audit/probe/full/result sequence.
 
 Sprint 10c cannot approve or implement a replacement. A stem-reset core arm
 still requires the predeclared diagnostic result and a new explicit owner
