@@ -43,6 +43,12 @@ The Sprint 10c package, job 573446 log, and readiness SHA-256
 remain immutable diagnostic evidence and cannot satisfy Sprint 10d readiness.
 The fresh audit must validate its generated readiness before probe submission.
 
+The owner-approved source correction is merged into `dev` at
+`1d52346e9ef102c7876044893232b5b0ab6f2d88`. The verified Sprint 10d package
+`xview3-bes2-diagnostic-cca08fa7fab0a6d8602a809c5d3fcfce3007c823-453d6b2835efc3d1c918cd66aefba386427ea24a7926c0edee5c5dfb974092f5`
+is READY-published in a fresh runtime-only Box folder. Folder identity remains
+outside repository history. Judy pull and fresh audit are pending.
+
 Audit runs the complete sealed-venv tests, value-sensitive S2 loading, strict
 IEEE-FP32 checks, batch-16 forward/backward probes, deterministic input
 covariance, activations, initialization hashes, and update-drift prerequisites.
@@ -66,11 +72,11 @@ seed-variance, confidence-interval, or error-bar claim.
 
 ## Definition of done
 
-Source completion requires review and merge: generated readiness passes its
-existing validator, both launch scripts are tracked executable, builder/submit/
-compute clone bind Sprint 10d, and the regression tests plus records pass.
-Operational completion requires a fresh verified Sprint 10d transfer and the
-unchanged Sprint 10a Judy audit/probe/full/result sequence.
+Source completion is merged: generated readiness passes its existing validator,
+both launch scripts are tracked executable, builder/submit/compute clone bind
+Sprint 10d, and the regression tests plus records pass. Transfer publication is
+complete. Operational completion requires the fresh Judy pull and unchanged
+Sprint 10a audit/probe/full/result sequence.
 
 Sprint 10d cannot approve or implement a replacement. A stem-reset core arm
 still requires the predeclared diagnostic result and a new explicit owner
