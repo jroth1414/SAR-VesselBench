@@ -11,6 +11,19 @@ SBATCH = REPO / "slurm/h100/bes2_diagnostic.sbatch"
 SUBMIT = REPO / "slurm/h100/submit_bes2_diagnostic.sh"
 
 
+def test_bes2_slurm_scripts_are_tracked_executable() -> None:
+    for path in (SBATCH, SUBMIT):
+        relative = path.relative_to(REPO)
+        record = subprocess.run(
+            ["git", "ls-files", "--stage", "--", str(relative)],
+            cwd=REPO,
+            check=True,
+            text=True,
+            capture_output=True,
+        ).stdout.strip()
+        assert record.split(maxsplit=1)[0] == "100755"
+
+
 def test_bes2_slurm_scripts_are_valid_shell() -> None:
     for path in (SBATCH, SUBMIT):
         subprocess.run(["bash", "-n", str(path)], check=True)
