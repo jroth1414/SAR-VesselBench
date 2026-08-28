@@ -81,6 +81,9 @@ def test_audit_uses_original_h100_results_as_numerical_comparators_only():
     source = inspect.getsource(_audit)
     assert '"strict_fp32": readiness_strict_fp32' in source
     assert 'strict_runtime["strict_fp32"]' not in source
+    assert "write_new_immutable(ready_path, ready)" in source
+    assert "validated_ready = validate_readiness(" in source
+    assert "print(json.dumps(validated_ready, indent=1))" in source
     assert "load_completion_marker" not in source
     assert "validate_training_cohort" not in source
     assert "original_checkpoint" not in source

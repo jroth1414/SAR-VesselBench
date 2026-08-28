@@ -6,12 +6,16 @@ access, or verified-final access. It never acquires or controls a V100 lease.
 
 ## Preconditions
 
-- The reviewed `sprint-10c-bes2-clone-ref-fix` commit is clean, contains
-  Sprint 10b commit `15752bf74079655f0577c497dc1aac0458e7bfa3`, and retains
+- The reviewed `sprint-10d-bes2-readiness-shape-fix` commit is clean, contains
+  Sprint 10c commit `eafb9c882fdbf491fbc6aad8c5f1c621fa5c5620`, and retains
   the 190 GPU-hour owner approval.
-- The verified Sprint 10b Judy pull remains immutable but is superseded for
-  execution: its bundle exposed Sprint 10b while its compute script requested
-  Sprint 10a. No Slurm job or GPU was requested from that package.
+- The verified Sprint 10c package, Judy audit log for job 573446, and readiness
+  SHA-256 `b3375624af2f8d1cb60359dc930c1e0efc53d47508313713f6d6eb71812a45ce`
+  remain immutable but superseded. The audit completed before the marker-shape
+  mismatch was found; no probe or full training was submitted.
+- Sprint 10d writes the canonical backend IEEE mapping into readiness, retains
+  full launch evidence in the bound audit JSON, and tracks both launchers
+  executable in Git.
 - Canonical Judy H100_READY.json exists, is mode 0444, and remains unmodified.
 - No final_eval.lock, final data-view/consumption/completion receipt, or
   per-cell final_verified_metrics.json exists under the original Judy runs
@@ -32,7 +36,7 @@ fresh amendment Box folder selected only in the process environment.
 
 ```bash
 python -B -m scripts.handoff build-bes2-amendment \
-  --repo /absolute/reviewed/sprint10c \
+  --repo /absolute/reviewed/sprint10d \
   --h100-ready-json /absolute/verified/H100_READY.json \
   --weights-root /absolute/data/weights \
   --output-dir /absolute/new/amendment-output
@@ -50,7 +54,7 @@ python -B -m scripts.handoff verify-bes2-amendment \
 
 ```bash
 python -B -m scripts.handoff upload-bes2-amendment \
-  --repo /absolute/reviewed/sprint10c \
+  --repo /absolute/reviewed/sprint10d \
   --package-root /absolute/amendment-package \
   --expected-h100-ready-sha256 "$H100_READY_SHA256" \
   --receipt /absolute/outside-repo/bes2-amendment-upload.json
@@ -60,7 +64,7 @@ Generate the standalone hash-pinned puller outside all repository worktrees.
 
 ```bash
 python -B -m scripts.handoff build-bes2-bootstrap \
-  --repo /absolute/reviewed/sprint10c \
+  --repo /absolute/reviewed/sprint10d \
   --package-root /absolute/amendment-package \
   --expected-h100-ready-sha256 "$H100_READY_SHA256" \
   --output /absolute/outside-repo/pull-bes2.sh
@@ -115,9 +119,11 @@ BES2_SITE_ENV=/absolute/bes2-site.env \
   ./slurm/h100/submit_bes2_diagnostic.sh audit
 ```
 
-Audit must produce .control/BES2_DIAGNOSTIC_READY.json after:
+Audit must produce and successfully revalidate
+.control/BES2_DIAGNOSTIC_READY.json after:
 
 - the complete sealed-venv test suite;
+- writer-to-validator agreement for the direct three-field IEEE backend state;
 - exact package/source/frozen-file checks;
 - one-H100 strict IEEE FP32 parent/child probes;
 - value-sensitive BigEarthNet-S2 load and exact paired initialization audit;
@@ -185,14 +191,14 @@ Verify it locally, then upload it to a separate fresh Box folder.
 ```bash
 python -B -m scripts.handoff verify-bes2-results \
   --package-root /absolute/bes2-result-package \
-  --expected-source-git-sha "$SPRINT10C_GIT_SHA"
+  --expected-source-git-sha "$SPRINT10D_GIT_SHA"
 ```
 
 ```bash
 python -B -m scripts.handoff upload-bes2-results \
   --repo /bootstrap/checkout \
   --package-root /absolute/bes2-result-package \
-  --expected-source-git-sha "$SPRINT10C_GIT_SHA" \
+  --expected-source-git-sha "$SPRINT10D_GIT_SHA" \
   --receipt /absolute/outside-repo/bes2-result-upload.json
 ```
 
@@ -201,9 +207,9 @@ downloader; a manual directory copy is not transfer proof.
 
 ```bash
 python -B -m scripts.handoff download-bes2-results \
-  --repo /absolute/reviewed/sprint10c \
+  --repo /absolute/reviewed/sprint10d \
   --package-root /absolute/absent/result-destination \
-  --expected-source-git-sha "$SPRINT10C_GIT_SHA" \
+  --expected-source-git-sha "$SPRINT10D_GIT_SHA" \
   --expected-ready-sha256 "$READY_SHA256" \
   --expected-manifest-sha256 "$MANIFEST_SHA256" \
   --expected-sha256sums-sha256 "$SHA256SUMS_SHA256" \

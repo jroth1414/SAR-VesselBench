@@ -703,7 +703,12 @@ def _audit(args: argparse.Namespace) -> int:
         },
     }
     write_new_immutable(ready_path, ready)
-    print(json.dumps(ready, indent=1))
+    validated_ready = validate_readiness(
+        ready_path,
+        expected_source_sha=source_sha,
+        diagnostic_root=root,
+    )
+    print(json.dumps(validated_ready, indent=1))
     return 0
 
 
