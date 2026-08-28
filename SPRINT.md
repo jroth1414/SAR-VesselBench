@@ -1,31 +1,29 @@
-# Sprint 10a — BigEarthNet-S2 root-cause diagnostic
+# Sprint 10b — BigEarthNet-S2 diagnostic budget amendment
 
-Branch: `sprint-10a-bes2-root-cause` (Spine review)
-Base: `322dea060a37ec793f1df3d49a7513dfd90b324f` (`dev`)
+Branch: `sprint-10b-bes2-budget-amendment` (Spine review)
+Base: `a62daae80a00a6b34878b774a2ede89fb98425a5` (`dev`)
 Phase: 5 diagnostic — TRAIN+fixed-DEV8 only
 
 ## Goal
 
-Determine whether Arm 6's BigEarthNet-S2 deficit is primarily caused by the
-current 10-to-3-channel stem conversion. Run one fresh, seed-0, full-`f100`
-pair on Judy H100s: an exact production replay and an exact reset of only
-`stem.0.weight`.
+Encode the owner's 2026-08-28 approval to raise the Judy BigEarthNet-S2
+diagnostic ceiling from 125 to 190 GPU-hours after the reduced f10/f50 matrix
+was forecast from accepted H100 timing evidence.
 
 This sprint never acquires or controls a V100 lease, never mutates the live
 V100 diagnostic campaign, and never reads TEST or verified-final data.
 
-## Exact intervention
+## Authorized change
 
-- `current_replay` invokes the unchanged production `bigearthnet_s2` loader.
-- `first_conv_reset` constructs a seeded three-channel target and loads every
-  BigEarthNet-S2 backbone tensor except `stem.0.weight`.
-- The reset variant loads stem bias, stem normalization, and all post-stem
-  tensors, asserts the missing set is exactly `{stem.0.weight}`, and proves the
-  retained convolution is byte-identical to a fresh seed-0 target.
-- Detector head initialization, parameter count, adapter geometry, data order,
-  schedule, optimizer, layer decay, precision, and scoring are paired.
-- The reset name is diagnostic-only; it is absent from core arm manifests and
-  production initialization choices.
+- The Python readiness contract and Judy submitter accept a finite, positive
+  forecast no greater than 190 GPU-hours and reject any larger value.
+- The schema-2 amendment explicitly records the 190-hour ceiling and binds the
+  reviewed Sprint 10a source as its required ancestor.
+- A fresh content-addressed Sprint 10b package and fresh empty Box folder
+  supersede the already READY-published Sprint 10a transfer.
+- Fractions, variants, model loading, recipe, data view, evidence, decision
+  thresholds, strict FP32, requeue behavior, and result packaging are
+  unchanged.
 
 ## Judy execution contract
 
@@ -39,50 +37,35 @@ are never recorded.
 Audit runs the complete sealed-venv tests, value-sensitive S2 loading, strict
 IEEE-FP32 checks, batch-16 forward/backward probes, deterministic input
 covariance, activations, initialization hashes, and update-drift prerequisites.
-Five-epoch probes retain the 50-epoch schedule horizon. Fresh full runs execute
-concurrently on two H100s, one process per GPU, without DDP. Persistent
-diagnostic checkpoints remain on Judy; the narrow return package contains only
-validated JSON, the reproducible Markdown report, and necessary logs.
+The f50 five-epoch probe pair and fresh full f10/f50 pairs retain the original
+50-epoch schedule horizon. Variants execute concurrently within each pair on
+two H100s, one process per GPU, without DDP. Persistent diagnostic checkpoints
+remain on Judy; the narrow return package contains only validated JSON, the
+reproducible Markdown report, and necessary logs.
 
-The expected forecast is 103 GPU-hours. A forecast above 125 hours requires
-owner approval before submission; the mandatory compute STOP applies above
-approximately 250 hours.
+The conservative site forecast is 190 GPU-hours. Values above 190 remain
+blocked, and the mandatory compute STOP remains near 250 hours.
 
-## Cause decision
+## Scientific contract
 
-Replay must be within 0.02 of frozen S2 DEV F1 `0.8635917566`; otherwise the
-result is indeterminate. If replay does not trail frozen random DEV F1
-`0.8919449902`, the deficit did not reproduce. Otherwise:
-
-`recovery = (F1_reset - F1_replay) / (0.8919449902 - F1_replay)`
-
-- `recovery >= 0.50`: stem-dominant.
-- `recovery <= 0.20`: reset insufficient/post-stem primary.
-- `0.20 < recovery < 0.50`: mixed mechanism.
-- Negative recovery: stem conversion is not the performance cause, while the
-  compliance concern remains.
-
-The evidence includes DEV-only precision/recall, exact candidate-threshold
-curves, score distributions, trajectories, activation/drift evidence, and
-leave-one-DEV-scene-out sensitivity. It makes no significance, seed-variance,
-confidence-interval, or error-bar claim.
+Sprint 10b changes no causal rule. Sprint 10a still classifies replay
+reproducibility and reset recovery independently at f10 and f50, never pools
+the two fractions, and requires concordant determinate stem-dominant decisions
+before reset-based replacement can become conditionally eligible. Evidence
+remains single-seed TRAIN/DEV point estimation with no significance,
+seed-variance, confidence-interval, or error-bar claim.
 
 ## Definition of done
 
-Source work is complete when the diagnostic loader, evidence contracts, Judy
-controller, strict-FP32 diagnostic gate, Slurm entrypoints, content-addressed
-forward/return packages, tests, and runbook are reviewed and merged.
-Operational completion additionally requires Judy audit, paired probes, paired
-full runs, verified return transfer, and an immutable causal classification.
+Source completion requires the 190-hour Python and shell boundaries, package
+identity, tests, DEVPLAN decision record, and runbook to be reviewed and
+merged. Operational completion additionally requires a fresh verified transfer
+and the unchanged Sprint 10a Judy audit/probe/full/result sequence.
 
-Sprint 10a cannot approve or implement a replacement. A stem-reset core arm
-requires a stem-dominant result plus a new explicit owner amendment. Mixed or
-reset-insufficient findings require an approved downloaded, licensed,
-native-three-channel optical-RS ConvNeXt-V2-Base checkpoint. Any replacement
-and fresh all-32 campaign belongs to a later reviewed sprint. A prospective
-joint 64-cell final-evaluation registry belongs to a still later sprint and is
-legal only if both exact-32 cohorts and TEST grids freeze before the first and
-only final-data access.
+Sprint 10b cannot approve or implement a replacement. A stem-reset core arm
+still requires the predeclared diagnostic result and a new explicit owner
+amendment. Any replacement, fresh all-32 campaign, or prospective joint
+64-cell final-evaluation registry remains outside this sprint.
 
 ## Frozen and out of scope
 

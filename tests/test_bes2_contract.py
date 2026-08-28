@@ -235,7 +235,7 @@ def test_frozen_comparator_snapshots_only_four_canonical_h100_dev_results(
 
 
 def test_forecast_enforces_owner_budget():
-    assert validate_forecast_hours(MAX_APPROVED_GPU_HOURS) == 125.0
+    assert validate_forecast_hours(MAX_APPROVED_GPU_HOURS) == 190.0
     with pytest.raises(BES2ContractError, match="exceeds"):
         validate_forecast_hours(math.nextafter(MAX_APPROVED_GPU_HOURS, math.inf))
     with pytest.raises(BES2ContractError, match="mandatory"):

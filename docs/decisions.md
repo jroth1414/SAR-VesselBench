@@ -799,3 +799,27 @@ start; all scientific and deferred-reporting controls remain in force.
 - **Budget and isolation:** recompute the forecast from accepted f10/f50
   timing evidence; above 125 GPU-hours is a STOP for approval. All prior V100,
   H100 core, TEST, and verified-final isolation rules remain unchanged.
+
+## Revised BigEarthNet-S2 diagnostic budget (human decision, 2026-08-28)
+
+- **Owner approval:** the owner explicitly approves the reduced f10/f50 BES2
+  diagnostic up to 190 GPU-hours. A forecast above 190 remains a STOP for a new
+  bounded owner decision; the ordinary mandatory STOP remains near 250 hours.
+- **Measured basis:** use the conservative per-run maxima from the accepted H100
+  S2/random timing evidence: f10 = 16.323118231944445 hours and f50 =
+  66.13371806805556 hours. The full f10 pair, full f50 pair, and five-epoch f50
+  probe pair give
+  `2 * 16.323118231944445 + 2 * 66.13371806805556 + 2 * (5 / 50) * 66.13371806805556 = 178.14041621361113`
+  training GPU-hours. Audit, staging, and requeue allowance set the
+  conservative site forecast and approved ceiling to 190.
+- **Execution consequence:** the full f10-then-f50 allocation can exceed the
+  66-hour allocation walltime at the maximum schedule horizon, so the existing
+  paired checkpoint-and-host-requeue contract remains required. This approval
+  does not weaken any finite-state, checkpoint, or restart guard.
+- **Scientific scope unchanged:** no fraction, variant, seed, loader, tensor,
+  model, optimizer, schedule, layer decay, precision, scorer, data view,
+  evidence, decision threshold, or replacement authority changes.
+- **Transfer rule:** encode the ceiling in a budget-only Sprint 10b stacked on
+  reviewed Sprint 10a, then build and publish a fresh content-addressed package
+  through a fresh empty Box folder with READY last. The READY-published Sprint
+  10a folder remains immutable and cannot be reused for execution.
