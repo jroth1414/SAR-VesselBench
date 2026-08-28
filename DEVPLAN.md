@@ -18,13 +18,12 @@ Development plan for a coding agent (Claude Code or similar). Execute phases in 
 
 ### Branch model (as actually built — this overrides the "main" phrasing elsewhere)
 - The integration / default branch is **`dev`** (GitHub `HEAD → dev`), **not `main`**; `main` currently lags `dev`. Everywhere this plan or AGENTS.md says "land on `main`" / "no direct commits to `main`," read **`dev`**: open each sprint branch off `dev` and PR back into `dev`.
-- Current work belongs on `sprint-10d-bes2-readiness-shape-fix`, branched
-  from `dev` at `0458fbedb3a6afd618847e443251aeb4ef009f14`. Sprint 10c
-  audit job 573446 completed on `dgx22`, but its immutable readiness marker
-  serialized the complete launch contract where the existing validator requires
-  the canonical three-field IEEE backend mapping. No probe or full diagnostic
-  training ran. Sprint 10d corrects only that receipt shape and the diagnostic
-  launcher Git modes, then requires a fresh package, namespace, and audit.
+- The owner-approved `sprint-10d-bes2-readiness-shape-fix` source correction
+  is merged into `dev` at `1d52346e9ef102c7876044893232b5b0ab6f2d88`.
+  Its verified amendment package is READY-published in a fresh runtime-only
+  Box folder; the Judy pull and fresh audit remain pending. Sprint 10c audit
+  job 573446 and its rejected readiness marker remain immutable and superseded.
+  No probe or full diagnostic training has run.
 - Historical Judy runtime context: `sprint-7f-eval-contract` was stacked on the
   owner-accepted Sprint-7e commit
   `26bece168cd3b9b262ffec5939b836df21b352cd`; the immutable Sprint-7d base
@@ -92,7 +91,7 @@ Development plan for a coding agent (Claude Code or similar). Execute phases in 
 | 3 Detector | `sprint-3-detector` + `sprint-3b` + `sprint-3c-optimizer-fix` | **DONE — detector frozen + tagged `phase-3-done`; P3.6 PASSED** | the optimizer fix and Option-B plan-literal 50-epoch/early-stop budget decision are merged; historical P3.6 dev F1: ViT floor 0.788 < SatDINO 0.835 < SARMAE 0.858; CNN floor 0.677 < BigEarthNet-S2 0.726 < BigEarthNet-S1 0.819 (`runs/p36_summary.json`) | — |
 | 4 FM+floor arms+refs | `sprint-4/5/6` + `sprint-7c-fp32-grid` + `sprint-7d-h100-fp32` + `sprint-7e-judy-venv` + `sprint-7f-eval-contract` | **CORRECTED RELAUNCH PENDING — uniform H100 core restart; corrected V100 references** | the live V100 core campaign continues untouched only as non-reportable diagnostics; R2 preserves its exact weight and is rescored, while R3 requires a corrected-contract rerun | pass every Judy-local H100 launch gate, then rerun the 24 Phase-4 core cells from scratch; corrected R2/R3 evidence remains mandatory before Phase-5 completion/export/reporting |
 | 5 ImageNet arms+grid | `sprint-7-grid` + `sprint-7b-imagenet-arms` + `sprint-7c-fp32-grid` + `sprint-7d-h100-fp32` + `sprint-7e-judy-venv` + `sprint-7f-eval-contract` | **OWNER APPROVED, NOT LAUNCHED — corrected H100 strict-FP32 campaign gated** | strict evaluation-GT and exact schema-2 checkpoint binding are implemented; smoke 542536 passed, while acceptance 542596 completed staging and 406/407 sealed-venv tests before the portable-mode gate, so no `H100_READY.json`, GPU probe, or training exists | package/upload/pull the current runtime-only correction into a fresh namespace, pass fresh smoke plus all Judy-local numerical gates, run all 32 cells, then complete corrected references/cutover/isolation before Phase-5 completion, reverse export, analysis, or reporting |
-| 6a BigEarthNet-S2 diagnosis | `sprint-10a-bes2-root-cause` + `sprint-10b-bes2-budget-amendment` + `sprint-10c-bes2-clone-ref-fix` + `sprint-10d-bes2-readiness-shape-fix` | **SPRINT 10D IN REVIEW — FRESH PACKAGE/AUDIT REQUIRED** | Sprint 10c audit 573446 completed every expensive gate but emitted a readiness shape rejected by the already-reviewed downstream validator; no probe/full training or held-out access occurred. Sprint 10d normalizes only the readiness backend mapping and launcher Git modes | review/merge Sprint 10d, use a fresh Box folder and Judy namespace, rerun audit, then submit f50 probes only after the new marker validates |
+| 6a BigEarthNet-S2 diagnosis | `sprint-10a-bes2-root-cause` + `sprint-10b-bes2-budget-amendment` + `sprint-10c-bes2-clone-ref-fix` + `sprint-10d-bes2-readiness-shape-fix` | **SPRINT 10D MERGED; PACKAGE PUBLISHED — JUDY RE-AUDIT PENDING** | Sprint 10d normalizes only the readiness backend mapping, self-validates the immutable marker, and tracks both launchers executable. Its content-addressed amendment is verified and READY-published; no probe/full training or held-out access occurred | pull into a fresh Judy handoff and diagnostic namespace, rerun audit, then submit f50 probes only after the new marker validates |
 | 6 Final eval | `sprint-8-final-eval` | NOT STARTED | once-only tripwire and frozen 50 eval IDs exist; no lockfile has been written | the 50 eval-final raster scenes are not present on this node and must be acquired/extracted before the one allowed evaluation |
 | 7 Analysis | `sprint-9-analysis` | NOT STARTED | — | — |
 | 8 Contingent ref | — | **REMOVED** | former R1 ImageNet-ConvNeXt role is now represented symmetrically by core Arms 4/8 | — |
