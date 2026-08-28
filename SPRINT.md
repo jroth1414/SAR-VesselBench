@@ -1,26 +1,27 @@
-# Sprint 10b — BigEarthNet-S2 diagnostic budget amendment
+# Sprint 10c — BigEarthNet-S2 diagnostic clone-ref correction
 
-Branch: `sprint-10b-bes2-budget-amendment` (Spine review)
-Base: `a62daae80a00a6b34878b774a2ede89fb98425a5` (`dev`)
+Branch: `sprint-10c-bes2-clone-ref-fix` (Spine review)
+Base: `6467872d184ba9a672b956a9452012060c9a3b11` (`dev`)
 Phase: 5 diagnostic — TRAIN+fixed-DEV8 only
 
 ## Goal
 
-Encode the owner's 2026-08-28 approval to raise the Judy BigEarthNet-S2
-diagnostic ceiling from 125 to 190 GPU-hours after the reduced f10/f50 matrix
-was forecast from accepted H100 timing evidence.
+Correct the pre-submission branch/ref mismatch found after the verified Sprint
+10b Judy pull: its bundle exposed Sprint 10b, while the compute script requested
+Sprint 10a. No Slurm job or GPU was requested before the mismatch was found.
 
 This sprint never acquires or controls a V100 lease, never mutates the live
-V100 diagnostic campaign, and never reads TEST or verified-final data.
+V100 diagnostic campaign, never reads TEST or verified-final data, and changes
+no scientific or training behavior.
 
 ## Authorized change
 
-- The Python readiness contract and Judy submitter accept a finite, positive
-  forecast no greater than 190 GPU-hours and reject any larger value.
-- The schema-2 amendment explicitly records the 190-hour ceiling and binds the
-  reviewed Sprint 10a source as its required ancestor.
-- A fresh content-addressed Sprint 10b package and fresh empty Box folder
-  supersede the already READY-published Sprint 10a transfer.
+- The amendment builder, login-node submit guard, and compute-node clone all
+  bind the same Sprint 10c branch and reviewed Sprint 10b ancestor.
+- A regression test fails if the builder/submit branch and compute clone branch
+  differ again.
+- A fresh content-addressed Sprint 10c package and fresh empty Box folder
+  supersede the immutable Sprint 10b transfer for execution.
 - Fractions, variants, model loading, recipe, data view, evidence, decision
   thresholds, strict FP32, requeue behavior, and result packaging are
   unchanged.
@@ -48,7 +49,7 @@ blocked, and the mandatory compute STOP remains near 250 hours.
 
 ## Scientific contract
 
-Sprint 10b changes no causal rule. Sprint 10a still classifies replay
+Sprint 10c changes no causal rule. Sprint 10a still classifies replay
 reproducibility and reset recovery independently at f10 and f50, never pools
 the two fractions, and requires concordant determinate stem-dominant decisions
 before reset-based replacement can become conditionally eligible. Evidence
@@ -57,12 +58,12 @@ seed-variance, confidence-interval, or error-bar claim.
 
 ## Definition of done
 
-Source completion requires the 190-hour Python and shell boundaries, package
-identity, tests, DEVPLAN decision record, and runbook to be reviewed and
-merged. Operational completion additionally requires a fresh verified transfer
-and the unchanged Sprint 10a Judy audit/probe/full/result sequence.
+Source completion requires one consistent bundle/submit/compute branch,
+the regression test, DEVPLAN decision record, and runbook to be reviewed and
+merged. Operational completion additionally requires a fresh verified Sprint
+10c transfer and the unchanged Sprint 10a Judy audit/probe/full/result sequence.
 
-Sprint 10b cannot approve or implement a replacement. A stem-reset core arm
+Sprint 10c cannot approve or implement a replacement. A stem-reset core arm
 still requires the predeclared diagnostic result and a new explicit owner
 amendment. Any replacement, fresh all-32 campaign, or prospective joint
 64-cell final-evaluation registry remains outside this sprint.

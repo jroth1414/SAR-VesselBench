@@ -6,9 +6,12 @@ access, or verified-final access. It never acquires or controls a V100 lease.
 
 ## Preconditions
 
-- The reviewed `sprint-10b-bes2-budget-amendment` commit is clean, contains
-  Sprint 10a commit `61bc8391a3baa19b053ffa85e201caf36e0f53a4`, and records
+- The reviewed `sprint-10c-bes2-clone-ref-fix` commit is clean, contains
+  Sprint 10b commit `15752bf74079655f0577c497dc1aac0458e7bfa3`, and retains
   the 190 GPU-hour owner approval.
+- The verified Sprint 10b Judy pull remains immutable but is superseded for
+  execution: its bundle exposed Sprint 10b while its compute script requested
+  Sprint 10a. No Slurm job or GPU was requested from that package.
 - Canonical Judy H100_READY.json exists, is mode 0444, and remains unmodified.
 - No final_eval.lock, final data-view/consumption/completion receipt, or
   per-cell final_verified_metrics.json exists under the original Judy runs
@@ -29,7 +32,7 @@ fresh amendment Box folder selected only in the process environment.
 
 ```bash
 python -B -m scripts.handoff build-bes2-amendment \
-  --repo /absolute/reviewed/sprint10b \
+  --repo /absolute/reviewed/sprint10c \
   --h100-ready-json /absolute/verified/H100_READY.json \
   --weights-root /absolute/data/weights \
   --output-dir /absolute/new/amendment-output
@@ -47,7 +50,7 @@ python -B -m scripts.handoff verify-bes2-amendment \
 
 ```bash
 python -B -m scripts.handoff upload-bes2-amendment \
-  --repo /absolute/reviewed/sprint10b \
+  --repo /absolute/reviewed/sprint10c \
   --package-root /absolute/amendment-package \
   --expected-h100-ready-sha256 "$H100_READY_SHA256" \
   --receipt /absolute/outside-repo/bes2-amendment-upload.json
@@ -57,7 +60,7 @@ Generate the standalone hash-pinned puller outside all repository worktrees.
 
 ```bash
 python -B -m scripts.handoff build-bes2-bootstrap \
-  --repo /absolute/reviewed/sprint10b \
+  --repo /absolute/reviewed/sprint10c \
   --package-root /absolute/amendment-package \
   --expected-h100-ready-sha256 "$H100_READY_SHA256" \
   --output /absolute/outside-repo/pull-bes2.sh
@@ -182,14 +185,14 @@ Verify it locally, then upload it to a separate fresh Box folder.
 ```bash
 python -B -m scripts.handoff verify-bes2-results \
   --package-root /absolute/bes2-result-package \
-  --expected-source-git-sha "$SPRINT10B_GIT_SHA"
+  --expected-source-git-sha "$SPRINT10C_GIT_SHA"
 ```
 
 ```bash
 python -B -m scripts.handoff upload-bes2-results \
   --repo /bootstrap/checkout \
   --package-root /absolute/bes2-result-package \
-  --expected-source-git-sha "$SPRINT10B_GIT_SHA" \
+  --expected-source-git-sha "$SPRINT10C_GIT_SHA" \
   --receipt /absolute/outside-repo/bes2-result-upload.json
 ```
 
@@ -198,9 +201,9 @@ downloader; a manual directory copy is not transfer proof.
 
 ```bash
 python -B -m scripts.handoff download-bes2-results \
-  --repo /absolute/reviewed/sprint10b \
+  --repo /absolute/reviewed/sprint10c \
   --package-root /absolute/absent/result-destination \
-  --expected-source-git-sha "$SPRINT10B_GIT_SHA" \
+  --expected-source-git-sha "$SPRINT10C_GIT_SHA" \
   --expected-ready-sha256 "$READY_SHA256" \
   --expected-manifest-sha256 "$MANIFEST_SHA256" \
   --expected-sha256sums-sha256 "$SHA256SUMS_SHA256" \

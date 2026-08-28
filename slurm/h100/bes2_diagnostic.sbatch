@@ -242,7 +242,7 @@ check_sha "$H100_BASE_PYTHON_SHA256" "$H100_BASE_PYTHON"
 
 repo="$scratch/repo"
 payload="$scratch/payload"
-git clone --single-branch --branch sprint-10a-bes2-root-cause "$BES2_BUNDLE" "$repo"
+git clone --single-branch --branch sprint-10c-bes2-clone-ref-fix "$BES2_BUNDLE" "$repo"
 git -C "$repo" checkout --detach "$BES2_EXPECTED_GIT_SHA"
 if [[ "$(git -C "$repo" rev-parse HEAD)" != "$BES2_EXPECTED_GIT_SHA" ||
       -n "$(git -C "$repo" status --porcelain=v1 --untracked-files=all)" ]]; then

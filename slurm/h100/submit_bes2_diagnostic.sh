@@ -59,15 +59,15 @@ fi
 git_sha="$(git -C "$repo" rev-parse HEAD)"
 branch="$(git -C "$repo" branch --show-current)"
 dirty="$(git -C "$repo" status --porcelain=v1 --untracked-files=all)"
-if [[ "$branch" != "sprint-10b-bes2-budget-amendment" ||
+if [[ "$branch" != "sprint-10c-bes2-clone-ref-fix" ||
       ! "$git_sha" =~ ^[0-9a-f]{40}$ || -n "$dirty" ]]; then
-  echo "submit from the clean sprint-10b-bes2-budget-amendment bootstrap checkout" >&2
+  echo "submit from the clean sprint-10c-bes2-clone-ref-fix bootstrap checkout" >&2
   exit 2
 fi
 if ! git -C "$repo" merge-base --is-ancestor \
-  61bc8391a3baa19b053ffa85e201caf36e0f53a4 "$git_sha"
+  15752bf74079655f0577c497dc1aac0458e7bfa3 "$git_sha"
 then
-  echo "BES2 source lacks the reviewed Sprint 10a ancestor" >&2
+  echo "BES2 source lacks the reviewed Sprint 10b ancestor" >&2
   exit 2
 fi
 BES2_EXPECTED_GIT_SHA="$git_sha"

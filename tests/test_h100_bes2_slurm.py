@@ -3,6 +3,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from scripts.handoff.bes2_amendment import BRANCH, REQUIRED_ANCESTOR
+
 
 REPO = Path(__file__).resolve().parents[1]
 SBATCH = REPO / "slurm/h100/bes2_diagnostic.sbatch"
@@ -60,8 +62,8 @@ def test_bes2_submit_is_clean_snapshot_and_fails_closed_on_final_access() -> Non
     source = SUBMIT.read_text(encoding="utf-8")
 
     assert "audit|probe|full" in source
-    assert "sprint-10b-bes2-budget-amendment" in source
-    assert "61bc8391a3baa19b053ffa85e201caf36e0f53a4" in source
+    assert BRANCH in source
+    assert REQUIRED_ANCESTOR in source
     assert "1a82d508fbeb9fdf6868a9637611e9018952fb43" in source
     assert "value > 0 && value <= 190" in source
     assert "verify-bes2-amendment" in source
@@ -87,3 +89,14 @@ def test_bes2_submit_is_clean_snapshot_and_fails_closed_on_final_access() -> Non
     assert 'walltime="12:00:00"' in source
     assert 'walltime="2-18:00:00"' in source
     assert "gpu get" not in source
+
+
+def test_bes2_bundle_branch_matches_submit_and_compute_clone() -> None:
+    submit = SUBMIT.read_text(encoding="utf-8")
+    batch = SBATCH.read_text(encoding="utf-8")
+
+    assert f'if [[ "$branch" != "{BRANCH}" ||' in submit
+    assert (
+        f"git clone --single-branch --branch {BRANCH} "
+        '"$BES2_BUNDLE" "$repo"'
+    ) in batch

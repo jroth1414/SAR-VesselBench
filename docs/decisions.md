@@ -823,3 +823,21 @@ start; all scientific and deferred-reporting controls remain in force.
   reviewed Sprint 10a, then build and publish a fresh content-addressed package
   through a fresh empty Box folder with READY last. The READY-published Sprint
   10a folder remains immutable and cannot be reused for execution.
+
+## BES2 amendment clone-ref correction (operational finding, 2026-08-28)
+
+- **Finding:** after the Sprint 10b package passed Box and Judy bootstrap hash
+  verification, pre-submission review showed that the bundle exposed only
+  `sprint-10b-bes2-budget-amendment`, while `bes2_diagnostic.sbatch` requested
+  `sprint-10a-bes2-root-cause`. The allocation would therefore have failed at
+  scratch clone. No Slurm job or GPU was requested.
+- **Correction:** Sprint 10c binds the amendment builder, clean-checkout submit
+  guard, and compute clone to `sprint-10c-bes2-clone-ref-fix`, requires reviewed
+  Sprint 10b commit `15752bf74079655f0577c497dc1aac0458e7bfa3` as its ancestor,
+  and adds a regression test for branch consistency.
+- **Transfer rule:** preserve the Sprint 10b Box package and Judy pull as
+  immutable failed-preflight evidence. Build, verify, and publish Sprint 10c in
+  a new content-addressed package and fresh empty Box folder before audit.
+- **Scientific scope:** fractions, variants, data view, model loading, training,
+  strict FP32, 190 GPU-hour ceiling, causal rules, replacement authority, TEST,
+  final-evaluation state, and every V100 artifact remain unchanged.
