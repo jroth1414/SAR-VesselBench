@@ -85,13 +85,16 @@ from the canonical Judy site contract and add exactly these diagnostic values:
     BES2_DIAGNOSTIC_ROOT=/new/persistent/diagnostic-namespace
     BES2_ORIGINAL_RUNS_ROOT=/canonical/original/h100-runs
     BES2_JOB_LOG_DIR=/new/persistent/diagnostic-job-logs
-    BES2_FORECAST_GPU_HOURS=103
+    BES2_FORECAST_GPU_HOURS=<fresh-f10-f50-forecast-at-or-below-125>
 
 BES2_ORIGINAL_RUNS_ROOT must equal the existing H100_RUNS_ROOT. The diagnostic
 root, job-log root, scratch root, original runs root, package, bootstrap
 checkout, base/runtime packages, wheelhouse, and venv must satisfy the
 submitter's pairwise isolation checks. Do not create a Judy path that pretends
-to be a V100 filesystem.
+to be a V100 filesystem. Recompute the forecast from accepted TRAIN/DEV timing
+evidence for the f50 five-epoch probe pair plus the full f10 and f50 pairs; do
+not retain the superseded f100 estimate. A value above 125 GPU-hours is a STOP
+for owner approval.
 
 ## Execute the Judy gates and pair
 
@@ -110,7 +113,11 @@ Audit must produce .control/BES2_DIAGNOSTIC_READY.json after:
 - exact package/source/frozen-file checks;
 - one-H100 strict IEEE FP32 parent/child probes;
 - value-sensitive BigEarthNet-S2 load and exact paired initialization audit;
-- deterministic input covariance, activation, and sample-manifest evidence;
+- a numerical-only snapshot of the immutable H100 BigEarthNet-S2 and
+  CNN-random f10/f50 best-DEV results (four final_metrics.json files only;
+  no checkpoint, cohort, TEST, or verified-final reads);
+- deterministic input covariance, exact two-channel stem projection,
+  activation, and sample-manifest evidence;
 - finite batch-16 forward/backward probes for both variants; and
 - the finite forecast at or below 125 GPU-hours.
 
@@ -121,8 +128,8 @@ BES2_SITE_ENV=/absolute/bes2-site.env \
   ./slurm/h100/submit_bes2_diagnostic.sh probe
 ```
 
-Both fresh five-epoch runs use f100, seed 0, and the original 50-epoch schedule
-horizon. BES2_PROBES_COMPLETE.json must bind both finite diagnostic metrics
+Both fresh five-epoch runs use f50, seed 0, and the original 50-epoch schedule
+horizon. BES2_PROBES_COMPLETE.json must bind both finite f50 diagnostic metrics
 before the full stage is submitted.
 
 ```bash
@@ -130,15 +137,20 @@ BES2_SITE_ENV=/absolute/bes2-site.env \
   ./slurm/h100/submit_bes2_diagnostic.sh full
 ```
 
-The full pair starts from scratch, runs concurrently on two H100s, and uses one
-process per GPU with no DDP. A Slurm USR1 signal reaches the controller, which
-waits for every live worker to checkpoint before the outer batch calls the real
-scontrol requeue. Allocation scratch is reconstructed after requeue; persistent
-checkpoints and controller state remain under BES2_DIAGNOSTIC_ROOT.
+The full allocation first starts the fresh f10 pair and then the fresh f50
+pair. Within each fraction, current replay and first-convolution reset run
+concurrently on two H100s with one process per GPU and no DDP. Every run
+records observational gradient and actual-update norms at optimizer steps
+1, 10, 100, and 500 without changing training. A Slurm USR1 signal reaches
+the active controller, which waits for every live worker to checkpoint before
+the outer batch calls the real scontrol requeue. Allocation scratch is
+reconstructed after requeue; persistent checkpoints and controller state
+remain under BES2_DIAGNOSTIC_ROOT.
 
-Successful full completion produces BES2_EXECUTION_COMPLETE.json,
-BES2_ROOT_CAUSE.json, and BES2_ROOT_CAUSE.md. Checkpoints stay in the
-persistent Judy namespace.
+Successful full completion requires all four full metrics and produces
+BES2_EXECUTION_COMPLETE.json, BES2_ROOT_CAUSE.json, and
+BES2_ROOT_CAUSE.md. The f10 and f50 decisions are kept separate and are never
+pooled. Checkpoints stay in the persistent Judy namespace.
 
 ## Build and return narrow evidence
 
@@ -193,9 +205,14 @@ python -B -m scripts.handoff download-bes2-results \
 ## Decision and mandatory stop
 
 The summarize command applies the frozen replay tolerance and recovery
-thresholds. It records precision/recall, exact threshold curves, score
-distributions, trajectories, activations, update drift, and leave-one-DEV-scene
-out sensitivity without significance or seed-variance claims.
+thresholds independently at f10 and f50. It records precision/recall, exact
+threshold curves, frozen-scorer localization-distance distributions, score
+distributions, trajectories, activations, early gradient/update traces,
+initialization-to-best drift, and leave-one-DEV-scene-out sensitivity without
+significance or seed-variance claims. A first-convolution-reset replacement is
+conditionally eligible only if both fraction decisions are determinate,
+stem-dominant, and concordant; disagreement is reported as a blocked
+fraction-dependent mixed mechanism.
 
 No replacement code or campaign may start from this runbook. A stem-dominant
 result still requires an explicit owner amendment before first-convolution
@@ -203,4 +220,6 @@ reset can become a core initialization. Mixed or reset-insufficient results
 require a licensed downloaded native-three-channel optical-RS
 ConvNeXt-V2-Base checkpoint. If no eligible checkpoint is approved,
 replacement is blocked and the original bounded final authorization remains
-the only permissible fallback.
+the only permissible fallback. CNN-random replay and shared layer-decay
+ablation are possible evidence-triggered follow-ups only; neither is
+authorized by this runbook.

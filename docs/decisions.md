@@ -768,3 +768,34 @@ start; all scientific and deferred-reporting controls remain in force.
   split, statistics, labels, evaluation contract, model, optimizer, schedule,
   seed, strict-FP32 setting, batch, checkpoint rule, held-out barrier, or
   32-cell campaign grid.
+
+## Reduced BigEarthNet-S2 diagnostic matrix (human decision, 2026-08-27)
+
+- **Owner approval:** replace the originally planned f100 diagnostic pair with
+  one five-epoch f50 probe pair and fresh full f10 and f50 pairs, all seed 0,
+  TRAIN+fixed-DEV8 only, on Judy H100s. The original 50-epoch schedule horizon
+  remains unchanged.
+- **Analysis unit:** compute replay reproducibility, the frozen random deficit,
+  recovery, and causal classification independently at f10 and f50. Never pool
+  metrics or supports across fractions. First-convolution-reset transfer is
+  conditionally eligible only if both fraction decisions are determinate,
+  concordant, and stem-dominant.
+- **Frozen comparators:** at readiness, snapshot only best-DEV numerical
+  evidence from the canonical immutable H100 BigEarthNet-S2 and CNN-random
+  f10/f50 final_metrics.json files. Do not open their checkpoints,
+  TRAINING_COHORT.json, TEST results, or verified-final material.
+- **Added mechanism evidence:** derive the exact raw-input
+  `K_VH = K0 + K2` / `K_VV = K1 - K2` two-channel stem projection and
+  its scale- and bias-aware normalized-input equivalent, then record
+  cancellation/covariance evidence. Observe gradients and actual
+  parameter updates at optimizer steps 1, 10, 100, and 500 for the stem,
+  stages, detector head, and exact first convolution without changing
+  training.
+- **Follow-up boundary:** a CNN-random replay or shared layer-decay ablation
+  may be proposed only if the f10/f50 evidence requires it and needs a new
+  bounded owner amendment. Neither is part of the current launch. The search
+  for a licensed native-three-channel optical-RS ConvNeXt-V2-Base checkpoint
+  may proceed independently but authorizes no replacement.
+- **Budget and isolation:** recompute the forecast from accepted f10/f50
+  timing evidence; above 125 GPU-hours is a STOP for approval. All prior V100,
+  H100 core, TEST, and verified-final isolation rules remain unchanged.
