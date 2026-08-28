@@ -38,7 +38,7 @@ Development plan for a coding agent (Claude Code or similar). Execute phases in 
   canonical `H100_READY.json`. External
   V100/reference/cutover/isolation controls are deferred to Phase-5
   completion/export/reporting; V100 remains untouched.
-- **Owner amendments, 2026-08-26 and 2026-08-27 — BigEarthNet-S2 diagnosis before final
+- **Owner amendments, 2026-08-26 through 2026-08-28 — BigEarthNet-S2 diagnosis before final
   access.** The unconsumed final-evaluation authorization is paused. Work may
   proceed on `sprint-10a-bes2-root-cause`, branched from `dev`, with
   TRAIN+fixed-DEV8-only Judy H100 diagnostics at seed 0. The 2026-08-27
@@ -49,7 +49,13 @@ Development plan for a coding agent (Claude Code or similar). Execute phases in 
   `stem.0.weight`, which retains the seeded three-channel target
   initialization). The two full fractions are classified independently and
   never pooled; a reset-based replacement is conditionally eligible only when
-  both decisions are stem-dominant and concordant. This is diagnostic-only and
+  both decisions are stem-dominant and concordant. On 2026-08-28 the owner
+  approved a budget-only `sprint-10b-bes2-budget-amendment`, stacked on the
+  reviewed Sprint 10a commit, raising the finite diagnostic ceiling from 125
+  to 190 GPU-hours. That amendment changes no fraction, variant, recipe,
+  evidence, decision rule, data view, or replacement authority and requires a
+  fresh content-addressed transfer; the READY-published Sprint 10a folder stays
+  immutable and is superseded for execution. This remains diagnostic-only and
   may not enter either core cohort. If and only if the predeclared diagnostic
   decision admits an
   owner-approved replacement, a later reviewed sprint must rerun all 32 core
@@ -69,7 +75,7 @@ Development plan for a coding agent (Claude Code or similar). Execute phases in 
 | 3 Detector | `sprint-3-detector` + `sprint-3b` + `sprint-3c-optimizer-fix` | **DONE — detector frozen + tagged `phase-3-done`; P3.6 PASSED** | the optimizer fix and Option-B plan-literal 50-epoch/early-stop budget decision are merged; historical P3.6 dev F1: ViT floor 0.788 < SatDINO 0.835 < SARMAE 0.858; CNN floor 0.677 < BigEarthNet-S2 0.726 < BigEarthNet-S1 0.819 (`runs/p36_summary.json`) | — |
 | 4 FM+floor arms+refs | `sprint-4/5/6` + `sprint-7c-fp32-grid` + `sprint-7d-h100-fp32` + `sprint-7e-judy-venv` + `sprint-7f-eval-contract` | **CORRECTED RELAUNCH PENDING — uniform H100 core restart; corrected V100 references** | the live V100 core campaign continues untouched only as non-reportable diagnostics; R2 preserves its exact weight and is rescored, while R3 requires a corrected-contract rerun | pass every Judy-local H100 launch gate, then rerun the 24 Phase-4 core cells from scratch; corrected R2/R3 evidence remains mandatory before Phase-5 completion/export/reporting |
 | 5 ImageNet arms+grid | `sprint-7-grid` + `sprint-7b-imagenet-arms` + `sprint-7c-fp32-grid` + `sprint-7d-h100-fp32` + `sprint-7e-judy-venv` + `sprint-7f-eval-contract` | **OWNER APPROVED, NOT LAUNCHED — corrected H100 strict-FP32 campaign gated** | strict evaluation-GT and exact schema-2 checkpoint binding are implemented; smoke 542536 passed, while acceptance 542596 completed staging and 406/407 sealed-venv tests before the portable-mode gate, so no `H100_READY.json`, GPU probe, or training exists | package/upload/pull the current runtime-only correction into a fresh namespace, pass fresh smoke plus all Judy-local numerical gates, run all 32 cells, then complete corrected references/cutover/isolation before Phase-5 completion, reverse export, analysis, or reporting |
-| 6a BigEarthNet-S2 diagnosis | `sprint-10a-bes2-root-cause` | **REVIEWED AND MERGED — TRANSFER AND JUDY EXECUTION PENDING** | exact replay/single-tensor-reset loaders; f50 probe plus independent f10/f50 full contracts; immutable four-result H100 DEV comparator receipt; effective two-channel stem and early optimization evidence; path-independent TRAIN/DEV receipts; strict one/two-H100 gates; paired requeue controller; content-addressed amendment and evidence-only return packages; post-merge focused suite 64/64 | build/upload/pull the fresh amendment; run Judy audit, the f50 probe pair, and both full fraction pairs; return and verify the per-fraction causal result before any replacement decision |
+| 6a BigEarthNet-S2 diagnosis | `sprint-10a-bes2-root-cause` + `sprint-10b-bes2-budget-amendment` | **SPRINT 10A MERGED; 190-HOUR BUDGET AMENDMENT IMPLEMENTED — FRESH TRANSFER PENDING** | exact replay/single-tensor-reset loaders; f50 probe plus independent f10/f50 full contracts; immutable four-result H100 DEV comparator receipt; effective two-channel stem and early optimization evidence; path-independent TRAIN/DEV receipts; strict one/two-H100 gates; paired requeue controller; content-addressed amendment and evidence-only return packages; explicit 2026-08-28 owner approval for the 190-hour ceiling | review/merge Sprint 10b, then build/upload/pull its fresh amendment; run Judy audit, the f50 probe pair, and both full fraction pairs; return and verify the per-fraction causal result before any replacement decision |
 | 6 Final eval | `sprint-8-final-eval` | NOT STARTED | once-only tripwire and frozen 50 eval IDs exist; no lockfile has been written | the 50 eval-final raster scenes are not present on this node and must be acquired/extracted before the one allowed evaluation |
 | 7 Analysis | `sprint-9-analysis` | NOT STARTED | — | — |
 | 8 Contingent ref | — | **REMOVED** | former R1 ImageNet-ConvNeXt role is now represented symmetrically by core Arms 4/8 | — |
@@ -303,6 +309,7 @@ Each sprint branch carries a short `SPRINT.md` stating its goal, its acceptance 
 | `sprint-7e-judy-venv` | Phase 5 | Spine | sealed native Judy Python-3.11.13 venv and separate-filesystem runtime contract |
 | `sprint-7f-eval-contract` | Phase 5 | **Foundation** | correct scorer inputs, checkpoint-bound operating points, immutable held-out cohort barrier, and Box control evidence |
 | `sprint-10a-bes2-root-cause` | Phase 5 diagnostic | Spine | TRAIN/DEV-only paired replay versus exact first-convolution reset on Judy; cannot create a core cohort or authorize replacement |
+| `sprint-10b-bes2-budget-amendment` | Phase 5 diagnostic | Spine | budget-only 190-hour authorization, fail-closed guards, and fresh transfer identity; inherits Sprint 10a without changing its method |
 | `sprint-8-final-eval` | Phase 6 | **Foundation** | touches the once-only verified-scene eval |
 | `sprint-9-analysis` | Phase 7 | Leaf | ViT-vs-CNN figures/slices; read the output, trust the code |
 
@@ -620,9 +627,12 @@ TRAIN/DEV point estimation only, with no significance, variance, confidence
 interval, or error-bar claim.
 
 **Budget and outputs.** Forecast GPU-hours must be finite, positive, and no more
-than the owner-approved 125 hours; a forecast above 125 is a STOP for approval,
-and the ordinary mandatory STOP remains near 250 hours. The persistent Judy
-namespace holds large checkpoints. The narrow return package contains only
+than the owner-approved 190 hours. Accepted f10/f50 timing evidence gives a
+178.14041621361113 GPU-hour training subtotal; audit, staging, and requeue
+allowance set the conservative site forecast and ceiling to 190. A forecast
+above 190 is a STOP for new approval, and the ordinary mandatory STOP remains
+near 250 hours. The persistent Judy namespace holds large checkpoints.
+The narrow return package contains only
 validated diagnostic JSON, the Markdown report, and necessary logs, publishes
 READY.json last, and explicitly excludes checkpoints, TEST/final/cohort
 artifacts, credentials, tokens, URLs, and Box runtime settings.
