@@ -361,6 +361,26 @@ def _diagnostic_dataset(
     return module
 
 
+def _readiness_strict_fp32(
+    strict_runtime: Mapping[str, object],
+    h100_acceptance: Mapping[str, object],
+) -> dict[str, object]:
+    """Extract the canonical backend state from the richer launch contract."""
+
+    launch = strict_runtime.get("strict_fp32")
+    backend = launch.get("strict_fp32") if isinstance(launch, Mapping) else None
+    accepted = h100_acceptance.get("strict_fp32")
+    if (
+        not isinstance(backend, Mapping)
+        or not isinstance(accepted, Mapping)
+        or dict(backend) != dict(accepted)
+    ):
+        raise BES2ContractError(
+            "diagnostic launch and accepted H100 strict-FP32 states differ"
+        )
+    return dict(backend)
+
+
 def _value_sensitive_post_stem(
     *,
     current_model,
@@ -467,6 +487,7 @@ def _audit(args: argparse.Namespace) -> int:
     gpu = strict_runtime.get("gpu")
     if not isinstance(gpu, Mapping) or "H100" not in str(gpu.get("name")):
         raise BES2ContractError("diagnostic audit requires one NVIDIA H100")
+    readiness_strict_fp32 = _readiness_strict_fp32(strict_runtime, h100)
 
     detector_path = repo / "configs/detector.yaml"
     detector = _load_yaml(detector_path, "frozen detector config")
@@ -660,7 +681,7 @@ def _audit(args: argparse.Namespace) -> int:
         },
         "diagnostic_root": str(root),
         "h100_acceptance": h100,
-        "strict_fp32": strict_runtime["strict_fp32"],
+        "strict_fp32": readiness_strict_fp32,
         "data_view": {
             "contract": TRAINING_VIEW_CONTRACT,
             "receipt_sha256": sha256_file(args.data_view_receipt),

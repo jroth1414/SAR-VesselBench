@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from src.analysis.bes2_contract import (
+    BES2ContractError,
     FROZEN_COMPARATOR_EXPERIMENTS,
     H100_CAMPAIGN_GIT_SHA,
     OPTIMIZATION_TRACE_STEPS,
@@ -22,6 +23,7 @@ from src.analysis.bes2_root_cause import (
     READY_FILENAME,
     _audit,
     _diagnostic_recipe,
+    _readiness_strict_fp32,
     _scope_identity,
     main,
     validate_readiness,
@@ -36,8 +38,49 @@ STRICT_FP32 = {
 }
 
 
+def test_readiness_flattens_and_cross_checks_launch_backend_state():
+    launch = {
+        "strict_fp32": STRICT_FP32,
+        "autocast": {"global": False, "cuda": False, "cpu": False},
+        "process": {
+            "WORLD_SIZE": "unset",
+            "SLURM_NTASKS": "1",
+            "effective_world_size": 1,
+        },
+    }
+    observed = _readiness_strict_fp32(
+        {"strict_fp32": launch},
+        {"strict_fp32": STRICT_FP32},
+    )
+
+    assert observed == STRICT_FP32
+    assert observed is not launch["strict_fp32"]
+
+
+@pytest.mark.parametrize(
+    "runtime,accepted",
+    [
+        ({"strict_fp32": STRICT_FP32}, STRICT_FP32),
+        (
+            {"strict_fp32": {"strict_fp32": STRICT_FP32}},
+            {
+                **STRICT_FP32,
+                "cuda_matmul_fp32_precision": "tf32",
+            },
+        ),
+    ],
+)
+def test_readiness_rejects_unstructured_or_mismatched_backend_state(
+    runtime, accepted
+):
+    with pytest.raises(BES2ContractError, match="strict-FP32 states differ"):
+        _readiness_strict_fp32(runtime, {"strict_fp32": accepted})
+
+
 def test_audit_uses_original_h100_results_as_numerical_comparators_only():
     source = inspect.getsource(_audit)
+    assert '"strict_fp32": readiness_strict_fp32' in source
+    assert 'strict_runtime["strict_fp32"]' not in source
     assert "load_completion_marker" not in source
     assert "validate_training_cohort" not in source
     assert "original_checkpoint" not in source

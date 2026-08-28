@@ -59,15 +59,15 @@ fi
 git_sha="$(git -C "$repo" rev-parse HEAD)"
 branch="$(git -C "$repo" branch --show-current)"
 dirty="$(git -C "$repo" status --porcelain=v1 --untracked-files=all)"
-if [[ "$branch" != "sprint-10c-bes2-clone-ref-fix" ||
+if [[ "$branch" != "sprint-10d-bes2-readiness-shape-fix" ||
       ! "$git_sha" =~ ^[0-9a-f]{40}$ || -n "$dirty" ]]; then
-  echo "submit from the clean sprint-10c-bes2-clone-ref-fix bootstrap checkout" >&2
+  echo "submit from the clean sprint-10d-bes2-readiness-shape-fix bootstrap checkout" >&2
   exit 2
 fi
 if ! git -C "$repo" merge-base --is-ancestor \
-  15752bf74079655f0577c497dc1aac0458e7bfa3 "$git_sha"
+  eafb9c882fdbf491fbc6aad8c5f1c621fa5c5620 "$git_sha"
 then
-  echo "BES2 source lacks the reviewed Sprint 10b ancestor" >&2
+  echo "BES2 source lacks the reviewed Sprint 10c ancestor" >&2
   exit 2
 fi
 BES2_EXPECTED_GIT_SHA="$git_sha"
