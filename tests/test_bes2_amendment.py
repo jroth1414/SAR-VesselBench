@@ -205,6 +205,8 @@ def test_bes2_amendment_is_deterministic_closed_bootstrapped_and_ready_last(
         "probe": 2,
         "full": 4,
     }
+    assert manifest["contract"]["maximum_approved_gpu_hours"] == 190.0
+    assert manifest["source"]["required_ancestor"] == amendment.REQUIRED_ANCESTOR
     assert manifest["checkpoint"]["relative_path"] == amendment.S2_CHECKPOINT_RELATIVE
     physical = set(_tree(first))
     assert physical == {

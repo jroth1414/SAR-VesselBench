@@ -59,15 +59,15 @@ fi
 git_sha="$(git -C "$repo" rev-parse HEAD)"
 branch="$(git -C "$repo" branch --show-current)"
 dirty="$(git -C "$repo" status --porcelain=v1 --untracked-files=all)"
-if [[ "$branch" != "sprint-10a-bes2-root-cause" ||
+if [[ "$branch" != "sprint-10b-bes2-budget-amendment" ||
       ! "$git_sha" =~ ^[0-9a-f]{40}$ || -n "$dirty" ]]; then
-  echo "submit from the clean sprint-10a-bes2-root-cause bootstrap checkout" >&2
+  echo "submit from the clean sprint-10b-bes2-budget-amendment bootstrap checkout" >&2
   exit 2
 fi
 if ! git -C "$repo" merge-base --is-ancestor \
-  322dea060a37ec793f1df3d49a7513dfd90b324f "$git_sha"
+  61bc8391a3baa19b053ffa85e201caf36e0f53a4 "$git_sha"
 then
-  echo "BES2 source lacks the approved dev ancestor" >&2
+  echo "BES2 source lacks the reviewed Sprint 10a ancestor" >&2
   exit 2
 fi
 BES2_EXPECTED_GIT_SHA="$git_sha"
@@ -91,9 +91,9 @@ for name in "${hash_names[@]}"; do
 done
 if [[ ! "$BES2_FORECAST_GPU_HOURS" =~ ^[0-9]+([.][0-9]+)?$ ]] ||
    ! awk -v value="$BES2_FORECAST_GPU_HOURS" \
-     'BEGIN { exit !(value > 0 && value <= 125) }'
+     'BEGIN { exit !(value > 0 && value <= 190) }'
 then
-  echo "BES2 forecast must be positive and no more than approved 125 GPU-hours" >&2
+  echo "BES2 forecast must be positive and no more than approved 190 GPU-hours" >&2
   exit 2
 fi
 

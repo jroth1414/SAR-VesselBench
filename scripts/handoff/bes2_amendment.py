@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Callable
 
+from src.analysis.bes2_contract import MAX_APPROVED_GPU_HOURS
+
 from .package import (
     PackageError,
     _canonical_json,
@@ -35,8 +37,8 @@ from .package import (
 from .runtime_amendment import _verify_git_bundle_round_trip
 
 FORMAT_VERSION = 2
-BRANCH = "sprint-10a-bes2-root-cause"
-REQUIRED_ANCESTOR = "322dea060a37ec793f1df3d49a7513dfd90b324f"
+BRANCH = "sprint-10b-bes2-budget-amendment"
+REQUIRED_ANCESTOR = "61bc8391a3baa19b053ffa85e201caf36e0f53a4"
 BUNDLE_PATH = "code/xview3-bes2-diagnostic.bundle"
 CONTROL_PATH = "controls/BES2_AMENDMENT.json"
 S2_CHECKPOINT_RELATIVE = "bigearthnet_s2/model.safetensors"
@@ -122,6 +124,7 @@ def _contract(maximum_physical_file_bytes: int) -> dict[str, object]:
         "fraction_analysis": "per-fraction-no-pooling",
         "diagnostic_run_count": {"probe": 2, "full": 4},
         "variants": ["current_replay", "first_conv_reset"],
+        "maximum_approved_gpu_hours": MAX_APPROVED_GPU_HOURS,
         "maximum_physical_file_bytes": maximum_physical_file_bytes,
     }
 

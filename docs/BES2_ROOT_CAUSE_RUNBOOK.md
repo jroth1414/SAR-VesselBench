@@ -6,8 +6,9 @@ access, or verified-final access. It never acquires or controls a V100 lease.
 
 ## Preconditions
 
-- The reviewed sprint-10a-bes2-root-cause commit is clean and contains the
-  approved dev ancestor.
+- The reviewed `sprint-10b-bes2-budget-amendment` commit is clean, contains
+  Sprint 10a commit `61bc8391a3baa19b053ffa85e201caf36e0f53a4`, and records
+  the 190 GPU-hour owner approval.
 - Canonical Judy H100_READY.json exists, is mode 0444, and remains unmodified.
 - No final_eval.lock, final data-view/consumption/completion receipt, or
   per-cell final_verified_metrics.json exists under the original Judy runs
@@ -28,7 +29,7 @@ fresh amendment Box folder selected only in the process environment.
 
 ```bash
 python -B -m scripts.handoff build-bes2-amendment \
-  --repo /absolute/reviewed/sprint10a \
+  --repo /absolute/reviewed/sprint10b \
   --h100-ready-json /absolute/verified/H100_READY.json \
   --weights-root /absolute/data/weights \
   --output-dir /absolute/new/amendment-output
@@ -46,7 +47,7 @@ python -B -m scripts.handoff verify-bes2-amendment \
 
 ```bash
 python -B -m scripts.handoff upload-bes2-amendment \
-  --repo /absolute/reviewed/sprint10a \
+  --repo /absolute/reviewed/sprint10b \
   --package-root /absolute/amendment-package \
   --expected-h100-ready-sha256 "$H100_READY_SHA256" \
   --receipt /absolute/outside-repo/bes2-amendment-upload.json
@@ -56,7 +57,7 @@ Generate the standalone hash-pinned puller outside all repository worktrees.
 
 ```bash
 python -B -m scripts.handoff build-bes2-bootstrap \
-  --repo /absolute/reviewed/sprint10a \
+  --repo /absolute/reviewed/sprint10b \
   --package-root /absolute/amendment-package \
   --expected-h100-ready-sha256 "$H100_READY_SHA256" \
   --output /absolute/outside-repo/pull-bes2.sh
@@ -85,7 +86,7 @@ from the canonical Judy site contract and add exactly these diagnostic values:
     BES2_DIAGNOSTIC_ROOT=/new/persistent/diagnostic-namespace
     BES2_ORIGINAL_RUNS_ROOT=/canonical/original/h100-runs
     BES2_JOB_LOG_DIR=/new/persistent/diagnostic-job-logs
-    BES2_FORECAST_GPU_HOURS=<fresh-f10-f50-forecast-at-or-below-125>
+    BES2_FORECAST_GPU_HOURS=190
 
 BES2_ORIGINAL_RUNS_ROOT must equal the existing H100_RUNS_ROOT. The diagnostic
 root, job-log root, scratch root, original runs root, package, bootstrap
@@ -93,8 +94,12 @@ checkout, base/runtime packages, wheelhouse, and venv must satisfy the
 submitter's pairwise isolation checks. Do not create a Judy path that pretends
 to be a V100 filesystem. Recompute the forecast from accepted TRAIN/DEV timing
 evidence for the f50 five-epoch probe pair plus the full f10 and f50 pairs; do
-not retain the superseded f100 estimate. A value above 125 GPU-hours is a STOP
-for owner approval.
+not retain the superseded f100 estimate. The conservative calculation is
+`2 * 16.323118231944445 + 2 * 66.13371806805556 +`
+`2 * (5 / 50) * 66.13371806805556 = 178.14041621361113` training
+GPU-hours; audit, staging, and requeue allowance raises the site forecast to
+190. A value above 190 GPU-hours is a STOP for new owner approval, and the
+mandatory STOP remains near 250 hours.
 
 ## Execute the Judy gates and pair
 
@@ -119,7 +124,7 @@ Audit must produce .control/BES2_DIAGNOSTIC_READY.json after:
 - deterministic input covariance, exact two-channel stem projection,
   activation, and sample-manifest evidence;
 - finite batch-16 forward/backward probes for both variants; and
-- the finite forecast at or below 125 GPU-hours.
+- the finite forecast at or below 190 GPU-hours.
 
 A failed audit is a STOP. Do not relax a guard or continue to training.
 
@@ -177,14 +182,14 @@ Verify it locally, then upload it to a separate fresh Box folder.
 ```bash
 python -B -m scripts.handoff verify-bes2-results \
   --package-root /absolute/bes2-result-package \
-  --expected-source-git-sha "$SPRINT10A_GIT_SHA"
+  --expected-source-git-sha "$SPRINT10B_GIT_SHA"
 ```
 
 ```bash
 python -B -m scripts.handoff upload-bes2-results \
   --repo /bootstrap/checkout \
   --package-root /absolute/bes2-result-package \
-  --expected-source-git-sha "$SPRINT10A_GIT_SHA" \
+  --expected-source-git-sha "$SPRINT10B_GIT_SHA" \
   --receipt /absolute/outside-repo/bes2-result-upload.json
 ```
 
@@ -193,9 +198,9 @@ downloader; a manual directory copy is not transfer proof.
 
 ```bash
 python -B -m scripts.handoff download-bes2-results \
-  --repo /absolute/reviewed/sprint10a \
+  --repo /absolute/reviewed/sprint10b \
   --package-root /absolute/absent/result-destination \
-  --expected-source-git-sha "$SPRINT10A_GIT_SHA" \
+  --expected-source-git-sha "$SPRINT10B_GIT_SHA" \
   --expected-ready-sha256 "$READY_SHA256" \
   --expected-manifest-sha256 "$MANIFEST_SHA256" \
   --expected-sha256sums-sha256 "$SHA256SUMS_SHA256" \
