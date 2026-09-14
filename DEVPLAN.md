@@ -16,6 +16,75 @@ Development plan for a coding agent (Claude Code or similar). Execute phases in 
 >
 > **Update discipline.** Update the status ledger and add a `phase-N-done` git tag at every sprint merge. The `sprint-2b-eval-hardening` merge must be tagged `phase-2-done`; later phase merges follow the same pattern. If the ledger looks stale, rebuild it with the *state-detection runbook* below — **the repo is ground truth; this table is a cache.**
 
+### Owner amendment — 2026-09-14, Arm-6 production fallback
+
+The owner explicitly approves BigEarthNet-S2 post-stem transfer with a seeded
+three-channel first convolution, followed by a fresh 32-cell Judy H100 cohort.
+This amendment supersedes the historical 10→3 repeat/rescale prescription for
+Arm 6 only wherever it appears below or in AGENTS.md. Arm 7's existing 2→3
+helper remains untouched; its compliance issue remains unresolved. No S1
+checkpoint experiment or new S1-specific test is authorized. Existing offline
+architecture/key-manifest guards remain mandatory and unchanged.
+
+Verified diagnostic source: `4b14689dae104697d0bc408139429ad372cbb0de`;
+result identity: `dd1bb97ac86b088c11e61c6f6c08fd2843eab6eebad48ae30cfbbb8b7af9b87d`.
+The source-matched `verify-bes2-results` verifier passed on 2026-09-14 before
+this evidence was used. Decision: determinate,
+`stem-conversion-explains-most-deficit`. DEV F1 current/reset is
+0.7991967871/0.8371174729 at f10 and 0.8408408408/0.8882521490 at f50.
+Frozen random f10/f50 comparators are 0.7992047714/0.8664047151; frozen S1
+comparators are 0.8762088975/0.8998073218. Diagnostic consumption was
+154.436129 GPU-hours, with TRAIN+fixed-DEV8 only. Diagnostic checkpoints never
+become replacement checkpoints.
+
+The production target is the ordinary caller-seeded three-channel timm
+ConvNeXt-V2-Base. Retain exactly `backbone.model.stem.0.weight` (module-local
+`stem.0.weight`) byte-for-byte while loading the official pinned S2 stem bias,
+stem normalization, and every compatible post-first-convolution tensor.
+Require one-to-one complete mapping, exactly that one missing target, no
+unexpected tensors, value-sensitive post-stem transfer, and the unchanged
+RNG stream for the detector head. This adopts timm's documented unsupported
+input-convolution fallback semantics; it does not claim timm automatically
+selects that fallback for a 10→3 request. No band conversion is authorized.
+Production and the historical diagnostic reset must share one auditable
+transfer implementation; historical replay must retain its original meaning.
+
+Sprint `sprint-10i-bes2-production-fallback` starts from local integration
+`dev` at `d409a4a`; Sprint 10e–10h evidence exists on separate branches and
+is not silently merged. Its narrow first review covers the loader, shared
+reset semantics, focused tests, and acceptance evidence. Later reviewed
+runtime/cohort work must use a fresh schema-2 code/control-only amendment,
+verified manifest/SHA-256 controls, READY publication last, the accepted sealed
+Judy venv and canonical TRAIN/DEV view, and new smoke/readiness/run namespaces.
+Box/Judy steps are user-mediated, one pasteable Bash block and output at a time.
+No direct integration commits, frozen-guard changes, or frozen-artifact edits
+are authorized.
+
+Restart all eight existing arms at f10/f25/f50/f100, seed 0: exactly 32 cells,
+from initialization, in one empty independent H100 namespace. Preserve the
+original `1a82d508fbeb9fdf6868a9637611e9018952fb43` cohort, its hashes, failed
+beS1 f50→f100 TEST monotonicity status (0.0300 > 0.02), and existing TEST
+results. Neither original H100 nor V100 markers can satisfy replacement cells.
+Keep the shared 50-epoch/early-stopping recipe, layer decay 0.65, data order,
+losses, augmentation, optimizer, scheduler, architecture/adapter geometry,
+micro-batch 16, accumulation 1, effective batch 16, one process/GPU without
+DDP, and Lightning `32-true` with CUDA-matmul and cuDNN TF32 disabled.
+
+Freeze a separate immutable `TRAINING_COHORT.json` only after all 32 schema-2
+checkpoint-bound markers validate. Only then open replacement TEST inputs and
+run the unchanged bounded TEST stage and predeclared sanity/monotonicity gates.
+Any failed gate is a STOP. Do not consume final data. Prepare the two-cohort,
+64-namespaced-cell final orchestration only; execution requires a new explicit
+owner authorization binding both frozen cohort hashes and exactly those 64
+cells. The old all-32 final authorization remains paused. Evidence of prior
+final consumption is an immediate STOP. External reference/control barriers
+remain mandatory before Phase-5 completion/export/reporting.
+
+**Current status:** implementation/review pending; no replacement runtime
+package, Judy job, readiness, cohort, TEST result, or final access is claimed.
+The older ledger's prelaunch/diagnostic status is historical and is superseded
+by the verified diagnostic and owner-supplied original-cohort evidence above.
+
 ### Branch model (as actually built — this overrides the "main" phrasing elsewhere)
 - The integration / default branch is **`dev`** (GitHub `HEAD → dev`), **not `main`**; `main` currently lags `dev`. Everywhere this plan or AGENTS.md says "land on `main`" / "no direct commits to `main`," read **`dev`**: open each sprint branch off `dev` and PR back into `dev`.
 - The owner-approved `sprint-10d-bes2-readiness-shape-fix` source correction
@@ -328,6 +397,7 @@ Each sprint branch carries a short `SPRINT.md` stating its goal, its acceptance 
 | `sprint-10b-bes2-budget-amendment` | Phase 5 diagnostic | Spine | budget-only 190-hour authorization, fail-closed guards, and fresh transfer identity; inherits Sprint 10a without changing its method |
 | `sprint-10c-bes2-clone-ref-fix` | Phase 5 diagnostic | Spine | pre-submission correction binding amendment, submit, and compute clone to one branch; no scientific or runtime-recipe change |
 | `sprint-10d-bes2-readiness-shape-fix` | Phase 5 diagnostic | Spine | post-audit correction making the generated strict-FP32 readiness shape satisfy its existing validator and tracking both launch scripts executable; no scientific or training change |
+| `sprint-10i-bes2-production-fallback` | Phase 5 replacement | Spine | owner-approved exact S2 single-weight fallback and shared diagnostic reset; separate reviewed runtime/cohort work follows |
 | `sprint-8-final-eval` | Phase 6 | **Foundation** | touches the once-only verified-scene eval |
 | `sprint-9-analysis` | Phase 7 | Leaf | ViT-vs-CNN figures/slices; read the output, trust the code |
 
