@@ -17,25 +17,23 @@ Checkpoint facts (verified at download, revisions in data/weights/*/SOURCE.note)
   ``sar_alignment_ffn.*`` branches; we keep the sar_encoder ENCODER only.
 - BigEarthNet ``model.safetensors``: timm ConvNeXt-V2-B under a
   ``model.vision_encoder.`` prefix with a 19-class head (dropped). Stems are
-  2-band (S1: VV,VH) / 10-band (S2), adapted to the fixed 3-channel input by
-  Repeat-with-rescaling.
+  2-band (S1: VV,VH) / 10-band (S2). Arm 6 transfers the S2 post-stem
+  tensors with a seeded three-channel first-convolution weight (owner amendment
+  2026-09-14). Arm 7 retains its historical helper; its compliance issue is open.
 - ImageNet ViT ``timm/vit_base_patch16_224.augreg_in1k`` and ImageNet CNN
   ``timm/convnextv2_base.fcmae_ft_in1k``: canonical timm safetensors; only
   the classification heads are dropped. The former is supervised AugReg;
   the latter is FCMAE followed by supervised ImageNet-1K fine-tuning.
 
-Channel adaptation note (flagged for review, runs/decisions.md): timm's
-``adapt_input_conv`` implements Repeat-with-rescaling only FROM 3-channel
-sources; the BigEarthNet stems need 2->3 and 10->3, so
-``repeat_with_rescaling`` below generalizes the identical tile-and-rescale
-math (cyclic tile to the target count, scale by src/dst to preserve
-activation magnitude). No other patch-embed/stem surgery anywhere
-(ground rule 12).
+Arm-6 fallback semantics are shared with the diagnostic reset in
+``bes2_transfer``. The existing ``repeat_with_rescaling`` helper and Arm-7
+loading path remain unchanged; no S2 production tensor uses that helper.
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Final, Iterable, Mapping
@@ -297,7 +295,36 @@ def build_init(
             weights_only=False,
         )["model"]
         _load_mapped(backbone.model, ckpt, map_sarmae_keys(ckpt.keys()), name=name)
-    elif name in ("bigearthnet_s1", "bigearthnet_s2"):
+    elif name == "bigearthnet_s2":
+        from src.models.bes2_transfer import (
+            SOURCE_CHECKPOINT_SHA256,
+            STEM_KEY,
+            STEM_POLICY,
+            load_post_stem,
+            source_state,
+        )
+
+        _, state = source_state(weights_root)
+        stem_hash, loaded_keys = load_post_stem(
+            backbone.model, state, map_bigearthnet_keys(state)
+        )
+        backbone.initialization_provenance = {
+            "description": (
+                "BigEarthNet-S2 post-stem transfer with a seeded "
+                "three-channel first convolution"
+            ),
+            "source_checkpoint": "bigearthnet_s2/model.safetensors",
+            "source_checkpoint_sha256": SOURCE_CHECKPOINT_SHA256,
+            "stem_policy": STEM_POLICY,
+            "retained_seeded_target_keys": [f"backbone.model.{STEM_KEY}"],
+            "seeded_target_stem_sha256": stem_hash,
+            "loaded_target_keys": loaded_keys,
+        }
+        print(
+            "[bigearthnet_s2] "
+            + json.dumps(backbone.initialization_provenance, sort_keys=True)
+        )
+    elif name == "bigearthnet_s1":
         from safetensors.torch import load_file
 
         state = load_file(weights_dir / "model.safetensors")

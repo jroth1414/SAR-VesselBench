@@ -1,7 +1,7 @@
 """Diagnostic-only BigEarthNet-S2 initialization variants.
 
-The core arm registry and production loader remain unchanged.  The replay
-variant calls that loader directly.  The reset variant recreates the same
+The eight-arm registry is unchanged. Replay restores the historical converted
+weight after the current production load. The reset variant recreates the same
 seeded three-channel target and transfers every downloaded backbone tensor
 except ``stem.0.weight``, matching timm's unsupported input-convolution
 fallback.  Both paths leave the RNG at the same post-backbone state, so the
@@ -10,7 +10,6 @@ detector head and all later stochastic streams remain byte-identical.
 
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 from typing import Final, Mapping
 
@@ -22,83 +21,21 @@ from src.models.init_loaders import (
     repeat_with_rescaling,
 )
 
-DIAGNOSTIC_VARIANTS: Final = ("current_replay", "first_conv_reset")
-STEM_KEY: Final = "stem.0.weight"
-SOURCE_STEM_KEY: Final = "model.vision_encoder.stem.0.weight"
-SOURCE_CHECKPOINT_SHA256: Final = (
-    "b09d0e41cc683878243a9128a6f4724d6a71d562318beeae716f0dce9cbbf454"
+from src.models.bes2_transfer import (
+    BES2TransferError as BES2DiagnosticError,
+    SOURCE_CHECKPOINT_SHA256,
+    SOURCE_STEM_KEY,
+    STEM_KEY,
+    load_post_stem,
+    sha256_file,
+    source_state as _source_state,
+    state_identity,
+    state_tensor_hashes,
+    tensor_sha256,
 )
 
 
-class BES2DiagnosticError(RuntimeError):
-    """A diagnostic initialization violated its exact single-variable contract."""
-
-
-def sha256_file(path: str | Path) -> str:
-    digest = hashlib.sha256()
-    with Path(path).open("rb") as handle:
-        for block in iter(lambda: handle.read(8 * 1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
-
-
-def tensor_sha256(tensor: torch.Tensor) -> str:
-    """Hash tensor metadata and exact contiguous CPU bytes."""
-
-    value = tensor.detach().cpu().contiguous()
-    digest = hashlib.sha256()
-    digest.update(str(value.dtype).encode("ascii"))
-    digest.update(b"\0")
-    digest.update(",".join(map(str, value.shape)).encode("ascii"))
-    digest.update(b"\0")
-    digest.update(value.view(torch.uint8).numpy().tobytes())
-    return digest.hexdigest()
-
-
-def state_tensor_hashes(module: torch.nn.Module) -> dict[str, str]:
-    return {
-        name: tensor_sha256(value)
-        for name, value in sorted(module.state_dict().items())
-    }
-
-
-def state_identity(tensor_hashes: Mapping[str, str]) -> str:
-    digest = hashlib.sha256()
-    for name, value in sorted(tensor_hashes.items()):
-        digest.update(name.encode("utf-8"))
-        digest.update(b"\0")
-        digest.update(value.encode("ascii"))
-        digest.update(b"\n")
-    return digest.hexdigest()
-
-
-def _source_state(
-    weights_root: str | Path,
-) -> tuple[Path, dict[str, torch.Tensor]]:
-    from safetensors.torch import load_file
-
-    checkpoint = Path(weights_root) / "bigearthnet_s2" / "model.safetensors"
-    if checkpoint.is_symlink() or not checkpoint.is_file():
-        raise BES2DiagnosticError(
-            f"BigEarthNet-S2 checkpoint must be a regular non-symlink file: {checkpoint}"
-        )
-    observed = sha256_file(checkpoint)
-    if observed != SOURCE_CHECKPOINT_SHA256:
-        raise BES2DiagnosticError(
-            "BigEarthNet-S2 checkpoint SHA-256 mismatch: "
-            f"expected {SOURCE_CHECKPOINT_SHA256}, got {observed}"
-        )
-    state = dict(load_file(checkpoint, device="cpu"))
-    if SOURCE_STEM_KEY not in state:
-        raise BES2DiagnosticError(
-            f"BigEarthNet-S2 checkpoint lacks {SOURCE_STEM_KEY}"
-        )
-    stem = state[SOURCE_STEM_KEY]
-    if tuple(stem.shape) != (128, 10, 4, 4):
-        raise BES2DiagnosticError(
-            f"unexpected BigEarthNet-S2 source stem shape: {tuple(stem.shape)}"
-        )
-    return checkpoint, state
+DIAGNOSTIC_VARIANTS: Final = ("current_replay", "first_conv_reset")
 
 
 def _load_reset_target(
@@ -124,49 +61,10 @@ def _load_reset_target(
                 "the production S2 target"
             )
 
-        target_state = backbone.model.state_dict()
-        mapping = map_bigearthnet_keys(source_state.keys())
-        mapped_targets = list(mapping.values())
-        if len(mapped_targets) != len(set(mapped_targets)):
-            raise BES2DiagnosticError("BigEarthNet-S2 key mapping is not one-to-one")
-        missing_before_reset = sorted(set(target_state) - set(mapped_targets))
-        unexpected = sorted(set(mapped_targets) - set(target_state))
-        if missing_before_reset or unexpected:
-            raise BES2DiagnosticError(
-                "downloaded S2 mapping no longer covers the target exactly: "
-                f"missing={missing_before_reset}, unexpected={unexpected}"
-            )
-
-        fresh_stem_hash = tensor_sha256(target_state[STEM_KEY])
-        retained: dict[str, torch.Tensor] = {}
-        for source_key, target_key in mapping.items():
-            if target_key == STEM_KEY:
-                continue
-            source_tensor = source_state[source_key]
-            target_tensor = target_state[target_key]
-            if (
-                source_tensor.shape != target_tensor.shape
-                or source_tensor.dtype != target_tensor.dtype
-            ):
-                raise BES2DiagnosticError(
-                    f"downloaded tensor {source_key} cannot load as {target_key}: "
-                    f"{tuple(source_tensor.shape)}/{source_tensor.dtype} != "
-                    f"{tuple(target_tensor.shape)}/{target_tensor.dtype}"
-                )
-            retained[target_key] = source_tensor
-
-        result = backbone.model.load_state_dict(retained, strict=False)
-        missing = sorted(result.missing_keys)
-        if missing != [STEM_KEY] or result.unexpected_keys:
-            raise BES2DiagnosticError(
-                "reset transfer must omit exactly stem.0.weight: "
-                f"missing={missing}, unexpected={sorted(result.unexpected_keys)}"
-            )
-        if tensor_sha256(backbone.model.state_dict()[STEM_KEY]) != fresh_stem_hash:
-            raise BES2DiagnosticError(
-                "reset stem changed while loading post-stem S2 tensors"
-            )
-        return backbone, fresh_stem_hash, sorted(retained)
+        fresh_stem_hash, loaded_keys = load_post_stem(
+            backbone.model, source_state, map_bigearthnet_keys(source_state)
+        )
+        return backbone, fresh_stem_hash, loaded_keys
     finally:
         # Production replay and reset must initialize the shared head from the
         # identical RNG state even if a diagnostic assertion fails.
@@ -198,11 +96,10 @@ def build_bes2_diagnostic_backbone(
     source_stem = source_state[SOURCE_STEM_KEY]
     production_state = production.model.state_dict()
     expected_current = repeat_with_rescaling(source_stem, 3)
-    if not torch.equal(production_state[STEM_KEY].cpu(), expected_current.cpu()):
-        raise BES2DiagnosticError(
-            "production BigEarthNet-S2 stem is not the exact current "
-            "repeat-with-rescaling conversion"
-        )
+    # Preserve the historical replay after Arm 6 adopts the approved fallback.
+    # Only the diagnostic replay restores the superseded converted weight.
+    with torch.no_grad():
+        production_state[STEM_KEY].copy_(expected_current)
 
     production_hashes = state_tensor_hashes(production.model)
     fresh_stem_hash: str | None = None
