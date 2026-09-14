@@ -32,8 +32,8 @@ The source-matched `verify-bes2-results` verifier passed on 2026-09-14 before
 this evidence was used. Decision: determinate,
 `stem-conversion-explains-most-deficit`. DEV F1 current/reset is
 0.7991967871/0.8371174729 at f10 and 0.8408408408/0.8882521490 at f50.
-Frozen random f10/f50 comparators are 0.7992047714/0.8664047151; frozen S1
-comparators are 0.8762088975/0.8998073218. Diagnostic consumption was
+Frozen random f10/f50 comparators are 0.7992047714/0.8664047151; owner-supplied S1
+comparators (not independently verified by the S1-excluding package) are 0.8762088975/0.8998073218. Diagnostic consumption was
 154.436129 GPU-hours, with TRAIN+fixed-DEV8 only. Diagnostic checkpoints never
 become replacement checkpoints.
 
@@ -80,19 +80,21 @@ cells. The old all-32 final authorization remains paused. Evidence of prior
 final consumption is an immediate STOP. External reference/control barriers
 remain mandatory before Phase-5 completion/export/reporting.
 
-**Current status:** implementation/review pending; no replacement runtime
+**Current status:** loader implemented; CPU suite 528 passed/8 skipped, official
+S2-only CPU transfer check passed. Owner review/merge pending (see
+`docs/BES2_PRODUCTION_FALLBACK_REVIEW.md`); no replacement runtime
 package, Judy job, readiness, cohort, TEST result, or final access is claimed.
 The older ledger's prelaunch/diagnostic status is historical and is superseded
 by the verified diagnostic and owner-supplied original-cohort evidence above.
 
 ### Branch model (as actually built — this overrides the "main" phrasing elsewhere)
 - The integration / default branch is **`dev`** (GitHub `HEAD → dev`), **not `main`**; `main` currently lags `dev`. Everywhere this plan or AGENTS.md says "land on `main`" / "no direct commits to `main`," read **`dev`**: open each sprint branch off `dev` and PR back into `dev`.
-- The owner-approved `sprint-10d-bes2-readiness-shape-fix` source correction
-  is merged into `dev` at `1d52346e9ef102c7876044893232b5b0ab6f2d88`.
-  Its verified amendment package is READY-published in a fresh runtime-only
-  Box folder; the Judy pull and fresh audit remain pending. Sprint 10c audit
-  job 573446 and its rejected readiness marker remain immutable and superseded.
-  No probe or full diagnostic training has run.
+- Current work belongs to `sprint-10i-bes2-production-fallback`, branched from
+  local `dev` at `d409a4a`. The owner-approved loader is implemented and CPU
+  validation passed; owner review/merge and replacement runtime work remain
+  pending. The completed diagnostic source `4b14689...` and verified result
+  identity `dd1bb97a...` supersede Sprint 10d's pending-audit execution status.
+  Separate Sprint 10e–10h branches are preserved, not implicitly merged.
 - Historical Judy runtime context: `sprint-7f-eval-contract` was stacked on the
   owner-accepted Sprint-7e commit
   `26bece168cd3b9b262ffec5939b836df21b352cd`; the immutable Sprint-7d base
@@ -152,16 +154,21 @@ by the verified diagnostic and owner-supplied original-cohort evidence above.
 - CI must trigger on `dev` (see the CI-trigger fix in §1b) or it never runs on the active branch.
 
 ### Status ledger (ground truth as of this revision)
+
+The original-campaign rows use the owner-supplied completion/failure status
+and verified diagnostic readiness bindings. No Phase-5 completion or
+final-access permission follows from that history.
 | Phase | Sprint branch | State | Evidence | Missing to reach DONE |
 |---|---|---|---|---|
-| 0 Env/scaffold | `sprint-0-env` + `sprint-7c-fp32-grid` + `sprint-7d-h100-fp32` + `sprint-7e-judy-venv` + `sprint-7f-eval-contract` | **PARTIAL — base payload and compute-qualified Judy venv verified; portable runtime cleanup repackage pending** | base package `xview3-h100-fp32-2726199efcebbebc89156e708b89df2a3415468a` is verified; `dgx09`/`dgx18` matched runtime `a4af214a...`; job 541574 built/verified venv tree `d1237904...` and receipt `d84d60c8...`; `b49db0ca` smoke 542536 passed; acceptance 542596 staged successfully and passed 406/407 sealed-venv tests before the umask-sensitive shim-mode assertion, publishing no `H100_READY.json` | package/upload/pull the portable executable-bit and sealed-fixture cleanup correction into a fresh namespace, then pass fresh Slurm smoke and every Judy-local H100 probe/throughput gate; external reference/isolation evidence is deferred to the Phase-5 completion/export barrier |
+| 0 Env/scaffold | `sprint-7d` through `sprint-7f` | **H100 RUNTIME ACCEPTED AND USED** | original cohort source `1a82d508...`; canonical readiness `6dc4a77f...` is bound by verified diagnostic evidence | preserve original readiness; fresh replacement smoke/acceptance in new namespaces remain pending |
 | 1 Data/splits | `sprint-1-data` + `sprint-1b/1c` freeze branches | **DONE — all three artifacts frozen** | all P1 code + tests green; labels acquired and profiled (BLOCKER-4); **`data/splits.json` FROZEN** (150 scenes: 111/23/16 + 50 eval_final, seed 0) pinned by `test_splits_immutable`; **`data/lsssdd_split.json` FROZEN** (8,100/900 over the verified 9,000 sub-images) pinned by `test_lsssdd_split_immutable`; **`data/stats.json` FROZEN** (105,408 train chips, 111 scenes, 150/150 chipped with zero failures: VH −26.448/5.951, VV −16.599/6.062 dB) pinned by `test_stats_immutable`; label projection visually verified (QA gallery) | tag `phase-1-done` at the sprint-1c merge |
 | 2 Scorer/decode/threshold | `sprint-2-scorer` + `sprint-2b-eval-hardening` | **DONE — scorer re-frozen after eval hardening; tagged `phase-2-done`** | `scorer.py` counts near-shore FPs and exposes per-scene aggregation; `threshold.py` owns dev threshold selection; `decode.py` rejects non-finite heatmaps; Phase-2 tests pass | — |
 | 3 Detector | `sprint-3-detector` + `sprint-3b` + `sprint-3c-optimizer-fix` | **DONE — detector frozen + tagged `phase-3-done`; P3.6 PASSED** | the optimizer fix and Option-B plan-literal 50-epoch/early-stop budget decision are merged; historical P3.6 dev F1: ViT floor 0.788 < SatDINO 0.835 < SARMAE 0.858; CNN floor 0.677 < BigEarthNet-S2 0.726 < BigEarthNet-S1 0.819 (`runs/p36_summary.json`) | — |
-| 4 FM+floor arms+refs | `sprint-4/5/6` + `sprint-7c-fp32-grid` + `sprint-7d-h100-fp32` + `sprint-7e-judy-venv` + `sprint-7f-eval-contract` | **CORRECTED RELAUNCH PENDING — uniform H100 core restart; corrected V100 references** | the live V100 core campaign continues untouched only as non-reportable diagnostics; R2 preserves its exact weight and is rescored, while R3 requires a corrected-contract rerun | pass every Judy-local H100 launch gate, then rerun the 24 Phase-4 core cells from scratch; corrected R2/R3 evidence remains mandatory before Phase-5 completion/export/reporting |
-| 5 ImageNet arms+grid | `sprint-7-grid` + `sprint-7b-imagenet-arms` + `sprint-7c-fp32-grid` + `sprint-7d-h100-fp32` + `sprint-7e-judy-venv` + `sprint-7f-eval-contract` | **OWNER APPROVED, NOT LAUNCHED — corrected H100 strict-FP32 campaign gated** | strict evaluation-GT and exact schema-2 checkpoint binding are implemented; smoke 542536 passed, while acceptance 542596 completed staging and 406/407 sealed-venv tests before the portable-mode gate, so no `H100_READY.json`, GPU probe, or training exists | package/upload/pull the current runtime-only correction into a fresh namespace, pass fresh smoke plus all Judy-local numerical gates, run all 32 cells, then complete corrected references/cutover/isolation before Phase-5 completion, reverse export, analysis, or reporting |
-| 6a BigEarthNet-S2 diagnosis | `sprint-10a-bes2-root-cause` + `sprint-10b-bes2-budget-amendment` + `sprint-10c-bes2-clone-ref-fix` + `sprint-10d-bes2-readiness-shape-fix` | **SPRINT 10D MERGED; PACKAGE PUBLISHED — JUDY RE-AUDIT PENDING** | Sprint 10d normalizes only the readiness backend mapping, self-validates the immutable marker, and tracks both launchers executable. Its content-addressed amendment is verified and READY-published; no probe/full training or held-out access occurred | pull into a fresh Judy handoff and diagnostic namespace, rerun audit, then submit f50 probes only after the new marker validates |
-| 6 Final eval | `sprint-8-final-eval` | NOT STARTED | once-only tripwire and frozen 50 eval IDs exist; no lockfile has been written | the 50 eval-final raster scenes are not present on this node and must be acquired/extracted before the one allowed evaluation |
+| 4 FM+floor arms+refs | core + reference sprints | **ORIGINAL CORE COMPLETE; EXTERNAL BARRIERS RETAINED** | original 32-cell H100 cohort completed training and bounded TEST; V100 remains diagnostic | corrected R2/R3 and external controls remain required before completion/export/reporting |
+| 5 ImageNet arms+grid | `sprint-7f-eval-contract` | **ORIGINAL GRID STOPPED — MONOTONICITY FAILED** | original source `1a82d508...`: beS1 f50→f100 TEST F1 drop 0.0300 exceeds 0.02 | preserve immutable original cohort/TEST/failure; never declare its monotonicity green or Phase 5 complete |
+| 6a BigEarthNet-S2 diagnosis | `sprint-10a` through `sprint-10h` | **COMPLETE — VERIFIED DIAGNOSTIC ONLY** | source `4b14689...`, result `dd1bb97a...`, job 610448; concordant stem-dominant decision at f10/f50; 154.436129 GPU-hours | preserve diagnostic evidence; no diagnostic checkpoints enter replacement |
+| 5r Arm-6 replacement | `sprint-10i-bes2-production-fallback` | **LOADER IMPLEMENTED — REVIEW PENDING** | 528 CPU tests passed/8 skipped; separate official S2 transfer passed; frozen guards/artifacts unchanged | owner review/merge, fresh runtime package, Judy smoke/acceptance, new 32-cell cohort, then bounded TEST/sanity gates |
+| 6 Final eval | prospective two-cohort amendment | **PAUSED — NO EXECUTION AUTHORIZED** | verified diagnostic package reports final data unconsumed; no current Judy assertion is inferred | recheck nonconsumption; prepare 64 namespaced cells only after both cohorts are frozen; new explicit owner authorization must bind both hashes before any final access |
 | 7 Analysis | `sprint-9-analysis` | NOT STARTED | — | — |
 | 8 Contingent ref | — | **REMOVED** | former R1 ImageNet-ConvNeXt role is now represented symmetrically by core Arms 4/8 | — |
 

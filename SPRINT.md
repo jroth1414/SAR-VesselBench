@@ -28,3 +28,9 @@ new 32-cell H100 cohort from initialization, frozen cohort then bounded TEST
 and sanity gates, and preparation (never execution) of a prospective 64-cell
 final-evaluation orchestrator. Each later implementation sprint starts from
 reviewed `dev`; do not absorb unmerged diagnostic branches without review.
+
+Validation complete: 528 passed/8 skipped in the full offline CPU suite;
+one separate official S2-only value-sensitive test passed. Review evidence and
+prepared (unexecuted) Judy GPU commands are in
+`docs/BES2_PRODUCTION_FALLBACK_REVIEW.md`. Owner review/merge is pending; no
+replacement package, job, readiness, cohort, TEST or final result is claimed.
