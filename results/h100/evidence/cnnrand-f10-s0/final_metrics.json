@@ -1,7 +1,7 @@
 {
  "result_schema": 2,
  "exp_id": "cnnrand-f10-s0",
- "git_sha": "1a82d508fbeb9fdf6868a9637611e9018952fb43",
+ "git_sha": "06b2e61dbb85dc5fa5a5d5853f9ba15f6a87dca9",
  "detector_sha256": "c42ae65bf9045cc93f0d73ae1437b2f6a1300670cb49d8e93f83a39d58a62a12",
  "precision": "32-true",
  "micro_batch": 16,
@@ -23,7 +23,7 @@
  },
  "best_checkpoint": {
   "relative_path": "checkpoints/best.ckpt",
-  "sha256": "10ad09dfafc1734ec084cbaecd8785cc872463f807146d5f60286bee81e60aa6",
+  "sha256": "3520622a6c9ed38c41140007b7e9f00d764be2b735f0530bb092109d6107dcfd",
   "epoch": 29
  },
  "last_dev": {
@@ -38,7 +38,7 @@
   "n_candidates": 6443,
   "epoch": 49
  },
- "train_loss": 0.016955029219388962,
+ "train_loss": 0.016955731436610222,
  "h100_runtime_contract": {
   "schema": 1,
   "status": "verified",

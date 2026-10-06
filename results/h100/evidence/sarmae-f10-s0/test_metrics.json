@@ -1,11 +1,11 @@
 {
  "test_result_schema": 1,
  "status": "test-complete",
- "scored_utc": "2026-08-13T04:33:25+00:00",
+ "scored_utc": "2026-10-02T04:38:59+00:00",
  "exp_id": "sarmae-f10-s0",
- "cohort_sha256": "9b1ba03e3893a35cd1d0f4d3b63c994afb8e84219c8db28113c9bf6de62e7138",
- "completion_marker_sha256": "c4ede4d5fdd7af6d18e3cb90f8306778b46496ea789225f7df4c635b4f49f1c0",
- "git_sha": "1a82d508fbeb9fdf6868a9637611e9018952fb43",
+ "cohort_sha256": "a8996efd01a95e78bfb4ae46bc93120d842407d109ee74d111d310e8aa5cbef5",
+ "completion_marker_sha256": "06daed56d6ccd544e1d2a8b108e4acff9fb2211890695f23906ba2418482a1db",
+ "git_sha": "06b2e61dbb85dc5fa5a5d5853f9ba15f6a87dca9",
  "detector_sha256": "c42ae65bf9045cc93f0d73ae1437b2f6a1300670cb49d8e93f83a39d58a62a12",
  "inference_precision": "32-true",
  "threshold_source": {
@@ -13,7 +13,7 @@
   "threshold": 0.5869140625,
   "dev_epoch": 4,
   "checkpoint_relative_path": "sarmae-f10-s0/checkpoints/best.ckpt",
-  "checkpoint_sha256": "060594d89df0b429f75288339c5400b1da82240d7324f977b862e245e0cd3f04",
+  "checkpoint_sha256": "81293b96d2d17362954f9d3d73cebc051470f79482d20a445ef9b1a1df61c68c",
   "checkpoint_epoch": 4
  },
  "metrics": {

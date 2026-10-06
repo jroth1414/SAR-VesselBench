@@ -1,5 +1,5 @@
 {
-  "acceptance_uuid": "0c4db53a-b721-4782-a97b-d6f928bf4c38",
+  "acceptance_uuid": "30fe572d-1bfb-4c32-9ae7-9fba053be7b5",
   "accepted_hardware_class": {
     "compute_capability": [
       9,
@@ -11,10 +11,10 @@
     "torch": "2.11.0+cu126",
     "total_memory_bytes": 85017493504
   },
-  "accumulated_active_seconds": 25339.58846361609,
+  "accumulated_active_seconds": 25399.24771118071,
   "attempts": [
     {
-      "active_seconds": 24528.741706395056,
+      "active_seconds": 24609.219741874374,
       "attempt": 1,
       "compute_capability": [
         9,
@@ -22,21 +22,28 @@
       ],
       "cuda_build": "12.6",
       "driver_version": "580.173.02",
+      "execution": {
+        "campaign_git_sha": "06b2e61dbb85dc5fa5a5d5853f9ba15f6a87dca9",
+        "git_sha": "3808f4ab5f8aea8e6b552f7f2b100fd47adc919f",
+        "recovery_manifest_sha256": "7d9c5205df76a788ef09c1ec319e3312697ae82ed984ed15fbc5d73a07d8153f",
+        "recovery_package_id": "xview3-h100-runtime-3808f4ab5f8aea8e6b552f7f2b100fd47adc919f-256cffb3d5b1a4ede844e0556a5f7275e5f2a0cbe2d17c4c9772c814c0f14961",
+        "source_receipt_sha256": "62b1b35dca4dedb1d2dda2c575bbdcbfded3f6dbb0899e08ac735a297ed11b07"
+      },
       "exit_code": 0,
-      "finished_utc": "2026-08-12T19:37:38.534422+00:00",
-      "gpu_local_index": 1,
+      "finished_utc": "2026-10-01T04:59:45.294129+00:00",
+      "gpu_local_index": 5,
       "gpu_name": "NVIDIA H100 80GB HBM3",
       "gpu_total_memory_bytes": 85017493504,
-      "gpu_uuid": "d73d6d8b-2bdd-6502-cede-e68fc0b64dfb",
+      "gpu_uuid": "30404d71-feed-f13a-323c-f33390c05a07",
       "phase": "train",
       "resumed_from_last_ckpt": false,
-      "slurm_job_id": "550204",
-      "started_utc": "2026-08-12T12:48:48.866790+00:00",
+      "slurm_job_id": "651465",
+      "started_utc": "2026-09-30T22:09:35.108388+00:00",
       "torch": "2.11.0+cu126",
       "training_cohort_sha256": null
     },
     {
-      "active_seconds": 810.8467572210357,
+      "active_seconds": 790.0279693063349,
       "attempt": 2,
       "compute_capability": [
         9,
@@ -44,18 +51,39 @@
       ],
       "cuda_build": "12.6",
       "driver_version": "580.173.02",
+      "execution": {
+        "campaign_git_sha": "06b2e61dbb85dc5fa5a5d5853f9ba15f6a87dca9",
+        "git_sha": "3808f4ab5f8aea8e6b552f7f2b100fd47adc919f",
+        "recovery_manifest_sha256": "7d9c5205df76a788ef09c1ec319e3312697ae82ed984ed15fbc5d73a07d8153f",
+        "recovery_package_id": "xview3-h100-runtime-3808f4ab5f8aea8e6b552f7f2b100fd47adc919f-256cffb3d5b1a4ede844e0556a5f7275e5f2a0cbe2d17c4c9772c814c0f14961",
+        "source_receipt_sha256": "62b1b35dca4dedb1d2dda2c575bbdcbfded3f6dbb0899e08ac735a297ed11b07"
+      },
       "exit_code": 0,
-      "finished_utc": "2026-08-13T04:32:54.048499+00:00",
-      "gpu_local_index": 2,
+      "finished_utc": "2026-10-02T03:18:49.320922+00:00",
+      "gpu_local_index": 0,
       "gpu_name": "NVIDIA H100 80GB HBM3",
       "gpu_total_memory_bytes": 85017493504,
-      "gpu_uuid": "e5c349fa-4c2c-e40e-a57c-d7fd4132bcda",
+      "gpu_uuid": "a0c59ce2-0a93-1b8d-e646-ea461a5fca62",
       "phase": "score-test",
       "resumed_from_last_ckpt": false,
-      "slurm_job_id": "552766",
-      "started_utc": "2026-08-13T04:19:21.261239+00:00",
+      "slurm_job_id": "660080",
+      "started_utc": "2026-10-02T03:05:37.555591+00:00",
+      "terminal_execution": {
+        "campaign_git_sha": "06b2e61dbb85dc5fa5a5d5853f9ba15f6a87dca9",
+        "git_sha": "1ec7a68fb3b25f90c55ef74950e7b7045d509d80",
+        "source_receipt_sha256": "acc25ad1c94b2b67dd6815a359b44f6d228153a058629e6eca2afe3f060092cb",
+        "terminal_manifest_sha256": "b5acb9572291c84fb71bb23e8f298bc3c1b8e477c64ad2030fb9f8160ed9211e",
+        "terminal_package_id": "xview3-h100-runtime-1ec7a68fb3b25f90c55ef74950e7b7045d509d80-e0a1e38b8008b89e474e662f4ab692271e17bbf2d00a5bf24dc8a6f0e3373348"
+      },
+      "test_execution": {
+        "campaign_git_sha": "06b2e61dbb85dc5fa5a5d5853f9ba15f6a87dca9",
+        "git_sha": "84133e1ea6a3e52bc20dbed19a1a1c5706f41518",
+        "source_receipt_sha256": "521420637fae6d968ae61a2599ad2208f2d3b09a71f9bc07a359d1d95670e1e0",
+        "test_manifest_sha256": "a84916eb654d32656490c4d5e33ca9328b6e2d6de7ca7f8ba375fd25fbc1a3cc",
+        "test_package_id": "xview3-h100-runtime-84133e1ea6a3e52bc20dbed19a1a1c5706f41518-e4c7ed79d4f31ab7ea1bfbdd825cdc06267f64d5163fe61accbf69f9034598e6"
+      },
       "torch": "2.11.0+cu126",
-      "training_cohort_sha256": "9b1ba03e3893a35cd1d0f4d3b63c994afb8e84219c8db28113c9bf6de62e7138"
+      "training_cohort_sha256": "a8996efd01a95e78bfb4ae46bc93120d842407d109ee74d111d310e8aa5cbef5"
     }
   ],
   "base_payload": {
@@ -220,8 +248,8 @@
     "version": "3.11.13"
   },
   "best_dev_f1": 0.7992047713717695,
-  "campaign_id": "xview3-h100-fp32-20260806",
-  "completed_utc": "2026-08-13T04:32:54.048499+00:00",
+  "campaign_id": "xview3-h100-bes2-replacement-06b2e61",
+  "completed_utc": "2026-10-02T03:18:49.320922+00:00",
   "compute_capability": [
     9,
     0
@@ -230,18 +258,25 @@
   "detector_sha256": "c42ae65bf9045cc93f0d73ae1437b2f6a1300670cb49d8e93f83a39d58a62a12",
   "driver_version": "580.173.02",
   "effective_batch": 16,
-  "elapsed_hours": 7.038774573226692,
+  "elapsed_hours": 7.055346586439086,
   "epochs_run": 50,
   "evaluation_ground_truth_sha256": "89c592ade848bfabf376f2ab04e769a2a6de2db951a969fbfa2958c18fca55a5",
+  "execution": {
+    "campaign_git_sha": "06b2e61dbb85dc5fa5a5d5853f9ba15f6a87dca9",
+    "git_sha": "3808f4ab5f8aea8e6b552f7f2b100fd47adc919f",
+    "recovery_manifest_sha256": "7d9c5205df76a788ef09c1ec319e3312697ae82ed984ed15fbc5d73a07d8153f",
+    "recovery_package_id": "xview3-h100-runtime-3808f4ab5f8aea8e6b552f7f2b100fd47adc919f-256cffb3d5b1a4ede844e0556a5f7275e5f2a0cbe2d17c4c9772c814c0f14961",
+    "source_receipt_sha256": "62b1b35dca4dedb1d2dda2c575bbdcbfded3f6dbb0899e08ac735a297ed11b07"
+  },
   "exp_id": "cnnrand-f10-s0",
   "external_controls_policy": "owner-approved-h100-only-launch;external-controls-required-before-phase5-completion-export-analysis-reporting",
-  "git_sha": "1a82d508fbeb9fdf6868a9637611e9018952fb43",
-  "gpu_local_index": 2,
+  "git_sha": "06b2e61dbb85dc5fa5a5d5853f9ba15f6a87dca9",
+  "gpu_local_index": 0,
   "gpu_name": "NVIDIA H100 80GB HBM3",
   "gpu_total_memory_bytes": 85017493504,
-  "gpu_uuid": "e5c349fa-4c2c-e40e-a57c-d7fd4132bcda",
+  "gpu_uuid": "a0c59ce2-0a93-1b8d-e646-ea461a5fca62",
   "gradient_accumulation": 1,
-  "h100_ready_sha256": "6dc4a77ff57e2a21a8e3aa39eda5a6e12e500ef759e4ff34a1ee2fa6df1c8f4e",
+  "h100_ready_sha256": "2b9f6c8435dc0a536fbcd3a45b2144fd72f30d8b04ed6c31771bda059191349d",
   "h100_runtime_contract": {
     "pre_trainer": {
       "autocast": {
@@ -292,57 +327,71 @@
     "schema": 1,
     "status": "verified"
   },
-  "host": "dgx10",
+  "host": "dgx18",
   "micro_batch": 16,
   "phase": "score-test",
   "phase_runtime": {
     "score-test": {
-      "active_seconds": 810.8467572210357,
+      "active_seconds": 790.0279693063349,
       "attempts": 1,
-      "completed_utc": "2026-08-13T04:32:54.048499+00:00",
-      "elapsed_hours": 0.22523521033917657,
+      "completed_utc": "2026-10-02T03:18:49.320922+00:00",
+      "elapsed_hours": 0.21945221369620413,
       "test_f1": 0.657117278424351,
-      "test_metrics_sha256": "17c0d1a9b5120224170c301cc5d7fe4863531d9b7580a1baf90d048dc0f0b7c6",
-      "training_cohort_sha256": "9b1ba03e3893a35cd1d0f4d3b63c994afb8e84219c8db28113c9bf6de62e7138"
+      "test_metrics_sha256": "afc381a6cf630f668c1dd2f26c424af41e3096110b07a7d1a37e2709e5f30f34",
+      "training_cohort_sha256": "a8996efd01a95e78bfb4ae46bc93120d842407d109ee74d111d310e8aa5cbef5"
     },
     "train": {
-      "active_seconds": 24528.741706395056,
+      "active_seconds": 24609.219741874374,
       "attempts": 1,
-      "best_checkpoint_sha256": "10ad09dfafc1734ec084cbaecd8785cc872463f807146d5f60286bee81e60aa6",
+      "best_checkpoint_sha256": "3520622a6c9ed38c41140007b7e9f00d764be2b735f0530bb092109d6107dcfd",
       "best_dev_f1": 0.7992047713717695,
-      "completed_utc": "2026-08-12T19:37:38.534422+00:00",
-      "elapsed_hours": 6.813539362887515,
+      "completed_utc": "2026-10-01T04:59:45.294129+00:00",
+      "elapsed_hours": 6.835894372742882,
       "epochs_run": 50,
-      "final_metrics_sha256": "f8f920f56783872a625a6237e264102a6191b6977d4aa47752cbff0608693d6f"
+      "final_metrics_sha256": "3e366ab9ef00200cecb1b30b8f12201362f73c4641a6e67cb994f98de3b7db33"
     }
   },
   "precision": "32-true",
-  "run_dir": "/cluster-site-redacted/jroth/xview3-h100-runs-1a82d508/cnnrand-f10-s0",
+  "run_dir": "/cluster-site-redacted/jroth/xview3-h100-runs-replacement-06b2e61/cnnrand-f10-s0",
   "runtime_amendment": {
-    "git_sha": "1a82d508fbeb9fdf6868a9637611e9018952fb43",
-    "manifest_sha256": "d9412f6772589a37bd20914313455d7e2eca856b56e9aaac3020add55922195f",
-    "package_id": "xview3-h100-runtime-1a82d508fbeb9fdf6868a9637611e9018952fb43-dc9ce5996fd1458c894fa33d0eaf6ca98f4c5478474da34cca7320618cf665a3",
-    "ready_sha256": "7490027cb0aabdc19fa452fd7410620ed69cfef48de1d8317c0d36933009a06a",
-    "runtime_bundle_sha256": "e00f7f9ab43de54853ff639023f19d672423f1932e8885778c0e7da0371b3bf1",
-    "sha256sums_sha256": "3c2a077e3b98cb6a6f1c33513f25b5d0f86071cb9a2b8cb43a8260b44fed610f"
+    "git_sha": "06b2e61dbb85dc5fa5a5d5853f9ba15f6a87dca9",
+    "manifest_sha256": "1054ac3133fe2411195fbd1219b9a1ce397063840eba1965ca689d18cabf291a",
+    "package_id": "xview3-h100-runtime-06b2e61dbb85dc5fa5a5d5853f9ba15f6a87dca9-2116c9171615510ac47f58a3a74b9c0aae02aa08bb2d3c1e512ab51c89c32e51",
+    "ready_sha256": "b6769b0ec1e300153b6ade560fe77e395627e9799d261a897a8ec9b5baf96292",
+    "runtime_bundle_sha256": "218e344dc7457df171b6f98d5c8f2cae8ed23f536c056a6e43a9abd9b680e9ed",
+    "sha256sums_sha256": "5c9571ac2ce1a76dd479680fe6a522f87950cbe918582a777dfde61035644ae0"
   },
   "schema": 2,
-  "slurm_job_id": "552766",
-  "source_validation_sha256": "2bd145518652dbe7cf80c158ef62e066a26c8b61214817cb2a6d2272d35891d4",
-  "started_utc": "2026-08-12T12:48:48.866790+00:00",
+  "slurm_job_id": "660080",
+  "source_validation_sha256": "f920d1609ebb0a1b68dc85bfb063bed4bf372f6e58d2a0325dc4a9d6a4de1cff",
+  "started_utc": "2026-09-30T22:09:35.108388+00:00",
   "strict_fp32": {
     "cuda_matmul_fp32_precision": "ieee",
     "cudnn_conv_fp32_precision": "ieee",
     "cudnn_rnn_fp32_precision": "ieee"
   },
+  "terminal_execution": {
+    "campaign_git_sha": "06b2e61dbb85dc5fa5a5d5853f9ba15f6a87dca9",
+    "git_sha": "1ec7a68fb3b25f90c55ef74950e7b7045d509d80",
+    "source_receipt_sha256": "acc25ad1c94b2b67dd6815a359b44f6d228153a058629e6eca2afe3f060092cb",
+    "terminal_manifest_sha256": "b5acb9572291c84fb71bb23e8f298bc3c1b8e477c64ad2030fb9f8160ed9211e",
+    "terminal_package_id": "xview3-h100-runtime-1ec7a68fb3b25f90c55ef74950e7b7045d509d80-e0a1e38b8008b89e474e662f4ab692271e17bbf2d00a5bf24dc8a6f0e3373348"
+  },
+  "test_execution": {
+    "campaign_git_sha": "06b2e61dbb85dc5fa5a5d5853f9ba15f6a87dca9",
+    "git_sha": "84133e1ea6a3e52bc20dbed19a1a1c5706f41518",
+    "source_receipt_sha256": "521420637fae6d968ae61a2599ad2208f2d3b09a71f9bc07a359d1d95670e1e0",
+    "test_manifest_sha256": "a84916eb654d32656490c4d5e33ca9328b6e2d6de7ca7f8ba375fd25fbc1a3cc",
+    "test_package_id": "xview3-h100-runtime-84133e1ea6a3e52bc20dbed19a1a1c5706f41518-e4c7ed79d4f31ab7ea1bfbdd825cdc06267f64d5163fe61accbf69f9034598e6"
+  },
   "test_f1": 0.657117278424351,
-  "test_scored_at": "2026-08-13T04:32:47+00:00",
+  "test_scored_at": "2026-10-02T03:18:41+00:00",
   "torch": "2.11.0+cu126",
   "training_cohort": {
-    "path": "/cluster-site-redacted/jroth/xview3-h100-runs-1a82d508/.h100/TRAINING_COHORT.json",
-    "sha256": "9b1ba03e3893a35cd1d0f4d3b63c994afb8e84219c8db28113c9bf6de62e7138"
+    "path": "/cluster-site-redacted/jroth/xview3-h100-runs-replacement-06b2e61/.h100/TRAINING_COHORT.json",
+    "sha256": "a8996efd01a95e78bfb4ae46bc93120d842407d109ee74d111d310e8aa5cbef5"
   },
-  "training_completed_utc": "2026-08-12T19:37:38.534422+00:00",
+  "training_completed_utc": "2026-10-01T04:59:45.294129+00:00",
   "venv_build_sha256": "d84d60c8ecce9138bdd68042d7c5b999aca154b049db1d15b0bc196972b15c3c",
   "venv_sha256": "d1237904ba04e602aa05e693074d4466b50a3f9c2cd6969692684e415838a200",
   "wheelhouse": {

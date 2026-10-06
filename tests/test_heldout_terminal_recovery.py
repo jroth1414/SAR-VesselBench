@@ -37,10 +37,11 @@ def _write_json(path: Path, payload: dict) -> None:
 def _recovered_evidence(tmp_path: Path, **overrides: object) -> Path:
     evidence = tmp_path / "evidence"
     shutil.copytree(EVIDENCE, evidence)
-    # Re-binding a marker changes the cohort hash, which every TEST result
-    # binds; dropping them all keeps the all-or-nothing TEST rule satisfied.
-    for test_result in evidence.glob("*/test_metrics.json"):
-        test_result.unlink()
+    # Re-binding a marker changes the cohort hash, which every TEST and final
+    # result binds; dropping them all keeps both all-or-nothing rules satisfied.
+    for held_out in [*evidence.glob("*/test_metrics.json"), *evidence.glob("*/final_verified_metrics.json")]:
+        held_out.unlink()
+    (evidence / "FINAL_EVAL_COMPLETE.json").unlink(missing_ok=True)
     cell = evidence / CELL
     (cell / "metrics.csv").unlink()
     marker_path = cell / "final_metrics.json"

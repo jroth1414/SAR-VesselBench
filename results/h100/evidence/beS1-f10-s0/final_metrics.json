@@ -1,7 +1,7 @@
 {
  "result_schema": 2,
  "exp_id": "beS1-f10-s0",
- "git_sha": "1a82d508fbeb9fdf6868a9637611e9018952fb43",
+ "git_sha": "06b2e61dbb85dc5fa5a5d5853f9ba15f6a87dca9",
  "detector_sha256": "c42ae65bf9045cc93f0d73ae1437b2f6a1300670cb49d8e93f83a39d58a62a12",
  "precision": "32-true",
  "micro_batch": 16,
@@ -23,7 +23,7 @@
  },
  "best_checkpoint": {
   "relative_path": "checkpoints/best.ckpt",
-  "sha256": "20c01fb6f0dcf9680f4893b6d63f4cd9987c041ee40b15f085e252467471549a",
+  "sha256": "89f50215dcaf85b040840d90bf641e26d91cca2aadb987f4ffb904d602e9cf85",
   "epoch": 34
  },
  "last_dev": {
@@ -38,7 +38,7 @@
   "n_candidates": 2614,
   "epoch": 49
  },
- "train_loss": 0.0009043930331245065,
+ "train_loss": 0.0009044798207469285,
  "h100_runtime_contract": {
   "schema": 1,
   "status": "verified",

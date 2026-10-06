@@ -1,11 +1,11 @@
 {
  "test_result_schema": 1,
  "status": "test-complete",
- "scored_utc": "2026-08-13T03:51:37+00:00",
+ "scored_utc": "2026-10-01T22:19:20+00:00",
  "exp_id": "beS1-f100-s0",
- "cohort_sha256": "9b1ba03e3893a35cd1d0f4d3b63c994afb8e84219c8db28113c9bf6de62e7138",
- "completion_marker_sha256": "ea4df89d2c8b6fdb2da83adc9b0f62d47f54262b47d81ddc77dc9dd3fe023470",
- "git_sha": "1a82d508fbeb9fdf6868a9637611e9018952fb43",
+ "cohort_sha256": "a8996efd01a95e78bfb4ae46bc93120d842407d109ee74d111d310e8aa5cbef5",
+ "completion_marker_sha256": "3830728438d4eeacbd943f7aed2bb13c80b8f75b8ae4f4c339fd3bdb93611494",
+ "git_sha": "06b2e61dbb85dc5fa5a5d5853f9ba15f6a87dca9",
  "detector_sha256": "c42ae65bf9045cc93f0d73ae1437b2f6a1300670cb49d8e93f83a39d58a62a12",
  "inference_precision": "32-true",
  "threshold_source": {
@@ -13,7 +13,7 @@
   "threshold": 0.83203125,
   "dev_epoch": 4,
   "checkpoint_relative_path": "beS1-f100-s0/checkpoints/best.ckpt",
-  "checkpoint_sha256": "af3ec35e6d31fc14d794431a7e534fd02c9aeb43657298b99c44e44ce3d3f722",
+  "checkpoint_sha256": "a7f1b43c7f84e8f3ea480ad734fccb393318a6e3398fdb9f463f563c86365036",
   "checkpoint_epoch": 4
  },
  "metrics": {

@@ -2,20 +2,20 @@
  "generator": "src.analysis.heldout_results",
  "inputs": {
   "arms_config_sha256": "9293539d0cd21188ba7fedd955ced8f334e5c0811aa4c2151ec734c72ef7795a",
-  "cohort_sha256": "9b1ba03e3893a35cd1d0f4d3b63c994afb8e84219c8db28113c9bf6de62e7138",
+  "cohort_sha256": "a8996efd01a95e78bfb4ae46bc93120d842407d109ee74d111d310e8aa5cbef5",
   "detector_sha256": "c42ae65bf9045cc93f0d73ae1437b2f6a1300670cb49d8e93f83a39d58a62a12"
  },
  "outputs": {
-  "heldout_label_efficiency.pdf": "84cad7972fdfbe1cff4e80d2466f513cbf5363510c46db06ebdb602a663199e9",
-  "heldout_operating_points.pdf": "e7c5bebc72219c53457021a3b5233246846936e325a9ecbdb0fd291db081c968",
-  "heldout_results.tex": "3c12ea41592208406a89bfc5acf901402951ebf8f383d5db033207083d18512c",
-  "heldout_training_dynamics.pdf": "78db50e6442d9ff32fc1709ca1c3666b21a09f771374d7e54e48c1ddf80ed5a8",
-  "heldout_transfer_gains.pdf": "059712efd882509dceb0990507aa46e10701a280a8bfa5754f053c05c69a87dc"
+  "heldout_label_efficiency.pdf": "9d71e36ca0f3ce1d88220329d9d7375219c92159b30732e3d5ad0b8e08e2e426",
+  "heldout_operating_points.pdf": "cb1a0dcd3a4fc3faa7e464898d0554b2ba997ebae50eae8a06b1a1ba39f0415f",
+  "heldout_results.tex": "1a15bd9093225d76402671ee71f06bdd91fde93e9e98a95dfd0e7f53b691273b",
+  "heldout_training_dynamics.pdf": "efc4d5fff8dfb1f8600618c11a20d72c81f995a1f47ce8af6d269efb2c2e38a2",
+  "heldout_transfer_gains.pdf": "f1b9391722fffc10bcb7adf49725c6f257c468ab0c9afee1febe6cf9b89536cd"
  },
  "summary": {
   "cells": 32,
-  "final_eval_rows": 0,
-  "gpu_hours": 555.8,
+  "final_results": 32,
+  "gpu_hours": 567.6,
   "test_results": 32
  }
 }

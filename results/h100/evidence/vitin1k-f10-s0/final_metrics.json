@@ -1,92 +1,96 @@
 {
- "result_schema": 2,
- "exp_id": "vitin1k-f10-s0",
- "git_sha": "1a82d508fbeb9fdf6868a9637611e9018952fb43",
- "detector_sha256": "c42ae65bf9045cc93f0d73ae1437b2f6a1300670cb49d8e93f83a39d58a62a12",
- "precision": "32-true",
- "micro_batch": 16,
- "gradient_accumulation": 1,
- "effective_batch": 16,
- "epochs_run": 50,
- "best_dev_f1": 0.8760806916426512,
- "best_dev": {
-  "f1": 0.8760806916426512,
-  "precision": 0.8702290076335878,
-  "recall": 0.8820116054158608,
-  "tp": 456,
-  "fp": 68,
-  "fn": 61,
-  "ignored_predictions": 64,
-  "threshold": 0.90625,
-  "n_candidates": 906,
-  "epoch": 39
- },
- "best_checkpoint": {
-  "relative_path": "checkpoints/best.ckpt",
-  "sha256": "84345ca8f1cd7c41a12e71410c10bdbcf660317f17bc6881760a6fe81ceb1413",
-  "epoch": 39
- },
- "last_dev": {
-  "f1": 0.8710601719197708,
-  "precision": 0.8603773584905661,
-  "recall": 0.8820116054158608,
-  "tp": 456,
-  "fp": 74,
-  "fn": 61,
-  "ignored_predictions": 62,
-  "threshold": 0.8779296875,
-  "n_candidates": 864,
-  "epoch": 49
- },
- "train_loss": 0.07021789252758026,
- "h100_runtime_contract": {
-  "schema": 1,
-  "status": "verified",
-  "pre_trainer": {
-   "schema": 1,
-   "status": "verified",
-   "stage": "pre-trainer",
-   "precision": "32-true",
-   "devices": 1,
-   "micro_batch": 16,
-   "gradient_accumulation": 1,
-   "effective_batch": 16,
-   "strict_fp32": {
-    "cuda_matmul_fp32_precision": "ieee",
-    "cudnn_conv_fp32_precision": "ieee",
-    "cudnn_rnn_fp32_precision": "ieee"
-   },
-   "autocast": {
-    "global": false,
-    "cuda": false,
-    "cpu": false
-   },
-   "process": {
-    "WORLD_SIZE": "unset",
-    "SLURM_NTASKS": "1",
-    "effective_world_size": 1
-   },
-   "model": {
-    "floating_parameter_count": 160,
-    "floating_parameter_dtypes": [
-     "torch.float32"
-    ]
-   }
+  "best_checkpoint": {
+    "epoch": 39,
+    "relative_path": "checkpoints/best.ckpt",
+    "sha256": "71690b062cb36fab907f5b2486de18687680170be8f76d61b8ce13024f8cc319"
   },
-  "resolved_trainer": {
-   "accelerator": "lightning.pytorch.accelerators.cuda.CUDAAccelerator",
-   "precision_plugin": "lightning.pytorch.plugins.precision.precision.Precision",
-   "precision": "32-true",
-   "gradient_scaler": null,
-   "strategy": "lightning.pytorch.strategies.single_device.SingleDeviceStrategy",
-   "root_device_type": "cuda",
-   "root_device_index": 0,
-   "num_devices": 1,
-   "world_size": 1,
-   "device_ids": [
-    0
-   ],
-   "gradient_accumulation": 1
-  }
- }
+  "best_dev": {
+    "epoch": 39,
+    "f1": 0.8979980934223069,
+    "fn": 46,
+    "fp": 61,
+    "ignored_predictions": 70,
+    "n_candidates": 898,
+    "precision": 0.8853383458646616,
+    "recall": 0.9110251450676983,
+    "threshold": 0.8486328125,
+    "tp": 471
+  },
+  "best_dev_f1": 0.8979980934223069,
+  "detector_sha256": "c42ae65bf9045cc93f0d73ae1437b2f6a1300670cb49d8e93f83a39d58a62a12",
+  "effective_batch": 16,
+  "epochs_run": 50,
+  "exp_id": "vitin1k-f10-s0",
+  "git_sha": "06b2e61dbb85dc5fa5a5d5853f9ba15f6a87dca9",
+  "gradient_accumulation": 1,
+  "h100_runtime_contract": {
+    "pre_trainer": {
+      "autocast": {
+        "cpu": false,
+        "cuda": false,
+        "global": false
+      },
+      "devices": 1,
+      "effective_batch": 16,
+      "gradient_accumulation": 1,
+      "micro_batch": 16,
+      "model": {
+        "floating_parameter_count": 160,
+        "floating_parameter_dtypes": [
+          "torch.float32"
+        ]
+      },
+      "precision": "32-true",
+      "process": {
+        "SLURM_NTASKS": "1",
+        "WORLD_SIZE": "unset",
+        "effective_world_size": 1
+      },
+      "schema": 1,
+      "stage": "pre-trainer",
+      "status": "verified",
+      "strict_fp32": {
+        "cuda_matmul_fp32_precision": "ieee",
+        "cudnn_conv_fp32_precision": "ieee",
+        "cudnn_rnn_fp32_precision": "ieee"
+      }
+    },
+    "resolved_trainer": {
+      "accelerator": "lightning.pytorch.accelerators.cuda.CUDAAccelerator",
+      "device_ids": [
+        0
+      ],
+      "gradient_accumulation": 1,
+      "gradient_scaler": null,
+      "num_devices": 1,
+      "precision": "32-true",
+      "precision_plugin": "lightning.pytorch.plugins.precision.precision.Precision",
+      "root_device_index": 0,
+      "root_device_type": "cuda",
+      "strategy": "lightning.pytorch.strategies.single_device.SingleDeviceStrategy",
+      "world_size": 1
+    },
+    "schema": 1,
+    "status": "verified"
+  },
+  "last_dev": {
+    "epoch": 49,
+    "f1": 0.8923076923076922,
+    "fn": 53,
+    "fp": 59,
+    "ignored_predictions": 69,
+    "n_candidates": 824,
+    "precision": 0.887189292543021,
+    "recall": 0.8974854932301741,
+    "threshold": 0.841796875,
+    "tp": 464
+  },
+  "micro_batch": 16,
+  "precision": "32-true",
+  "result_schema": 3,
+  "terminal_recovery": {
+    "relative_path": "terminal_recovery.json",
+    "sha256": "6ae810f3ee5c7abcff99e84a72e03083e1e48692ce3954d58df670064923c0cc"
+  },
+  "train_loss": null
 }

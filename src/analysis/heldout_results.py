@@ -11,7 +11,10 @@ generator re-derives every published number from those bytes:
   TP/FP/FN, marker F1 versus the training-curve maximum at the bound epoch);
 * held-out TEST macros render only when all 32 immutable test results are
   present and each one revalidates against the cohort (all-or-nothing);
-* the sealed 50-scene evaluation renders only from ``final_verified.csv``.
+* the once-only 50-scene human-verified evaluation renders only when all 32
+  ``final_verified_metrics.json`` results are present, each hashing to its
+  ``FINAL_EVAL_COMPLETE.json`` entry and binding the cohort, its TEST result
+  and its checkpoint-bound threshold (all-or-nothing).
 
 Checkpoint bytes stay outside the repository; their SHA-256 bindings are
 published so an operator archive can re-verify them. Anything inconsistent
@@ -55,7 +58,10 @@ _HEX64 = re.compile(r"[0-9a-f]{64}")
 
 EXPECTED_TEST_SCENES = 16
 EXPECTED_TEST_POSITIVES = 1165
-FINAL_EVAL_FRACTIONS = (10, 25, 100)
+FINAL_COMPLETE_NAME = "FINAL_EVAL_COMPLETE.json"
+FINAL_RESULT_NAME = "final_verified_metrics.json"
+FINAL_POLICY = "replacement-only-all32-final50-once-v1"
+FINAL_SCENES = 50
 
 
 class EvidenceError(RuntimeError):
@@ -226,6 +232,79 @@ def _validate_test_result(
     }
 
 
+def _validate_final_results(
+    root: Path,
+    *,
+    cells: Mapping[str, Mapping[str, object]],
+    cohort_sha256: str,
+    test_results: Mapping[str, object],
+) -> dict[str, dict[str, float]]:
+    """Validate the once-only 50-scene results; all 32 or none."""
+
+    present = {exp_id for exp_id in cells if (root / exp_id / FINAL_RESULT_NAME).is_file()}
+    complete_path = root / FINAL_COMPLETE_NAME
+    if not present and not complete_path.is_file():
+        return {}
+    if present != set(cells) or not complete_path.is_file():
+        missing = sorted(set(cells) - present) or [FINAL_COMPLETE_NAME]
+        raise EvidenceError("final results are all-or-nothing; missing: " + ", ".join(missing))
+    if len(test_results) != len(cells):
+        raise EvidenceError("final results require the complete TEST cohort")
+    complete = _load_json(complete_path, "final-evaluation completion record")
+    bound = complete.get("cell_result_sha256")
+    if (
+        complete.get("status") != "replacement-final32-complete"
+        or complete.get("policy") != FINAL_POLICY
+        or complete.get("cell_count") != len(cells)
+        or complete.get("scene_count") != FINAL_SCENES
+        or not isinstance(bound, Mapping)
+        or set(bound) != set(cells)
+    ):
+        raise EvidenceError("FINAL_EVAL_COMPLETE does not describe the all-32 final evaluation")
+
+    results: dict[str, dict[str, float]] = {}
+    supports: set[tuple[int, int, int]] = set()
+    for exp_id, cell in cells.items():
+        path = root / exp_id / FINAL_RESULT_NAME
+        if _sha256_file(path) != bound[exp_id]:
+            raise EvidenceError(f"{exp_id}: final result does not hash to its FINAL_EVAL_COMPLETE entry")
+        payload = _load_json(path, f"{exp_id} final result")
+        checkpoint = payload.get("checkpoint")
+        best_dev = payload.get("best_dev")
+        if (
+            payload.get("final_result_schema") != 2
+            or payload.get("exp_id") != exp_id
+            or payload.get("policy") != FINAL_POLICY
+            or payload.get("cohort_sha256") != cohort_sha256
+            or payload.get("test_result_sha256") != _sha256_file(root / exp_id / "test_metrics.json")
+            or not isinstance(checkpoint, Mapping)
+            or checkpoint.get("sha256") != cell["checkpoint_sha256"]
+            or not isinstance(best_dev, Mapping)
+            or best_dev.get("threshold") != cell["threshold"]
+            or not isinstance(payload.get("per_scene"), Mapping)
+            or len(payload["per_scene"]) != FINAL_SCENES
+        ):
+            raise EvidenceError(f"{exp_id}: final result does not bind the cohort, TEST result and threshold")
+        metrics = payload.get("metrics")
+        if not isinstance(metrics, Mapping):
+            raise EvidenceError(f"{exp_id}: final result has no metrics block")
+        _consistent_prf(metrics, f"{exp_id}.final")
+        row = {
+            key: _finite(metrics.get(key), f"{exp_id}.final.{key}")
+            for key in ("f1", "precision", "recall", "dark_recall", "near_shore_f1")
+        }
+        for key in ("tp", "fp", "fn", "dark_support", "near_shore_support"):
+            value = metrics.get(key)
+            if not isinstance(value, int) or value < 0:
+                raise EvidenceError(f"{exp_id}: final {key} must be a non-negative count")
+            row[key] = value
+        supports.add((row["tp"] + row["fn"], row["dark_support"], row["near_shore_support"]))
+        results[exp_id] = row
+    if len(supports) != 1:
+        raise EvidenceError("final results disagree on the verified ground-truth support")
+    return results
+
+
 def validate_evidence(
     evidence_root: str | Path,
     *,
@@ -388,23 +467,14 @@ def validate_evidence(
     if gt_counts["test"]["positive"] != EXPECTED_TEST_POSITIVES:
         raise EvidenceError("audit test positives disagree with the held-out contract")
 
-    final_eval_path = root / "final_verified.csv"
-    final_eval_rows: list[dict[str, str]] = []
-    if final_eval_path.is_file():
-        with final_eval_path.open(newline="", encoding="utf-8") as handle:
-            final_eval_rows = list(csv.DictReader(handle))
-        expected_final = {
-            exp_id
-            for exp_id, meta in expected.items()
-            if meta["label_fraction"] in FINAL_EVAL_FRACTIONS
-        }
-        if {row.get("exp_id") for row in final_eval_rows} != expected_final:
-            raise EvidenceError("final_verified.csv does not cover the exact 24-cell selection")
+    final_results = _validate_final_results(
+        root, cells=cells, cohort_sha256=cohort_sha256, test_results=test_results
+    )
 
     return {
         "cells": cells,
         "test_results": test_results,
-        "final_eval_rows": final_eval_rows,
+        "final_results": final_results,
         "gt_counts": gt_counts,
         "campaign": {
             "git_sha": git_sha,
@@ -419,6 +489,52 @@ def validate_evidence(
 
 def _macro(track: str, role: str, fraction: int) -> str:
     return f"{TRACK_MACRO[track]}{ROLE_MACRO[role]}{FRACTION_MACRO[fraction]}"
+
+
+def _count_macro(value: int) -> str:
+    return f"{value:,}".replace(",", "{,}")
+
+
+def _render_final_macros(
+    validated: Mapping[str, object], by_key: Mapping[tuple, tuple[str, Mapping[str, object]]]
+) -> list[str]:
+    """Per-cell and summary macros for the once-only 50-scene evaluation."""
+
+    final: Mapping[str, Mapping[str, float]] = validated["final_results"]  # type: ignore[assignment]
+    tests: Mapping[str, Mapping[str, float]] = validated["test_results"]  # type: ignore[assignment]
+    lines: list[str] = []
+    per_cell = (("F", "f1"), ("Recall", "recall"), ("DarkRecall", "dark_recall"), ("NearShoreF", "near_shore_f1"))
+    for track in ("vit", "cnn"):
+        for role in ROLE_ORDER:
+            for fraction in FRACTIONS:
+                exp_id, _meta = by_key[(track, role, fraction)]
+                name = _macro(track, role, fraction)
+                for fragment, key in per_cell:
+                    value = f"{final[exp_id][key]:.3f}" if final else "\\textemdash"
+                    lines.append(f"\\def\\HevFinal{fragment}{name}{{{value}}}")
+    if not final:
+        return lines
+    first = next(iter(final.values()))
+    lines.append(f"\\def\\HevFinalScenes{{{FINAL_SCENES}}}")
+    lines.append(f"\\def\\HevFinalPositives{{{_count_macro(int(first['tp'] + first['fn']))}}}")
+    lines.append(f"\\def\\HevFinalDarkSupport{{{_count_macro(int(first['dark_support']))}}}")
+    lines.append(f"\\def\\HevFinalNearShoreSupport{{{_count_macro(int(first['near_shore_support']))}}}")
+    gaps = [float(tests[e]["f1"]) - float(r["f1"]) for e, r in final.items()]
+    lines.append(f"\\def\\HevFinalMeanTestGap{{{sum(gaps) / len(gaps):.3f}}}")
+    for fragment, key in (("F", "f1"), ("Precision", "precision"), ("Recall", "recall"),
+                          ("DarkRecall", "dark_recall"), ("NearShoreF", "near_shore_f1")):
+        values = [float(r[key]) for r in final.values()]
+        lines.append(f"\\def\\HevFinal{fragment}Min{{{min(values):.3f}}}")
+        lines.append(f"\\def\\HevFinal{fragment}Max{{{max(values):.3f}}}")
+    for track in ("vit", "cnn"):
+        floor = float(final[by_key[(track, "floor", 10)][0]]["f1"])
+        for role in ("optical", "sar", "imagenet"):
+            delta = float(final[by_key[(track, role, 10)][0]]["f1"]) - floor
+            lines.append(
+                f"\\def\\HevDeltaFinalTen{TRACK_MACRO[track]}{ROLE_MACRO[role]}"
+                f"{{{'+' if delta >= 0 else '-'}{abs(delta):.3f}}}"
+            )
+    return lines
 
 
 def render_tex(validated: Mapping[str, object]) -> str:
@@ -436,7 +552,7 @@ def render_tex(validated: Mapping[str, object]) -> str:
         "\\newif\\ifHevTestComplete",
         "\\HevTestComplete" + ("true" if tests else "false"),
         "\\newif\\ifHevFinalEval",
-        "\\HevFinalEval" + ("true" if validated["final_eval_rows"] else "false"),
+        "\\HevFinalEval" + ("true" if validated["final_results"] else "false"),
         f"\\def\\HevCodeSHAShort{{{str(campaign['git_sha'])[:8]}}}",
         f"\\def\\HevCohortSHAShort{{{str(campaign['cohort_sha256'])[:8]}}}",
         f"\\def\\HevHardware{{{campaign['hardware']}}}",
@@ -504,6 +620,8 @@ def render_tex(validated: Mapping[str, object]) -> str:
                 name = _macro(track, role, fraction)
                 lines.append(f"\\def\\HevEpochsRun{name}{{{cell['epochs_run']}}}")
                 lines.append(f"\\def\\HevHours{name}{{{float(cell['gpu_hours']):.1f}}}")
+
+    lines.extend(_render_final_macros(validated, by_key))
 
     scope_macro = {"dev8": "DevEight", "dev23": "DevFull", "test": "Test"}
     counts: Mapping[str, Mapping[str, int]] = validated["gt_counts"]  # type: ignore[assignment]
@@ -786,7 +904,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     summary = {
         "cells": len(validated["cells"]),  # type: ignore[arg-type]
         "test_results": len(validated["test_results"]),  # type: ignore[arg-type]
-        "final_eval_rows": len(validated["final_eval_rows"]),  # type: ignore[arg-type]
+        "final_results": len(validated["final_results"]),  # type: ignore[arg-type]
         "gpu_hours": round(float(validated["campaign"]["gpu_hours"]), 1),  # type: ignore[index]
     }
     print(json.dumps(summary, sort_keys=True))

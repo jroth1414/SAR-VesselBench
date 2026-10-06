@@ -1,13 +1,13 @@
 {
  "result_schema": 2,
  "exp_id": "beS1-f50-s0",
- "git_sha": "1a82d508fbeb9fdf6868a9637611e9018952fb43",
+ "git_sha": "06b2e61dbb85dc5fa5a5d5853f9ba15f6a87dca9",
  "detector_sha256": "c42ae65bf9045cc93f0d73ae1437b2f6a1300670cb49d8e93f83a39d58a62a12",
  "precision": "32-true",
  "micro_batch": 16,
  "gradient_accumulation": 1,
  "effective_batch": 16,
- "epochs_run": 45,
+ "epochs_run": 50,
  "best_dev_f1": 0.8998073217726397,
  "best_dev": {
   "f1": 0.8998073217726397,
@@ -17,28 +17,28 @@
   "fp": 54,
   "fn": 50,
   "ignored_predictions": 70,
-  "threshold": 0.89306640625,
-  "n_candidates": 1060,
-  "epoch": 24
+  "threshold": 0.900390625,
+  "n_candidates": 1042,
+  "epoch": 29
  },
  "best_checkpoint": {
   "relative_path": "checkpoints/best.ckpt",
-  "sha256": "ffc4b313b04ef67523b7aa38ddc6fb16e5830f83439e2b47893634d1b84cc798",
-  "epoch": 24
+  "sha256": "539ac2ea3c3e54baab9aa5dcb69147759eda9699b1d990a1bd4baa00e7d669a1",
+  "epoch": 29
  },
  "last_dev": {
-  "f1": 0.8992395437262357,
-  "precision": 0.8841121495327103,
-  "recall": 0.9148936170212766,
-  "tp": 473,
-  "fp": 62,
-  "fn": 44,
-  "ignored_predictions": 77,
-  "threshold": 0.8994140625,
-  "n_candidates": 1196,
-  "epoch": 44
+  "f1": 0.8903976721629486,
+  "precision": 0.8929961089494164,
+  "recall": 0.8878143133462283,
+  "tp": 459,
+  "fp": 55,
+  "fn": 58,
+  "ignored_predictions": 72,
+  "threshold": 0.92333984375,
+  "n_candidates": 1205,
+  "epoch": 49
  },
- "train_loss": 0.0046189953573048115,
+ "train_loss": 0.003343458753079176,
  "h100_runtime_contract": {
   "schema": 1,
   "status": "verified",

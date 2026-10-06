@@ -1,29 +1,29 @@
 {
  "test_result_schema": 1,
  "status": "test-complete",
- "scored_utc": "2026-08-13T04:19:29+00:00",
+ "scored_utc": "2026-10-02T01:58:43+00:00",
  "exp_id": "beS1-f25-s0",
- "cohort_sha256": "9b1ba03e3893a35cd1d0f4d3b63c994afb8e84219c8db28113c9bf6de62e7138",
- "completion_marker_sha256": "a20b39574dfac66ce77dd2c85a6029fbf052e0452cc5cf795722534be2629c5d",
- "git_sha": "1a82d508fbeb9fdf6868a9637611e9018952fb43",
+ "cohort_sha256": "a8996efd01a95e78bfb4ae46bc93120d842407d109ee74d111d310e8aa5cbef5",
+ "completion_marker_sha256": "ad18a846f63dfa296716ef220ea7d87e715df9c82aebf1d5e2b6d922a62b94df",
+ "git_sha": "06b2e61dbb85dc5fa5a5d5853f9ba15f6a87dca9",
  "detector_sha256": "c42ae65bf9045cc93f0d73ae1437b2f6a1300670cb49d8e93f83a39d58a62a12",
  "inference_precision": "32-true",
  "threshold_source": {
   "kind": "best-dev-checkpoint-bound",
-  "threshold": 0.876953125,
+  "threshold": 0.87646484375,
   "dev_epoch": 14,
   "checkpoint_relative_path": "beS1-f25-s0/checkpoints/best.ckpt",
-  "checkpoint_sha256": "92dea04209782cef6b3637d918c79272fd5ef385b07f9b7c8a2461f13e048fe1",
+  "checkpoint_sha256": "2647a74a3f594b691fc9aed1ff221305a0899c1374fad2de32801713bec1bce8",
   "checkpoint_epoch": 14
  },
  "metrics": {
-  "f1": 0.8024582967515366,
-  "precision": 0.821203953279425,
-  "recall": 0.784549356223176,
-  "tp": 914,
+  "f1": 0.8029837648091268,
+  "precision": 0.8213644524236984,
+  "recall": 0.7854077253218884,
+  "tp": 915,
   "fp": 199,
-  "fn": 251,
-  "ignored_predictions": 187,
+  "fn": 250,
+  "ignored_predictions": 188,
   "dark_recall": 0.0,
   "dark_support": 0,
   "near_shore_f1": 0.0,
@@ -38,7 +38,7 @@
     "tp": 61,
     "fp": 1,
     "fn": 2,
-    "ignored_predictions": 11
+    "ignored_predictions": 12
    },
    "slices": {
     "dark": {
@@ -342,12 +342,12 @@
   },
   "994a95128e83814et": {
    "aggregate": {
-    "f1": 0.921985815602837,
-    "precision": 0.9701492537313433,
-    "recall": 0.8783783783783784,
-    "tp": 65,
+    "f1": 0.9295774647887325,
+    "precision": 0.9705882352941176,
+    "recall": 0.8918918918918919,
+    "tp": 66,
     "fp": 2,
-    "fn": 9,
+    "fn": 8,
     "ignored_predictions": 13
    },
    "slices": {

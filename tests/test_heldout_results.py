@@ -160,4 +160,5 @@ def test_dev_to_test_macros_render_with_real_values() -> None:
     validated = _validated()
     tex = render_tex(validated)
     assert "\\HevTestCompletetrue" in tex
-    assert "\\HevTestFViTRandomTen{0.7042" in tex or "\\HevTestFViTRandomTen{0.70" in tex
+    # replacement32 cohort a8996efd (the August cohort 9b1ba03e gave 0.7042).
+    assert "\\HevTestFViTRandomTen{0.6926}" in tex

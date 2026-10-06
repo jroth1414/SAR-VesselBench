@@ -1,29 +1,29 @@
 {
  "test_result_schema": 1,
  "status": "test-complete",
- "scored_utc": "2026-08-13T04:05:58+00:00",
+ "scored_utc": "2026-10-02T00:09:30+00:00",
  "exp_id": "beS1-f50-s0",
- "cohort_sha256": "9b1ba03e3893a35cd1d0f4d3b63c994afb8e84219c8db28113c9bf6de62e7138",
- "completion_marker_sha256": "a432c2831ff630b32a2cae20210ffac85c3414909a6b7d7225db4be8b061b9a7",
- "git_sha": "1a82d508fbeb9fdf6868a9637611e9018952fb43",
+ "cohort_sha256": "a8996efd01a95e78bfb4ae46bc93120d842407d109ee74d111d310e8aa5cbef5",
+ "completion_marker_sha256": "93bcc4879d18b5aa1c888734ae57ba0052872667af1f690d02d2c3d164fe76b5",
+ "git_sha": "06b2e61dbb85dc5fa5a5d5853f9ba15f6a87dca9",
  "detector_sha256": "c42ae65bf9045cc93f0d73ae1437b2f6a1300670cb49d8e93f83a39d58a62a12",
  "inference_precision": "32-true",
  "threshold_source": {
   "kind": "best-dev-checkpoint-bound",
-  "threshold": 0.89306640625,
-  "dev_epoch": 24,
+  "threshold": 0.900390625,
+  "dev_epoch": 29,
   "checkpoint_relative_path": "beS1-f50-s0/checkpoints/best.ckpt",
-  "checkpoint_sha256": "ffc4b313b04ef67523b7aa38ddc6fb16e5830f83439e2b47893634d1b84cc798",
-  "checkpoint_epoch": 24
+  "checkpoint_sha256": "539ac2ea3c3e54baab9aa5dcb69147759eda9699b1d990a1bd4baa00e7d669a1",
+  "checkpoint_epoch": 29
  },
  "metrics": {
-  "f1": 0.8520710059171598,
-  "precision": 0.839300582847627,
-  "recall": 0.8652360515021459,
-  "tp": 1008,
-  "fp": 193,
-  "fn": 157,
-  "ignored_predictions": 173,
+  "f1": 0.8477891156462584,
+  "precision": 0.8399326032013479,
+  "recall": 0.855793991416309,
+  "tp": 997,
+  "fp": 190,
+  "fn": 168,
+  "ignored_predictions": 171,
   "dark_recall": 0.0,
   "dark_support": 0,
   "near_shore_f1": 0.0,
@@ -38,7 +38,7 @@
     "tp": 62,
     "fp": 0,
     "fn": 1,
-    "ignored_predictions": 10
+    "ignored_predictions": 9
    },
    "slices": {
     "dark": {
@@ -69,7 +69,7 @@
     "tp": 33,
     "fp": 2,
     "fn": 8,
-    "ignored_predictions": 8
+    "ignored_predictions": 7
    },
    "slices": {
     "dark": {
@@ -94,12 +94,12 @@
   },
   "4cb65eef4af658c0t": {
    "aggregate": {
-    "f1": 0.8785046728971962,
-    "precision": 0.9791666666666666,
-    "recall": 0.7966101694915254,
-    "tp": 94,
-    "fp": 2,
-    "fn": 24,
+    "f1": 0.8490566037735849,
+    "precision": 0.9574468085106383,
+    "recall": 0.7627118644067796,
+    "tp": 90,
+    "fp": 4,
+    "fn": 28,
     "ignored_predictions": 4
    },
    "slices": {
@@ -117,7 +117,7 @@
      "precision": 0.0,
      "recall": 0.0,
      "tp": 0,
-     "fp": 1,
+     "fp": 2,
      "fn": 1,
      "ignored_predictions": 0
     }
@@ -125,13 +125,13 @@
   },
   "5d45cb2dc3c48d8bt": {
    "aggregate": {
-    "f1": 0.8648648648648649,
-    "precision": 0.9230769230769231,
-    "recall": 0.8135593220338984,
-    "tp": 48,
-    "fp": 4,
-    "fn": 11,
-    "ignored_predictions": 15
+    "f1": 0.8928571428571428,
+    "precision": 0.9433962264150944,
+    "recall": 0.847457627118644,
+    "tp": 50,
+    "fp": 3,
+    "fn": 9,
+    "ignored_predictions": 16
    },
    "slices": {
     "dark": {
@@ -156,13 +156,13 @@
   },
   "78fde272efeb9d56t": {
    "aggregate": {
-    "f1": 0.7291666666666666,
-    "precision": 0.603448275862069,
-    "recall": 0.9210526315789473,
-    "tp": 70,
-    "fp": 46,
-    "fn": 6,
-    "ignored_predictions": 5
+    "f1": 0.686868686868687,
+    "precision": 0.5573770491803278,
+    "recall": 0.8947368421052632,
+    "tp": 68,
+    "fp": 54,
+    "fn": 8,
+    "ignored_predictions": 4
    },
    "slices": {
     "dark": {
@@ -187,13 +187,13 @@
   },
   "821593907c14c5c2t": {
    "aggregate": {
-    "f1": 0.9420289855072465,
-    "precision": 0.9027777777777778,
-    "recall": 0.9848484848484849,
-    "tp": 65,
+    "f1": 0.9264705882352942,
+    "precision": 0.9,
+    "recall": 0.9545454545454546,
+    "tp": 63,
     "fp": 7,
-    "fn": 1,
-    "ignored_predictions": 7
+    "fn": 3,
+    "ignored_predictions": 8
    },
    "slices": {
     "dark": {
@@ -218,13 +218,13 @@
   },
   "835f7629c3a3a9abt": {
    "aggregate": {
-    "f1": 0.7899159663865546,
-    "precision": 0.8103448275862069,
-    "recall": 0.7704918032786885,
-    "tp": 47,
-    "fp": 11,
-    "fn": 14,
-    "ignored_predictions": 6
+    "f1": 0.7758620689655172,
+    "precision": 0.8181818181818182,
+    "recall": 0.7377049180327869,
+    "tp": 45,
+    "fp": 10,
+    "fn": 16,
+    "ignored_predictions": 7
    },
    "slices": {
     "dark": {
@@ -241,7 +241,7 @@
      "precision": 0.0,
      "recall": 0.0,
      "tp": 0,
-     "fp": 1,
+     "fp": 2,
      "fn": 0,
      "ignored_predictions": 0
     }
@@ -280,12 +280,12 @@
   },
   "8a6781613364d055t": {
    "aggregate": {
-    "f1": 0.9122807017543859,
-    "precision": 0.9043478260869565,
-    "recall": 0.9203539823008849,
-    "tp": 104,
-    "fp": 11,
-    "fn": 9,
+    "f1": 0.8995633187772926,
+    "precision": 0.8879310344827587,
+    "recall": 0.911504424778761,
+    "tp": 103,
+    "fp": 13,
+    "fn": 10,
     "ignored_predictions": 13
    },
    "slices": {
@@ -303,7 +303,7 @@
      "precision": 0.0,
      "recall": 0.0,
      "tp": 0,
-     "fp": 0,
+     "fp": 1,
      "fn": 0,
      "ignored_predictions": 0
     }
@@ -311,12 +311,12 @@
   },
   "968b06adcd8ba6ect": {
    "aggregate": {
-    "f1": 0.8148148148148148,
-    "precision": 0.7457627118644068,
-    "recall": 0.8979591836734694,
-    "tp": 44,
-    "fp": 15,
-    "fn": 5,
+    "f1": 0.8076923076923076,
+    "precision": 0.7636363636363637,
+    "recall": 0.8571428571428571,
+    "tp": 42,
+    "fp": 13,
+    "fn": 7,
     "ignored_predictions": 9
    },
    "slices": {
@@ -342,13 +342,13 @@
   },
   "994a95128e83814et": {
    "aggregate": {
-    "f1": 0.9166666666666667,
-    "precision": 0.9428571428571428,
+    "f1": 0.9230769230769231,
+    "precision": 0.9565217391304348,
     "recall": 0.8918918918918919,
     "tp": 66,
-    "fp": 4,
+    "fp": 3,
     "fn": 8,
-    "ignored_predictions": 14
+    "ignored_predictions": 12
    },
    "slices": {
     "dark": {
@@ -373,13 +373,13 @@
   },
   "9c4703bf071fc332t": {
    "aggregate": {
-    "f1": 0.9615384615384616,
-    "precision": 0.9433962264150944,
-    "recall": 0.9803921568627451,
-    "tp": 50,
-    "fp": 3,
-    "fn": 1,
-    "ignored_predictions": 5
+    "f1": 0.96,
+    "precision": 0.9795918367346939,
+    "recall": 0.9411764705882353,
+    "tp": 48,
+    "fp": 1,
+    "fn": 3,
+    "ignored_predictions": 6
    },
    "slices": {
     "dark": {
@@ -404,12 +404,12 @@
   },
   "a45bc46512eb61f8t": {
    "aggregate": {
-    "f1": 0.786206896551724,
-    "precision": 0.75,
-    "recall": 0.8260869565217391,
-    "tp": 114,
-    "fp": 38,
-    "fn": 24,
+    "f1": 0.7943262411347518,
+    "precision": 0.7777777777777778,
+    "recall": 0.8115942028985508,
+    "tp": 112,
+    "fp": 32,
+    "fn": 26,
     "ignored_predictions": 32
    },
    "slices": {
@@ -435,13 +435,13 @@
   },
   "aec08a1bed9de27at": {
    "aggregate": {
-    "f1": 0.9105691056910569,
-    "precision": 0.8888888888888888,
-    "recall": 0.9333333333333333,
-    "tp": 56,
+    "f1": 0.9193548387096774,
+    "precision": 0.890625,
+    "recall": 0.95,
+    "tp": 57,
     "fp": 7,
-    "fn": 4,
-    "ignored_predictions": 7
+    "fn": 3,
+    "ignored_predictions": 8
    },
    "slices": {
     "dark": {
@@ -466,13 +466,13 @@
   },
   "cb63265c445495d3t": {
    "aggregate": {
-    "f1": 0.8017241379310345,
-    "precision": 0.8857142857142857,
-    "recall": 0.7322834645669292,
-    "tp": 93,
-    "fp": 12,
-    "fn": 34,
-    "ignored_predictions": 16
+    "f1": 0.8117154811715481,
+    "precision": 0.8660714285714286,
+    "recall": 0.7637795275590551,
+    "tp": 97,
+    "fp": 15,
+    "fn": 30,
+    "ignored_predictions": 15
    },
    "slices": {
     "dark": {
@@ -497,13 +497,13 @@
   },
   "efe75c178f7117a7t": {
    "aggregate": {
-    "f1": 0.5454545454545455,
-    "precision": 0.4,
-    "recall": 0.8571428571428571,
-    "tp": 18,
-    "fp": 27,
-    "fn": 3,
-    "ignored_predictions": 16
+    "f1": 0.5666666666666667,
+    "precision": 0.4358974358974359,
+    "recall": 0.8095238095238095,
+    "tp": 17,
+    "fp": 22,
+    "fn": 4,
+    "ignored_predictions": 15
    },
    "slices": {
     "dark": {

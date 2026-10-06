@@ -1,11 +1,11 @@
 {
  "test_result_schema": 1,
  "status": "test-complete",
- "scored_utc": "2026-08-13T04:19:06+00:00",
+ "scored_utc": "2026-10-02T01:31:33+00:00",
  "exp_id": "cnnrand-f25-s0",
- "cohort_sha256": "9b1ba03e3893a35cd1d0f4d3b63c994afb8e84219c8db28113c9bf6de62e7138",
- "completion_marker_sha256": "b5ee8e7608ea4bf836c80d10980bbf4bb0efea5824b37cd20ed9028aa44eb43f",
- "git_sha": "1a82d508fbeb9fdf6868a9637611e9018952fb43",
+ "cohort_sha256": "a8996efd01a95e78bfb4ae46bc93120d842407d109ee74d111d310e8aa5cbef5",
+ "completion_marker_sha256": "68d77fadedb3e696f6156a0a02917024223ca9f7a782e77473b29e3f81c75b32",
+ "git_sha": "06b2e61dbb85dc5fa5a5d5853f9ba15f6a87dca9",
  "detector_sha256": "c42ae65bf9045cc93f0d73ae1437b2f6a1300670cb49d8e93f83a39d58a62a12",
  "inference_precision": "32-true",
  "threshold_source": {
@@ -13,7 +13,7 @@
   "threshold": 0.8193359375,
   "dev_epoch": 44,
   "checkpoint_relative_path": "cnnrand-f25-s0/checkpoints/best.ckpt",
-  "checkpoint_sha256": "da72713b5b32609d380fcc334852ac633ee886d66c957be0870551c6bdaa9f7a",
+  "checkpoint_sha256": "a8954f406d5f5f3732ec0fd4a1506ba6ddd7398497154b9356595fb997c48a33",
   "checkpoint_epoch": 44
  },
  "metrics": {

@@ -70,6 +70,37 @@ def test_stage_copies_bound_files_exactly_and_redacts_provenance(tmp_path: Path)
     assert summary["cells"] == 1 and summary["redacted_files"] == 1
 
 
+def test_hash_bound_result_files_are_copied_byte_exact(tmp_path: Path) -> None:
+    run_root = _run_tree(tmp_path / "runs")
+    (run_root / ".h100" / "FINAL_EVAL_COMPLETE.json").write_bytes(b'{"cell_count": 1}\n')
+    out = tmp_path / "evidence"
+
+    stage(run_root, out)
+
+    for name in ("test_metrics.json", "final_verified_metrics.json"):
+        assert (out / "a-f10-s0" / name).read_bytes() == (run_root / "a-f10-s0" / name).read_bytes()
+    assert (out / "FINAL_EVAL_COMPLETE.json").read_bytes() == b'{"cell_count": 1}\n'
+
+
+def test_log_excerpt_binds_the_full_log_and_redacts_site_paths(tmp_path: Path) -> None:
+    lines = [f"line {i} {PREFIX}/x" if i == 199 else f"line {i}" for i in range(200)]
+    raw = ("\n".join(lines) + "\n").encode("utf-8")
+    run_root = _run_tree(tmp_path / "runs")
+    (run_root / "logs" / "h100").mkdir(parents=True)
+    (run_root / "logs" / "h100" / "a-f10-s0.log").write_bytes(raw)
+    logs_out = tmp_path / "excerpts"
+
+    stage(run_root, tmp_path / "evidence", logs_out=logs_out)
+
+    text = (logs_out / "a-f10-s0.log").read_text(encoding="utf-8")
+    assert f"Full log: 200 lines, sha256 {_sha(raw)}" in text
+    assert "line 59\n[... 20 lines elided ...]\nline 80\n" in text
+    assert PREFIX not in text.split("\n", 3)[3] and "line 199 /cluster-site-redacted/x" in text
+    assert f"# Site paths redacted: {PREFIX} -> /cluster-site-redacted." in text
+    redactions = json.loads((tmp_path / "evidence" / "REDACTIONS.json").read_text(encoding="utf-8"))
+    assert "logs/h100_excerpts/a-f10-s0.log" in redactions["files"]
+
+
 def test_stage_carries_a_terminal_recovery_record_in_place_of_a_curve(tmp_path: Path) -> None:
     run_root = _run_tree(tmp_path / "runs")
     (run_root / "a-f10-s0" / "metrics" / "metrics.csv").unlink()

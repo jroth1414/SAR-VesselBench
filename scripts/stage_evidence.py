@@ -3,12 +3,14 @@
 The output mirrors ``results/h100/evidence``:
 
 * ``TRAINING_COHORT.json``, each cell's ``final_metrics.json``, its
-  ``metrics.csv`` and any marker-bound ``terminal_recovery.json`` are copied
-  byte-exact (the cohort hash-binds every marker);
-* ``runtime_provenance.json``, ``test_metrics.json`` and, when present,
-  ``final_verified_metrics.json`` are copied with the private cluster prefix
+  ``metrics.csv``, any marker-bound ``terminal_recovery.json``, its
+  ``test_metrics.json`` and, when present, ``final_verified_metrics.json``
+  are copied byte-exact (each is hash-bound by the cohort, the TEST rebuild
+  or ``FINAL_EVAL_COMPLETE.json``);
+* ``runtime_provenance.json`` is copied with the private cluster prefix
   replaced, and ``REDACTIONS.json`` records each original SHA-256;
-* ``EVAL_GROUND_TRUTH_VALIDATED.json`` comes from the run tree's ``.h100``.
+* ``EVAL_GROUND_TRUTH_VALIDATED.json`` and, when present,
+  ``FINAL_EVAL_COMPLETE.json`` come from the run tree's ``.h100``.
 
 A byte-exact file that carries the private prefix cannot be both exact and
 redacted, so staging stops instead of writing it. The output directory must
@@ -34,15 +36,46 @@ EXACT_FILES = (("final_metrics.json", "final_metrics.json"), ("metrics/metrics.c
 # A zero-step terminal resume leaves no Lightning curve; its marker-bound record
 # stands in, and heldout_results decides whether the substitution is valid.
 OPTIONAL_EXACT = {"metrics/metrics.csv"}
-EXTRA_EXACT_FILES = ("terminal_recovery.json",)
-REDACTED_FILES = ("runtime_provenance.json", "test_metrics.json", "final_verified_metrics.json")
-REQUIRED_REDACTED = {"runtime_provenance.json", "test_metrics.json"}
+# Hash-bound elsewhere (marker, TEST rebuild, FINAL_EVAL_COMPLETE), so never redacted.
+EXTRA_EXACT_FILES = ("terminal_recovery.json", "test_metrics.json", "final_verified_metrics.json")
+REQUIRED_EXTRA = {"test_metrics.json"}
+REDACTED_FILES = ("runtime_provenance.json",)
+REQUIRED_REDACTED = {"runtime_provenance.json"}
+FINAL_COMPLETE = "FINAL_EVAL_COMPLETE.json"
 DEFAULT_PREFIX = "/projects/geofam"
 DEFAULT_REPLACEMENT = "/cluster-site-redacted"
 
 
+LOG_HEAD_LINES = 60
+LOG_TAIL_LINES = 120
+LOG_KEY_PREFIX = "logs/h100_excerpts"
+
+
 class StagingError(RuntimeError):
     """The delivered run tree cannot be staged without breaking a binding."""
+
+
+def excerpt_log(raw: bytes, exp_id: str, prefix: str, replacement: str) -> tuple[str, str]:
+    """Head/tail excerpt of a training log; returns (unredacted, redacted) text.
+
+    Progress-bar carriage returns count as line breaks, as in the August
+    excerpts. The header binds the full log by line count and SHA-256.
+    """
+
+    lines = raw.decode("utf-8", errors="replace").splitlines()
+    header = [
+        f"# Excerpt of the full H100 training log for {exp_id}.",
+        f"# Full log: {len(lines)} lines, sha256 {_sha256(raw)} (operator archive).",
+        f"# Site paths redacted: {prefix} -> {replacement}.",
+    ]
+    if len(lines) > LOG_HEAD_LINES + LOG_TAIL_LINES:
+        elided = len(lines) - LOG_HEAD_LINES - LOG_TAIL_LINES
+        body = lines[:LOG_HEAD_LINES] + [f"[... {elided} lines elided ...]"] + lines[-LOG_TAIL_LINES:]
+    else:
+        body = lines
+    head = "\n".join(header) + "\n"
+    text = "\n".join(body) + "\n"
+    return head + text, head + text.replace(prefix, replacement)
 
 
 def _sha256(data: bytes) -> str:
@@ -75,9 +108,12 @@ def stage(
     *,
     prefix: str = DEFAULT_PREFIX,
     replacement: str = DEFAULT_REPLACEMENT,
+    logs_out: Path | None = None,
 ) -> dict[str, object]:
     if out.exists():
         raise StagingError(f"output directory already exists: {out}")
+    if logs_out is not None and logs_out.exists():
+        raise StagingError(f"log excerpt directory already exists: {logs_out}")
     control = run_root / ".h100"
     prefix_bytes, replacement_bytes = prefix.encode("utf-8"), replacement.encode("utf-8")
     cohort_bytes = (control / COHORT).read_bytes()
@@ -94,6 +130,8 @@ def stage(
     try:
         _copy_exact(control / COHORT, work / COHORT, prefix_bytes)
         _copy_exact(control / AUDIT, work / AUDIT, prefix_bytes)
+        if (control / FINAL_COMPLETE).is_file():
+            _copy_exact(control / FINAL_COMPLETE, work / FINAL_COMPLETE, prefix_bytes)
         for record in cells:
             exp_id = str(record["exp_id"])
             binding = record["completion_marker"]
@@ -109,6 +147,8 @@ def stage(
             for name in EXTRA_EXACT_FILES:
                 if (cell_source / name).is_file():
                     _copy_exact(cell_source / name, work / exp_id / name, prefix_bytes)
+                elif name in REQUIRED_EXTRA:
+                    raise StagingError(f"{exp_id}: missing {name}")
             for name in REDACTED_FILES:
                 source = cell_source / name
                 if not source.is_file():
@@ -117,6 +157,18 @@ def stage(
                     continue
                 key = f"{exp_id}/{name}"
                 _copy_redacted(source, work / key, prefix_bytes, replacement_bytes, redactions, key)
+        excerpts: dict[str, str] = {}
+        if logs_out is not None:
+            for record in cells:
+                exp_id = str(record["exp_id"])
+                raw = (run_root / "logs" / "h100" / f"{exp_id}.log").read_bytes()
+                original, redacted = excerpt_log(raw, exp_id, prefix, replacement)
+                excerpts[exp_id] = redacted
+                if original != redacted:
+                    redactions[f"{LOG_KEY_PREFIX}/{exp_id}.log"] = {
+                        "original_sha256": _sha256(original.encode("utf-8")),
+                        "replaced": prefix,
+                    }
         manifest = {
             "files": dict(sorted(redactions.items())),
             "note": (
@@ -134,6 +186,10 @@ def stage(
     except BaseException:
         shutil.rmtree(work, ignore_errors=True)
         raise
+    if logs_out is not None:
+        logs_out.mkdir(parents=True)
+        for exp_id, text in excerpts.items():
+            (logs_out / f"{exp_id}.log").write_bytes(text.encode("utf-8"))
     return {"cells": len(cells), "redacted_files": len(redactions), "cohort_sha256": _sha256(cohort_bytes)}
 
 
@@ -143,9 +199,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--prefix", default=DEFAULT_PREFIX)
     parser.add_argument("--replacement", default=DEFAULT_REPLACEMENT)
+    parser.add_argument("--logs-out", type=Path, help="write redacted head/tail log excerpts here")
     args = parser.parse_args(argv)
     try:
-        summary = stage(args.run_root, args.out, prefix=args.prefix, replacement=args.replacement)
+        summary = stage(
+            args.run_root, args.out, prefix=args.prefix, replacement=args.replacement, logs_out=args.logs_out
+        )
     except (StagingError, OSError, KeyError, ValueError) as exc:
         print(f"stage_evidence: {exc}", file=sys.stderr)
         return 1

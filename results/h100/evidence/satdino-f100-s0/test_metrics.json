@@ -1,29 +1,29 @@
 {
  "test_result_schema": 1,
  "status": "test-complete",
- "scored_utc": "2026-08-13T03:52:18+00:00",
+ "scored_utc": "2026-10-01T23:00:31+00:00",
  "exp_id": "satdino-f100-s0",
- "cohort_sha256": "9b1ba03e3893a35cd1d0f4d3b63c994afb8e84219c8db28113c9bf6de62e7138",
- "completion_marker_sha256": "d71a4bb95a105b839b06fbc5b78872fecaa115ee3e105b7993246d2acaa8a01d",
- "git_sha": "1a82d508fbeb9fdf6868a9637611e9018952fb43",
+ "cohort_sha256": "a8996efd01a95e78bfb4ae46bc93120d842407d109ee74d111d310e8aa5cbef5",
+ "completion_marker_sha256": "ceb2e894159e9dd8da5d6f343c790f7953e3af474eacbc41ded76ee55ddf5682",
+ "git_sha": "06b2e61dbb85dc5fa5a5d5853f9ba15f6a87dca9",
  "detector_sha256": "c42ae65bf9045cc93f0d73ae1437b2f6a1300670cb49d8e93f83a39d58a62a12",
  "inference_precision": "32-true",
  "threshold_source": {
   "kind": "best-dev-checkpoint-bound",
-  "threshold": 0.859375,
-  "dev_epoch": 34,
+  "threshold": 0.89697265625,
+  "dev_epoch": 44,
   "checkpoint_relative_path": "satdino-f100-s0/checkpoints/best.ckpt",
-  "checkpoint_sha256": "6fd062a0d6458f6637ff53085f03dd0723259f1a4f653ceb542f58233073170e",
-  "checkpoint_epoch": 34
+  "checkpoint_sha256": "3b2fa9a3f8879219140dbd454bef2b27d3685c2c21d6460087b861252a194b35",
+  "checkpoint_epoch": 44
  },
  "metrics": {
-  "f1": 0.8464929859719439,
-  "precision": 0.793984962406015,
-  "recall": 0.9064377682403434,
-  "tp": 1056,
-  "fp": 274,
-  "fn": 109,
-  "ignored_predictions": 186,
+  "f1": 0.8566761943650469,
+  "precision": 0.8169781931464174,
+  "recall": 0.9004291845493563,
+  "tp": 1049,
+  "fp": 235,
+  "fn": 116,
+  "ignored_predictions": 187,
   "dark_recall": 0.0,
   "dark_support": 0,
   "near_shore_f1": 0.25,
@@ -32,12 +32,12 @@
  "per_scene": {
   "156845d347e67d21t": {
    "aggregate": {
-    "f1": 1.0,
+    "f1": 0.9919999999999999,
     "precision": 1.0,
-    "recall": 1.0,
-    "tp": 63,
+    "recall": 0.9841269841269841,
+    "tp": 62,
     "fp": 0,
-    "fn": 0,
+    "fn": 1,
     "ignored_predictions": 10
    },
    "slices": {
@@ -63,12 +63,12 @@
   },
   "395dcf560a56ff39t": {
    "aggregate": {
-    "f1": 0.9135802469135802,
-    "precision": 0.925,
-    "recall": 0.9024390243902439,
-    "tp": 37,
-    "fp": 3,
-    "fn": 4,
+    "f1": 0.9113924050632912,
+    "precision": 0.9473684210526315,
+    "recall": 0.8780487804878049,
+    "tp": 36,
+    "fp": 2,
+    "fn": 5,
     "ignored_predictions": 9
    },
    "slices": {
@@ -94,11 +94,11 @@
   },
   "4cb65eef4af658c0t": {
    "aggregate": {
-    "f1": 0.9067796610169492,
-    "precision": 0.9067796610169492,
+    "f1": 0.9145299145299146,
+    "precision": 0.9224137931034483,
     "recall": 0.9067796610169492,
     "tp": 107,
-    "fp": 11,
+    "fp": 9,
     "fn": 11,
     "ignored_predictions": 4
    },
@@ -125,13 +125,13 @@
   },
   "5d45cb2dc3c48d8bt": {
    "aggregate": {
-    "f1": 0.8739495798319329,
-    "precision": 0.8666666666666667,
-    "recall": 0.8813559322033898,
-    "tp": 52,
-    "fp": 8,
-    "fn": 7,
-    "ignored_predictions": 16
+    "f1": 0.8793103448275862,
+    "precision": 0.8947368421052632,
+    "recall": 0.864406779661017,
+    "tp": 51,
+    "fp": 6,
+    "fn": 8,
+    "ignored_predictions": 17
    },
    "slices": {
     "dark": {
@@ -156,13 +156,13 @@
   },
   "78fde272efeb9d56t": {
    "aggregate": {
-    "f1": 0.553030303030303,
-    "precision": 0.3882978723404255,
-    "recall": 0.9605263157894737,
-    "tp": 73,
-    "fp": 115,
-    "fn": 3,
-    "ignored_predictions": 8
+    "f1": 0.5873015873015873,
+    "precision": 0.42045454545454547,
+    "recall": 0.9736842105263158,
+    "tp": 74,
+    "fp": 102,
+    "fn": 2,
+    "ignored_predictions": 9
    },
    "slices": {
     "dark": {
@@ -187,11 +187,11 @@
   },
   "821593907c14c5c2t": {
    "aggregate": {
-    "f1": 0.9172932330827067,
-    "precision": 0.9104477611940298,
+    "f1": 0.9242424242424242,
+    "precision": 0.9242424242424242,
     "recall": 0.9242424242424242,
     "tp": 61,
-    "fp": 6,
+    "fp": 5,
     "fn": 5,
     "ignored_predictions": 9
    },
@@ -218,13 +218,13 @@
   },
   "835f7629c3a3a9abt": {
    "aggregate": {
-    "f1": 0.7716535433070867,
-    "precision": 0.7424242424242424,
-    "recall": 0.8032786885245902,
-    "tp": 49,
-    "fp": 17,
-    "fn": 12,
-    "ignored_predictions": 9
+    "f1": 0.8062015503875968,
+    "precision": 0.7647058823529411,
+    "recall": 0.8524590163934426,
+    "tp": 52,
+    "fp": 16,
+    "fn": 9,
+    "ignored_predictions": 8
    },
    "slices": {
     "dark": {
@@ -249,11 +249,11 @@
   },
   "83bf47e54523fc40t": {
    "aggregate": {
-    "f1": 0.9411764705882353,
-    "precision": 0.8888888888888888,
+    "f1": 0.9504950495049505,
+    "precision": 0.9056603773584906,
     "recall": 1.0,
     "tp": 48,
-    "fp": 6,
+    "fp": 5,
     "fn": 0,
     "ignored_predictions": 7
    },
@@ -280,13 +280,13 @@
   },
   "8a6781613364d055t": {
    "aggregate": {
-    "f1": 0.9350649350649352,
-    "precision": 0.9152542372881356,
-    "recall": 0.9557522123893806,
-    "tp": 108,
-    "fp": 10,
-    "fn": 5,
-    "ignored_predictions": 13
+    "f1": 0.9427312775330398,
+    "precision": 0.9385964912280702,
+    "recall": 0.9469026548672567,
+    "tp": 107,
+    "fp": 7,
+    "fn": 6,
+    "ignored_predictions": 14
    },
    "slices": {
     "dark": {
@@ -311,13 +311,13 @@
   },
   "968b06adcd8ba6ect": {
    "aggregate": {
-    "f1": 0.8440366972477065,
-    "precision": 0.7666666666666667,
-    "recall": 0.9387755102040817,
-    "tp": 46,
-    "fp": 14,
-    "fn": 3,
-    "ignored_predictions": 11
+    "f1": 0.8301886792452831,
+    "precision": 0.7719298245614035,
+    "recall": 0.8979591836734694,
+    "tp": 44,
+    "fp": 13,
+    "fn": 5,
+    "ignored_predictions": 9
    },
    "slices": {
     "dark": {
@@ -342,13 +342,13 @@
   },
   "994a95128e83814et": {
    "aggregate": {
-    "f1": 0.9333333333333332,
-    "precision": 0.9210526315789473,
+    "f1": 0.9395973154362416,
+    "precision": 0.9333333333333333,
     "recall": 0.9459459459459459,
     "tp": 70,
-    "fp": 6,
+    "fp": 5,
     "fn": 4,
-    "ignored_predictions": 14
+    "ignored_predictions": 13
    },
    "slices": {
     "dark": {
@@ -373,13 +373,13 @@
   },
   "9c4703bf071fc332t": {
    "aggregate": {
-    "f1": 0.9807692307692307,
-    "precision": 0.9622641509433962,
+    "f1": 0.9902912621359222,
+    "precision": 0.9807692307692307,
     "recall": 1.0,
     "tp": 51,
-    "fp": 2,
+    "fp": 1,
     "fn": 0,
-    "ignored_predictions": 5
+    "ignored_predictions": 6
    },
    "slices": {
     "dark": {
@@ -404,13 +404,13 @@
   },
   "a45bc46512eb61f8t": {
    "aggregate": {
-    "f1": 0.7491166077738516,
-    "precision": 0.7310344827586207,
-    "recall": 0.7681159420289855,
-    "tp": 106,
-    "fp": 39,
-    "fn": 32,
-    "ignored_predictions": 31
+    "f1": 0.7490909090909091,
+    "precision": 0.7518248175182481,
+    "recall": 0.7463768115942029,
+    "tp": 103,
+    "fp": 34,
+    "fn": 35,
+    "ignored_predictions": 34
    },
    "slices": {
     "dark": {
@@ -435,13 +435,13 @@
   },
   "aec08a1bed9de27at": {
    "aggregate": {
-    "f1": 0.9365079365079364,
-    "precision": 0.8939393939393939,
-    "recall": 0.9833333333333333,
-    "tp": 59,
-    "fp": 7,
-    "fn": 1,
-    "ignored_predictions": 7
+    "f1": 0.9508196721311476,
+    "precision": 0.9354838709677419,
+    "recall": 0.9666666666666667,
+    "tp": 58,
+    "fp": 4,
+    "fn": 2,
+    "ignored_predictions": 5
    },
    "slices": {
     "dark": {
@@ -466,13 +466,13 @@
   },
   "cb63265c445495d3t": {
    "aggregate": {
-    "f1": 0.8639999999999999,
-    "precision": 0.8780487804878049,
-    "recall": 0.8503937007874016,
-    "tp": 108,
-    "fp": 15,
-    "fn": 19,
-    "ignored_predictions": 16
+    "f1": 0.8755020080321285,
+    "precision": 0.8934426229508197,
+    "recall": 0.8582677165354331,
+    "tp": 109,
+    "fp": 13,
+    "fn": 18,
+    "ignored_predictions": 17
    },
    "slices": {
     "dark": {
@@ -497,13 +497,13 @@
   },
   "efe75c178f7117a7t": {
    "aggregate": {
-    "f1": 0.6666666666666665,
-    "precision": 0.5454545454545454,
-    "recall": 0.8571428571428571,
-    "tp": 18,
-    "fp": 15,
-    "fn": 3,
-    "ignored_predictions": 17
+    "f1": 0.64,
+    "precision": 0.5517241379310345,
+    "recall": 0.7619047619047619,
+    "tp": 16,
+    "fp": 13,
+    "fn": 5,
+    "ignored_predictions": 16
    },
    "slices": {
     "dark": {

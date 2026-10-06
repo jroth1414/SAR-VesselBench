@@ -1,5 +1,5 @@
 # Excerpt of the full H100 training log for vitrand-f10-s0.
-# Full log: 56328 lines, sha256 9993e85a14676e79407594ebfbff196b8cb5028f5adbae35bace801dedff8988 (operator archive).
+# Full log: 49302 lines, sha256 7bd1c94f2d2b58631631cfa8c28e3837f78453c6c844d6e937f7a8f6fc4f0dec (operator archive).
 # Site paths redacted: /projects/geofam -> /cluster-site-redacted.
 [rank: 0] Seed set to 0
 GPU available: True (cuda), used: True
@@ -7,7 +7,7 @@ TPU available: False, using: 0 TPU cores
 💡 Tip: For seamless cloud logging and experiment tracking, try installing [litlogger](https://pypi.org/project/litlogger/) to enable LitLogger, which logs metrics and artifacts automatically to the Lightning Experiments platform.
 /cluster-site-redacted/jroth/envs/xview3-h100-fp32-dgx-a4af214a/lib/python3.11/site-packages/lightning/pytorch/trainer/configuration_validator.py:70: You defined a `validation_step` but have no `val_dataloader`. Skipping val loop.
 You are using a CUDA device ('NVIDIA H100 80GB HBM3') that has Tensor Cores. To properly utilize them, you should set `torch.set_float32_matmul_precision('medium' | 'high')` which will trade-off precision for performance. For more details, read https://pytorch.org/docs/stable/generated/torch.set_float32_matmul_precision.html#torch.set_float32_matmul_precision
-LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [7]
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [6]
 
   | Name     | Type        | Params | Mode  | FLOPs
 ---------------------------------------------------------
@@ -27,107 +27,107 @@ SLURM auto-requeueing enabled. Setting signal handlers.
 Training: |          | 0/? [00:00<?, ?it/s]
 Training: |          | 0/? [00:00<?, ?it/s]
 Epoch 0:   0%|          | 0/701 [00:00<?, ?it/s]
-Epoch 0:   0%|          | 1/701 [00:01<14:36,  0.80it/s]
-Epoch 0:   0%|          | 1/701 [00:01<14:36,  0.80it/s, v_num=rics, train_loss=89.30]
-Epoch 0:   0%|          | 2/701 [00:01<07:55,  1.47it/s, v_num=rics, train_loss=89.30]
-Epoch 0:   0%|          | 2/701 [00:01<09:01,  1.29it/s, v_num=rics, train_loss=53.00]
-Epoch 0:   0%|          | 3/701 [00:01<06:24,  1.82it/s, v_num=rics, train_loss=53.00]
-Epoch 0:   0%|          | 3/701 [00:01<07:07,  1.63it/s, v_num=rics, train_loss=52.20]
-Epoch 0:   1%|          | 4/701 [00:01<05:38,  2.06it/s, v_num=rics, train_loss=52.20]
-Epoch 0:   1%|          | 4/701 [00:02<06:10,  1.88it/s, v_num=rics, train_loss=16.80]
-Epoch 0:   1%|          | 5/701 [00:02<05:10,  2.24it/s, v_num=rics, train_loss=16.80]
-Epoch 0:   1%|          | 5/701 [00:02<05:36,  2.07it/s, v_num=rics, train_loss=12.90]
-Epoch 0:   1%|          | 6/701 [00:02<04:52,  2.38it/s, v_num=rics, train_loss=12.90]
-Epoch 0:   1%|          | 6/701 [00:02<05:13,  2.21it/s, v_num=rics, train_loss=6.690]
-Epoch 0:   1%|          | 7/701 [00:02<04:38,  2.49it/s, v_num=rics, train_loss=6.690]
-Epoch 0:   1%|          | 7/701 [00:03<04:57,  2.33it/s, v_num=rics, train_loss=5.760]
-Epoch 0:   1%|          | 8/701 [00:03<04:29,  2.57it/s, v_num=rics, train_loss=5.760]
-Epoch 0:   1%|          | 8/701 [00:03<04:45,  2.43it/s, v_num=rics, train_loss=6.050]
-Epoch 0:   1%|▏         | 9/701 [00:03<04:21,  2.65it/s, v_num=rics, train_loss=6.050]
-Epoch 0:   1%|▏         | 9/701 [00:03<04:35,  2.51it/s, v_num=rics, train_loss=4.860]
-Epoch 0:   1%|▏         | 10/701 [00:03<04:14,  2.71it/s, v_num=rics, train_loss=4.860]
-Epoch 0:   1%|▏         | 10/701 [00:03<04:27,  2.58it/s, v_num=rics, train_loss=4.050]
-Epoch 0:   2%|▏         | 11/701 [00:03<04:09,  2.76it/s, v_num=rics, train_loss=4.050]
-Epoch 0:   2%|▏         | 11/701 [00:04<04:21,  2.64it/s, v_num=rics, train_loss=4.180]
-Epoch 0:   2%|▏         | 12/701 [00:04<04:05,  2.81it/s, v_num=rics, train_loss=4.180]
-Epoch 0:   2%|▏         | 12/701 [00:04<04:15,  2.69it/s, v_num=rics, train_loss=4.030]
-Epoch 0:   2%|▏         | 13/701 [00:04<04:01,  2.85it/s, v_num=rics, train_loss=4.030]
-Epoch 0:   2%|▏         | 13/701 [00:04<04:11,  2.74it/s, v_num=rics, train_loss=4.130]
-Epoch 0:   2%|▏         | 14/701 [00:04<03:58,  2.89it/s, v_num=rics, train_loss=4.130]
-Epoch 0:   2%|▏         | 14/701 [00:05<04:07,  2.78it/s, v_num=rics, train_loss=4.390]
-Epoch 0:   2%|▏         | 15/701 [00:05<03:55,  2.92it/s, v_num=rics, train_loss=4.390]
-Epoch 0:   2%|▏         | 15/701 [00:05<04:03,  2.81it/s, v_num=rics, train_loss=4.040]
-Epoch 0:   2%|▏         | 16/701 [00:05<03:52,  2.95it/s, v_num=rics, train_loss=4.040]
-Epoch 0:   2%|▏         | 16/701 [00:05<04:00,  2.85it/s, v_num=rics, train_loss=4.080]
-Epoch 0:   2%|▏         | 17/701 [00:05<03:50,  2.97it/s, v_num=rics, train_loss=4.080]
-Epoch 0:   2%|▏         | 17/701 [00:05<03:57,  2.88it/s, v_num=rics, train_loss=4.130]
-[... 56148 lines elided ...]
-Epoch 39:  99%|█████████▊| 691/701 [03:21<00:02,  3.43it/s, v_num=rics, train_loss=0.0507, dev_f1=0.789]
-Epoch 39:  99%|█████████▊| 691/701 [03:21<00:02,  3.43it/s, v_num=rics, train_loss=0.00259, dev_f1=0.789]
-Epoch 39:  99%|█████████▊| 692/701 [03:21<00:02,  3.43it/s, v_num=rics, train_loss=0.00259, dev_f1=0.789]
-Epoch 39:  99%|█████████▊| 692/701 [03:22<00:02,  3.43it/s, v_num=rics, train_loss=0.00304, dev_f1=0.789]
-Epoch 39:  99%|█████████▉| 693/701 [03:22<00:02,  3.43it/s, v_num=rics, train_loss=0.00304, dev_f1=0.789]
-Epoch 39:  99%|█████████▉| 693/701 [03:22<00:02,  3.43it/s, v_num=rics, train_loss=0.316, dev_f1=0.789]  
-Epoch 39:  99%|█████████▉| 694/701 [03:22<00:02,  3.43it/s, v_num=rics, train_loss=0.316, dev_f1=0.789]
-Epoch 39:  99%|█████████▉| 694/701 [03:22<00:02,  3.43it/s, v_num=rics, train_loss=0.00143, dev_f1=0.789]
-Epoch 39:  99%|█████████▉| 695/701 [03:22<00:01,  3.43it/s, v_num=rics, train_loss=0.00143, dev_f1=0.789]
-Epoch 39:  99%|█████████▉| 695/701 [03:22<00:01,  3.43it/s, v_num=rics, train_loss=0.00921, dev_f1=0.789]
-Epoch 39:  99%|█████████▉| 696/701 [03:22<00:01,  3.43it/s, v_num=rics, train_loss=0.00921, dev_f1=0.789]
-Epoch 39:  99%|█████████▉| 696/701 [03:23<00:01,  3.43it/s, v_num=rics, train_loss=0.00173, dev_f1=0.789]
-Epoch 39:  99%|█████████▉| 697/701 [03:23<00:01,  3.43it/s, v_num=rics, train_loss=0.00173, dev_f1=0.789]
-Epoch 39:  99%|█████████▉| 697/701 [03:23<00:01,  3.43it/s, v_num=rics, train_loss=0.0044, dev_f1=0.789] 
-Epoch 39: 100%|█████████▉| 698/701 [03:23<00:00,  3.43it/s, v_num=rics, train_loss=0.0044, dev_f1=0.789]
-Epoch 39: 100%|█████████▉| 698/701 [03:23<00:00,  3.43it/s, v_num=rics, train_loss=0.00595, dev_f1=0.789]
-Epoch 39: 100%|█████████▉| 699/701 [03:23<00:00,  3.43it/s, v_num=rics, train_loss=0.00595, dev_f1=0.789]
-Epoch 39: 100%|█████████▉| 699/701 [03:24<00:00,  3.43it/s, v_num=rics, train_loss=0.00139, dev_f1=0.789]
-Epoch 39: 100%|█████████▉| 700/701 [03:24<00:00,  3.43it/s, v_num=rics, train_loss=0.00139, dev_f1=0.789]
-Epoch 39: 100%|█████████▉| 700/701 [03:24<00:00,  3.43it/s, v_num=rics, train_loss=0.00792, dev_f1=0.789]
-Epoch 39: 100%|██████████| 701/701 [03:24<00:00,  3.43it/s, v_num=rics, train_loss=0.00792, dev_f1=0.789]
-Epoch 39: 100%|██████████| 701/701 [03:24<00:00,  3.43it/s, v_num=rics, train_loss=0.0015, dev_f1=0.789] [dev eval, checkpoint epoch 39] {'f1': 0.775716694772344, 'precision': 0.6875934230194319, 'recall': 0.8897485493230174, 'tp': 460, 'fp': 209, 'fn': 57, 'ignored_predictions': 69, 'threshold': 0.82763671875, 'n_candidates': 2720, 'epoch': 39}
+Epoch 0:   0%|          | 1/701 [00:01<14:54,  0.78it/s]
+Epoch 0:   0%|          | 1/701 [00:01<14:54,  0.78it/s, v_num=rics, train_loss=89.30]
+Epoch 0:   0%|          | 2/701 [00:01<08:03,  1.45it/s, v_num=rics, train_loss=89.30]
+Epoch 0:   0%|          | 2/701 [00:01<09:08,  1.27it/s, v_num=rics, train_loss=53.00]
+Epoch 0:   0%|          | 3/701 [00:01<06:29,  1.79it/s, v_num=rics, train_loss=53.00]
+Epoch 0:   0%|          | 3/701 [00:01<07:12,  1.61it/s, v_num=rics, train_loss=52.20]
+Epoch 0:   1%|          | 4/701 [00:01<05:42,  2.04it/s, v_num=rics, train_loss=52.20]
+Epoch 0:   1%|          | 4/701 [00:02<06:14,  1.86it/s, v_num=rics, train_loss=16.80]
+Epoch 0:   1%|          | 5/701 [00:02<05:14,  2.21it/s, v_num=rics, train_loss=16.80]
+Epoch 0:   1%|          | 5/701 [00:02<05:39,  2.05it/s, v_num=rics, train_loss=12.90]
+Epoch 0:   1%|          | 6/701 [00:02<04:54,  2.36it/s, v_num=rics, train_loss=12.90]
+Epoch 0:   1%|          | 6/701 [00:02<05:16,  2.20it/s, v_num=rics, train_loss=6.690]
+Epoch 0:   1%|          | 7/701 [00:02<04:41,  2.46it/s, v_num=rics, train_loss=6.690]
+Epoch 0:   1%|          | 7/701 [00:03<04:59,  2.31it/s, v_num=rics, train_loss=5.760]
+Epoch 0:   1%|          | 8/701 [00:03<04:31,  2.55it/s, v_num=rics, train_loss=5.760]
+Epoch 0:   1%|          | 8/701 [00:03<04:47,  2.41it/s, v_num=rics, train_loss=6.050]
+Epoch 0:   1%|▏         | 9/701 [00:03<04:22,  2.63it/s, v_num=rics, train_loss=6.050]
+Epoch 0:   1%|▏         | 9/701 [00:03<04:37,  2.50it/s, v_num=rics, train_loss=4.860]
+Epoch 0:   1%|▏         | 10/701 [00:03<04:16,  2.70it/s, v_num=rics, train_loss=4.860]
+Epoch 0:   1%|▏         | 10/701 [00:03<04:29,  2.57it/s, v_num=rics, train_loss=4.050]
+Epoch 0:   2%|▏         | 11/701 [00:04<04:11,  2.74it/s, v_num=rics, train_loss=4.050]
+Epoch 0:   2%|▏         | 11/701 [00:04<04:22,  2.62it/s, v_num=rics, train_loss=4.180]
+Epoch 0:   2%|▏         | 12/701 [00:04<04:06,  2.79it/s, v_num=rics, train_loss=4.180]
+Epoch 0:   2%|▏         | 12/701 [00:04<04:17,  2.68it/s, v_num=rics, train_loss=4.030]
+Epoch 0:   2%|▏         | 13/701 [00:04<04:02,  2.84it/s, v_num=rics, train_loss=4.030]
+Epoch 0:   2%|▏         | 13/701 [00:04<04:12,  2.72it/s, v_num=rics, train_loss=4.130]
+Epoch 0:   2%|▏         | 14/701 [00:04<03:59,  2.87it/s, v_num=rics, train_loss=4.130]
+Epoch 0:   2%|▏         | 14/701 [00:05<04:08,  2.77it/s, v_num=rics, train_loss=4.390]
+Epoch 0:   2%|▏         | 15/701 [00:05<03:56,  2.90it/s, v_num=rics, train_loss=4.390]
+Epoch 0:   2%|▏         | 15/701 [00:05<04:04,  2.80it/s, v_num=rics, train_loss=4.040]
+Epoch 0:   2%|▏         | 16/701 [00:05<03:53,  2.93it/s, v_num=rics, train_loss=4.040]
+Epoch 0:   2%|▏         | 16/701 [00:05<04:01,  2.84it/s, v_num=rics, train_loss=4.080]
+Epoch 0:   2%|▏         | 17/701 [00:05<03:51,  2.96it/s, v_num=rics, train_loss=4.080]
+Epoch 0:   2%|▏         | 17/701 [00:05<03:58,  2.87it/s, v_num=rics, train_loss=4.130]
+[... 49122 lines elided ...]
+Epoch 34:  99%|█████████▊| 691/701 [03:22<00:02,  3.41it/s, v_num=rics, train_loss=0.00426, dev_f1=0.773]
+Epoch 34:  99%|█████████▊| 691/701 [03:22<00:02,  3.41it/s, v_num=rics, train_loss=0.0378, dev_f1=0.773] 
+Epoch 34:  99%|█████████▊| 692/701 [03:22<00:02,  3.41it/s, v_num=rics, train_loss=0.0378, dev_f1=0.773]
+Epoch 34:  99%|█████████▊| 692/701 [03:22<00:02,  3.41it/s, v_num=rics, train_loss=0.0655, dev_f1=0.773]
+Epoch 34:  99%|█████████▉| 693/701 [03:23<00:02,  3.41it/s, v_num=rics, train_loss=0.0655, dev_f1=0.773]
+Epoch 34:  99%|█████████▉| 693/701 [03:23<00:02,  3.41it/s, v_num=rics, train_loss=0.0103, dev_f1=0.773]
+Epoch 34:  99%|█████████▉| 694/701 [03:23<00:02,  3.41it/s, v_num=rics, train_loss=0.0103, dev_f1=0.773]
+Epoch 34:  99%|█████████▉| 694/701 [03:23<00:02,  3.41it/s, v_num=rics, train_loss=0.0169, dev_f1=0.773]
+Epoch 34:  99%|█████████▉| 695/701 [03:23<00:01,  3.41it/s, v_num=rics, train_loss=0.0169, dev_f1=0.773]
+Epoch 34:  99%|█████████▉| 695/701 [03:23<00:01,  3.41it/s, v_num=rics, train_loss=0.0218, dev_f1=0.773]
+Epoch 34:  99%|█████████▉| 696/701 [03:23<00:01,  3.41it/s, v_num=rics, train_loss=0.0218, dev_f1=0.773]
+Epoch 34:  99%|█████████▉| 696/701 [03:24<00:01,  3.41it/s, v_num=rics, train_loss=0.0547, dev_f1=0.773]
+Epoch 34:  99%|█████████▉| 697/701 [03:24<00:01,  3.41it/s, v_num=rics, train_loss=0.0547, dev_f1=0.773]
+Epoch 34:  99%|█████████▉| 697/701 [03:24<00:01,  3.41it/s, v_num=rics, train_loss=0.0396, dev_f1=0.773]
+Epoch 34: 100%|█████████▉| 698/701 [03:24<00:00,  3.41it/s, v_num=rics, train_loss=0.0396, dev_f1=0.773]
+Epoch 34: 100%|█████████▉| 698/701 [03:24<00:00,  3.41it/s, v_num=rics, train_loss=0.00593, dev_f1=0.773]
+Epoch 34: 100%|█████████▉| 699/701 [03:24<00:00,  3.41it/s, v_num=rics, train_loss=0.00593, dev_f1=0.773]
+Epoch 34: 100%|█████████▉| 699/701 [03:24<00:00,  3.41it/s, v_num=rics, train_loss=0.017, dev_f1=0.773]  
+Epoch 34: 100%|█████████▉| 700/701 [03:25<00:00,  3.41it/s, v_num=rics, train_loss=0.017, dev_f1=0.773]
+Epoch 34: 100%|█████████▉| 700/701 [03:25<00:00,  3.41it/s, v_num=rics, train_loss=0.00706, dev_f1=0.773]
+Epoch 34: 100%|██████████| 701/701 [03:25<00:00,  3.41it/s, v_num=rics, train_loss=0.00706, dev_f1=0.773]
+Epoch 34: 100%|██████████| 701/701 [03:25<00:00,  3.41it/s, v_num=rics, train_loss=0.00703, dev_f1=0.773][dev eval, checkpoint epoch 34] {'f1': 0.778443113772455, 'precision': 0.6978527607361963, 'recall': 0.8800773694390716, 'tp': 455, 'fp': 197, 'fn': 62, 'ignored_predictions': 67, 'threshold': 0.69384765625, 'n_candidates': 2384, 'epoch': 34}
 
-Epoch 39: 100%|██████████| 701/701 [09:59<00:00,  1.17it/s, v_num=rics, train_loss=0.0015, dev_f1=0.776]
-Epoch 39: 100%|██████████| 701/701 [09:59<00:00,  1.17it/s, v_num=rics, train_loss=0.0015, dev_f1=0.776]
+Epoch 34: 100%|██████████| 701/701 [10:13<00:00,  1.14it/s, v_num=rics, train_loss=0.00703, dev_f1=0.778]
+Epoch 34: 100%|██████████| 701/701 [10:13<00:00,  1.14it/s, v_num=rics, train_loss=0.00703, dev_f1=0.778]
 {
  "result_schema": 2,
  "exp_id": "vitrand-f10-s0",
- "git_sha": "1a82d508fbeb9fdf6868a9637611e9018952fb43",
+ "git_sha": "06b2e61dbb85dc5fa5a5d5853f9ba15f6a87dca9",
  "detector_sha256": "c42ae65bf9045cc93f0d73ae1437b2f6a1300670cb49d8e93f83a39d58a62a12",
  "precision": "32-true",
  "micro_batch": 16,
  "gradient_accumulation": 1,
  "effective_batch": 16,
- "epochs_run": 40,
- "best_dev_f1": 0.8030447193149381,
+ "epochs_run": 35,
+ "best_dev_f1": 0.7916666666666666,
  "best_dev": {
-  "f1": 0.8030447193149381,
-  "precision": 0.7902621722846442,
-  "recall": 0.816247582205029,
-  "tp": 422,
-  "fp": 112,
-  "fn": 95,
-  "ignored_predictions": 55,
-  "threshold": 0.822265625,
-  "n_candidates": 7045,
-  "epoch": 19
+  "f1": 0.7916666666666666,
+  "precision": 0.8126272912423625,
+  "recall": 0.7717601547388782,
+  "tp": 399,
+  "fp": 92,
+  "fn": 118,
+  "ignored_predictions": 56,
+  "threshold": 0.80810546875,
+  "n_candidates": 9519,
+  "epoch": 14
  },
  "best_checkpoint": {
   "relative_path": "checkpoints/best.ckpt",
-  "sha256": "8773dce20315d29ac2b624fa14fbb07a852edb78884c698fc7c99bb6c8cd14b8",
-  "epoch": 19
+  "sha256": "18ad3fd5a255a565cad73c8be0d957232aac94ea7b242774c6090771c968c36a",
+  "epoch": 14
  },
  "last_dev": {
-  "f1": 0.775716694772344,
-  "precision": 0.6875934230194319,
-  "recall": 0.8897485493230174,
-  "tp": 460,
-  "fp": 209,
-  "fn": 57,
-  "ignored_predictions": 69,
-  "threshold": 0.82763671875,
-  "n_candidates": 2720,
-  "epoch": 39
+  "f1": 0.778443113772455,
+  "precision": 0.6978527607361963,
+  "recall": 0.8800773694390716,
+  "tp": 455,
+  "fp": 197,
+  "fn": 62,
+  "ignored_predictions": 67,
+  "threshold": 0.69384765625,
+  "n_candidates": 2384,
+  "epoch": 34
  },
- "train_loss": 0.001503849751316011,
+ "train_loss": 0.0070319692604243755,
  "h100_runtime_contract": {
   "schema": 1,
   "status": "verified",
@@ -179,6 +179,6 @@ Epoch 39: 100%|██████████| 701/701 [09:59<00:00,  1.17it/s, 
   }
  }
 }
-[2026-08-13T00:20:34] vitrand-f10-s0: scoring frozen TEST with cohort-bound best-dev threshold
-[2026-08-13T00:33:18] vitrand-f10-s0: test F1 0.7042; near-shore F1 0.0000 on 2 GT
-[2026-08-13T00:33:18] scored 1 runs
+[2026-10-01T23:59:50] vitrand-f10-s0: scoring frozen TEST with cohort-bound best-dev threshold
+[2026-10-02T00:12:08] vitrand-f10-s0: test F1 0.6926; near-shore F1 0.0000 on 2 GT
+[2026-10-02T00:12:08] scored 1 runs

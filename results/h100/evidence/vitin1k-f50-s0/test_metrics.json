@@ -1,32 +1,32 @@
 {
  "test_result_schema": 1,
  "status": "test-complete",
- "scored_utc": "2026-08-13T04:05:59+00:00",
+ "scored_utc": "2026-10-02T01:18:04+00:00",
  "exp_id": "vitin1k-f50-s0",
- "cohort_sha256": "9b1ba03e3893a35cd1d0f4d3b63c994afb8e84219c8db28113c9bf6de62e7138",
- "completion_marker_sha256": "c1c9cfc810e16998a1bf8cba1014ae6529914e517726d8e5a14a7877470a7d02",
- "git_sha": "1a82d508fbeb9fdf6868a9637611e9018952fb43",
+ "cohort_sha256": "a8996efd01a95e78bfb4ae46bc93120d842407d109ee74d111d310e8aa5cbef5",
+ "completion_marker_sha256": "6211c6966c5ea7eb7c74c7eb1ffd107468867b0d016a7a6a898181e3b8e79a32",
+ "git_sha": "06b2e61dbb85dc5fa5a5d5853f9ba15f6a87dca9",
  "detector_sha256": "c42ae65bf9045cc93f0d73ae1437b2f6a1300670cb49d8e93f83a39d58a62a12",
  "inference_precision": "32-true",
  "threshold_source": {
   "kind": "best-dev-checkpoint-bound",
-  "threshold": 0.84375,
-  "dev_epoch": 49,
+  "threshold": 0.859375,
+  "dev_epoch": 39,
   "checkpoint_relative_path": "vitin1k-f50-s0/checkpoints/best.ckpt",
-  "checkpoint_sha256": "98213d7e0ed0a6bac291a9da1a40fe6e271614f7b3101486944c0a0b3b082ced",
-  "checkpoint_epoch": 49
+  "checkpoint_sha256": "f0d0deaa52f71ccc7d2339a1a2cea0ba98cdc7274fa01186aec5d14b5d39fafa",
+  "checkpoint_epoch": 39
  },
  "metrics": {
-  "f1": 0.8544941555824265,
-  "precision": 0.8054711246200608,
-  "recall": 0.9098712446351931,
-  "tp": 1060,
-  "fp": 256,
-  "fn": 105,
-  "ignored_predictions": 187,
+  "f1": 0.8589058000822707,
+  "precision": 0.8246445497630331,
+  "recall": 0.896137339055794,
+  "tp": 1044,
+  "fp": 222,
+  "fn": 121,
+  "ignored_predictions": 182,
   "dark_recall": 0.0,
   "dark_support": 0,
-  "near_shore_f1": 0.3333333333333333,
+  "near_shore_f1": 0.22222222222222224,
   "near_shore_support": 2
  },
  "per_scene": {
@@ -63,12 +63,12 @@
   },
   "395dcf560a56ff39t": {
    "aggregate": {
-    "f1": 0.926829268292683,
-    "precision": 0.926829268292683,
-    "recall": 0.926829268292683,
-    "tp": 38,
+    "f1": 0.9523809523809524,
+    "precision": 0.9302325581395349,
+    "recall": 0.975609756097561,
+    "tp": 40,
     "fp": 3,
-    "fn": 3,
+    "fn": 1,
     "ignored_predictions": 8
    },
    "slices": {
@@ -94,13 +94,13 @@
   },
   "4cb65eef4af658c0t": {
    "aggregate": {
-    "f1": 0.9276595744680851,
-    "precision": 0.9316239316239316,
-    "recall": 0.923728813559322,
-    "tp": 109,
-    "fp": 8,
-    "fn": 9,
-    "ignored_predictions": 4
+    "f1": 0.94017094017094,
+    "precision": 0.9482758620689655,
+    "recall": 0.9322033898305084,
+    "tp": 110,
+    "fp": 6,
+    "fn": 8,
+    "ignored_predictions": 3
    },
    "slices": {
     "dark": {
@@ -125,12 +125,12 @@
   },
   "5d45cb2dc3c48d8bt": {
    "aggregate": {
-    "f1": 0.9,
-    "precision": 0.8852459016393442,
-    "recall": 0.9152542372881356,
-    "tp": 54,
+    "f1": 0.8907563025210085,
+    "precision": 0.8833333333333333,
+    "recall": 0.8983050847457628,
+    "tp": 53,
     "fp": 7,
-    "fn": 5,
+    "fn": 6,
     "ignored_predictions": 15
    },
    "slices": {
@@ -156,13 +156,13 @@
   },
   "78fde272efeb9d56t": {
    "aggregate": {
-    "f1": 0.5907172995780591,
-    "precision": 0.43478260869565216,
-    "recall": 0.9210526315789473,
-    "tp": 70,
-    "fp": 91,
-    "fn": 6,
-    "ignored_predictions": 9
+    "f1": 0.6857142857142856,
+    "precision": 0.5373134328358209,
+    "recall": 0.9473684210526315,
+    "tp": 72,
+    "fp": 62,
+    "fn": 4,
+    "ignored_predictions": 10
    },
    "slices": {
     "dark": {
@@ -179,7 +179,7 @@
      "precision": 0.0,
      "recall": 0.0,
      "tp": 0,
-     "fp": 0,
+     "fp": 1,
      "fn": 0,
      "ignored_predictions": 0
     }
@@ -187,12 +187,12 @@
   },
   "821593907c14c5c2t": {
    "aggregate": {
-    "f1": 0.9481481481481481,
-    "precision": 0.927536231884058,
-    "recall": 0.9696969696969697,
-    "tp": 64,
+    "f1": 0.9402985074626866,
+    "precision": 0.9264705882352942,
+    "recall": 0.9545454545454546,
+    "tp": 63,
     "fp": 5,
-    "fn": 2,
+    "fn": 3,
     "ignored_predictions": 8
    },
    "slices": {
@@ -218,13 +218,13 @@
   },
   "835f7629c3a3a9abt": {
    "aggregate": {
-    "f1": 0.7479674796747967,
-    "precision": 0.7419354838709677,
-    "recall": 0.7540983606557377,
-    "tp": 46,
-    "fp": 16,
-    "fn": 15,
-    "ignored_predictions": 7
+    "f1": 0.6942148760330578,
+    "precision": 0.7,
+    "recall": 0.6885245901639344,
+    "tp": 42,
+    "fp": 18,
+    "fn": 19,
+    "ignored_predictions": 6
    },
    "slices": {
     "dark": {
@@ -249,11 +249,11 @@
   },
   "83bf47e54523fc40t": {
    "aggregate": {
-    "f1": 0.9387755102040817,
-    "precision": 0.92,
+    "f1": 0.9292929292929293,
+    "precision": 0.9019607843137255,
     "recall": 0.9583333333333334,
     "tp": 46,
-    "fp": 4,
+    "fp": 5,
     "fn": 2,
     "ignored_predictions": 7
    },
@@ -272,7 +272,7 @@
      "precision": 0.0,
      "recall": 0.0,
      "tp": 0,
-     "fp": 0,
+     "fp": 1,
      "fn": 0,
      "ignored_predictions": 0
     }
@@ -280,12 +280,12 @@
   },
   "8a6781613364d055t": {
    "aggregate": {
-    "f1": 0.9356223175965666,
-    "precision": 0.9083333333333333,
-    "recall": 0.9646017699115044,
-    "tp": 109,
-    "fp": 11,
-    "fn": 4,
+    "f1": 0.9210526315789473,
+    "precision": 0.9130434782608695,
+    "recall": 0.9292035398230089,
+    "tp": 105,
+    "fp": 10,
+    "fn": 8,
     "ignored_predictions": 13
    },
    "slices": {
@@ -311,11 +311,11 @@
   },
   "968b06adcd8ba6ect": {
    "aggregate": {
-    "f1": 0.8148148148148148,
-    "precision": 0.7457627118644068,
+    "f1": 0.8,
+    "precision": 0.7213114754098361,
     "recall": 0.8979591836734694,
     "tp": 44,
-    "fp": 15,
+    "fp": 17,
     "fn": 5,
     "ignored_predictions": 8
    },
@@ -342,12 +342,12 @@
   },
   "994a95128e83814et": {
    "aggregate": {
-    "f1": 0.9466666666666667,
-    "precision": 0.9342105263157895,
-    "recall": 0.9594594594594594,
-    "tp": 71,
-    "fp": 5,
-    "fn": 3,
+    "f1": 0.9387755102040816,
+    "precision": 0.9452054794520548,
+    "recall": 0.9324324324324325,
+    "tp": 69,
+    "fp": 4,
+    "fn": 5,
     "ignored_predictions": 14
    },
    "slices": {
@@ -379,7 +379,7 @@
     "tp": 51,
     "fp": 2,
     "fn": 0,
-    "ignored_predictions": 7
+    "ignored_predictions": 6
    },
    "slices": {
     "dark": {
@@ -404,13 +404,13 @@
   },
   "a45bc46512eb61f8t": {
    "aggregate": {
-    "f1": 0.7456445993031359,
-    "precision": 0.7181208053691275,
-    "recall": 0.7753623188405797,
-    "tp": 107,
-    "fp": 42,
-    "fn": 31,
-    "ignored_predictions": 42
+    "f1": 0.7517730496453902,
+    "precision": 0.7361111111111112,
+    "recall": 0.7681159420289855,
+    "tp": 106,
+    "fp": 38,
+    "fn": 32,
+    "ignored_predictions": 38
    },
    "slices": {
     "dark": {
@@ -435,12 +435,12 @@
   },
   "aec08a1bed9de27at": {
    "aggregate": {
-    "f1": 0.9516129032258064,
-    "precision": 0.921875,
-    "recall": 0.9833333333333333,
-    "tp": 59,
+    "f1": 0.943089430894309,
+    "precision": 0.9206349206349206,
+    "recall": 0.9666666666666667,
+    "tp": 58,
     "fp": 5,
-    "fn": 1,
+    "fn": 2,
     "ignored_predictions": 7
    },
    "slices": {
@@ -466,13 +466,13 @@
   },
   "cb63265c445495d3t": {
    "aggregate": {
-    "f1": 0.8538461538461539,
-    "precision": 0.8345864661654135,
-    "recall": 0.8740157480314961,
-    "tp": 111,
-    "fp": 22,
-    "fn": 16,
-    "ignored_predictions": 12
+    "f1": 0.8139534883720929,
+    "precision": 0.8015267175572519,
+    "recall": 0.8267716535433071,
+    "tp": 105,
+    "fp": 26,
+    "fn": 22,
+    "ignored_predictions": 11
    },
    "slices": {
     "dark": {
@@ -489,7 +489,7 @@
      "precision": 0.0,
      "recall": 0.0,
      "tp": 0,
-     "fp": 1,
+     "fp": 2,
      "fn": 0,
      "ignored_predictions": 0
     }
@@ -497,13 +497,13 @@
   },
   "efe75c178f7117a7t": {
    "aggregate": {
-    "f1": 0.6206896551724138,
-    "precision": 0.4864864864864865,
-    "recall": 0.8571428571428571,
-    "tp": 18,
-    "fp": 19,
-    "fn": 3,
-    "ignored_predictions": 16
+    "f1": 0.6666666666666666,
+    "precision": 0.5666666666666667,
+    "recall": 0.8095238095238095,
+    "tp": 17,
+    "fp": 13,
+    "fn": 4,
+    "ignored_predictions": 18
    },
    "slices": {
     "dark": {

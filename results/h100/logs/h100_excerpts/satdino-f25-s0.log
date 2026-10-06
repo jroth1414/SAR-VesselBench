@@ -1,5 +1,5 @@
 # Excerpt of the full H100 training log for satdino-f25-s0.
-# Full log: 149846 lines, sha256 836a48d61710d74a2f8fcded948a95270e53aa11f49c53121f32900e7385b0cd (operator archive).
+# Full log: 166482 lines, sha256 2ed3e984a8852e282d9c1fe3672e9506858c562521fc6410d0da73f3490e3818 (operator archive).
 # Site paths redacted: /projects/geofam -> /cluster-site-redacted.
 [rank: 0] Seed set to 0
 GPU available: True (cuda), used: True
@@ -28,105 +28,106 @@ SLURM auto-requeueing enabled. Setting signal handlers.
 Training: |          | 0/? [00:00<?, ?it/s]
 Training: |          | 0/? [00:00<?, ?it/s]
 Epoch 0:   0%|          | 0/1662 [00:00<?, ?it/s]
-Epoch 0:   0%|          | 1/1662 [00:01<36:57,  0.75it/s]
-Epoch 0:   0%|          | 1/1662 [00:01<36:58,  0.75it/s, v_num=rics, train_loss=83.40]
-Epoch 0:   0%|          | 2/1662 [00:01<19:59,  1.38it/s, v_num=rics, train_loss=83.40]
-Epoch 0:   0%|          | 2/1662 [00:01<22:32,  1.23it/s, v_num=rics, train_loss=41.60]
-Epoch 0:   0%|          | 3/1662 [00:01<15:58,  1.73it/s, v_num=rics, train_loss=41.60]
-Epoch 0:   0%|          | 3/1662 [00:01<17:42,  1.56it/s, v_num=rics, train_loss=28.30]
-Epoch 0:   0%|          | 4/1662 [00:02<13:59,  1.98it/s, v_num=rics, train_loss=28.30]
-Epoch 0:   0%|          | 4/1662 [00:02<15:16,  1.81it/s, v_num=rics, train_loss=36.60]
-Epoch 0:   0%|          | 5/1662 [00:02<12:46,  2.16it/s, v_num=rics, train_loss=36.60]
-Epoch 0:   0%|          | 5/1662 [00:02<13:48,  2.00it/s, v_num=rics, train_loss=9.900]
-Epoch 0:   0%|          | 6/1662 [00:02<11:59,  2.30it/s, v_num=rics, train_loss=9.900]
-Epoch 0:   0%|          | 6/1662 [00:02<12:50,  2.15it/s, v_num=rics, train_loss=7.170]
-Epoch 0:   0%|          | 7/1662 [00:02<11:24,  2.42it/s, v_num=rics, train_loss=7.170]
-Epoch 0:   0%|          | 7/1662 [00:03<12:08,  2.27it/s, v_num=rics, train_loss=5.680]
-Epoch 0:   0%|          | 8/1662 [00:03<10:59,  2.51it/s, v_num=rics, train_loss=5.680]
-Epoch 0:   0%|          | 8/1662 [00:03<11:37,  2.37it/s, v_num=rics, train_loss=4.570]
-Epoch 0:   1%|          | 9/1662 [00:03<10:38,  2.59it/s, v_num=rics, train_loss=4.570]
-Epoch 0:   1%|          | 9/1662 [00:03<11:13,  2.46it/s, v_num=rics, train_loss=5.100]
-Epoch 0:   1%|          | 10/1662 [00:03<10:22,  2.65it/s, v_num=rics, train_loss=5.100]
-Epoch 0:   1%|          | 10/1662 [00:03<10:53,  2.53it/s, v_num=rics, train_loss=3.880]
-Epoch 0:   1%|          | 11/1662 [00:04<10:09,  2.71it/s, v_num=rics, train_loss=3.880]
-Epoch 0:   1%|          | 11/1662 [00:04<10:37,  2.59it/s, v_num=rics, train_loss=4.030]
-Epoch 0:   1%|          | 12/1662 [00:04<09:58,  2.76it/s, v_num=rics, train_loss=4.030]
-Epoch 0:   1%|          | 12/1662 [00:04<10:24,  2.64it/s, v_num=rics, train_loss=3.620]
-Epoch 0:   1%|          | 13/1662 [00:04<09:48,  2.80it/s, v_num=rics, train_loss=3.620]
-Epoch 0:   1%|          | 13/1662 [00:04<10:12,  2.69it/s, v_num=rics, train_loss=3.850]
-Epoch 0:   1%|          | 14/1662 [00:04<09:41,  2.84it/s, v_num=rics, train_loss=3.850]
-Epoch 0:   1%|          | 14/1662 [00:05<10:02,  2.73it/s, v_num=rics, train_loss=3.390]
-Epoch 0:   1%|          | 15/1662 [00:05<09:33,  2.87it/s, v_num=rics, train_loss=3.390]
-Epoch 0:   1%|          | 15/1662 [00:05<09:54,  2.77it/s, v_num=rics, train_loss=4.000]
-Epoch 0:   1%|          | 16/1662 [00:05<09:27,  2.90it/s, v_num=rics, train_loss=4.000]
-Epoch 0:   1%|          | 16/1662 [00:05<09:46,  2.81it/s, v_num=rics, train_loss=3.220]
-Epoch 0:   1%|          | 17/1662 [00:05<09:21,  2.93it/s, v_num=rics, train_loss=3.220]
-[... 149666 lines elided ...]
-Epoch 44:  99%|█████████▉| 1652/1662 [08:02<00:02,  3.43it/s, v_num=rics, train_loss=0.286, dev_f1=0.866]  
-Epoch 44:  99%|█████████▉| 1653/1662 [08:02<00:02,  3.43it/s, v_num=rics, train_loss=0.286, dev_f1=0.866]
-Epoch 44:  99%|█████████▉| 1653/1662 [08:02<00:02,  3.43it/s, v_num=rics, train_loss=0.0046, dev_f1=0.866]
-Epoch 44: 100%|█████████▉| 1654/1662 [08:02<00:02,  3.43it/s, v_num=rics, train_loss=0.0046, dev_f1=0.866]
-Epoch 44: 100%|█████████▉| 1654/1662 [08:02<00:02,  3.43it/s, v_num=rics, train_loss=0.000849, dev_f1=0.866]
-Epoch 44: 100%|█████████▉| 1655/1662 [08:02<00:02,  3.43it/s, v_num=rics, train_loss=0.000849, dev_f1=0.866]
-Epoch 44: 100%|█████████▉| 1655/1662 [08:03<00:02,  3.43it/s, v_num=rics, train_loss=0.000461, dev_f1=0.866]
-Epoch 44: 100%|█████████▉| 1656/1662 [08:03<00:01,  3.43it/s, v_num=rics, train_loss=0.000461, dev_f1=0.866]
-Epoch 44: 100%|█████████▉| 1656/1662 [08:03<00:01,  3.43it/s, v_num=rics, train_loss=0.00132, dev_f1=0.866] 
-Epoch 44: 100%|█████████▉| 1657/1662 [08:03<00:01,  3.43it/s, v_num=rics, train_loss=0.00132, dev_f1=0.866]
-Epoch 44: 100%|█████████▉| 1657/1662 [08:03<00:01,  3.43it/s, v_num=rics, train_loss=0.000906, dev_f1=0.866]
-Epoch 44: 100%|█████████▉| 1658/1662 [08:03<00:01,  3.43it/s, v_num=rics, train_loss=0.000906, dev_f1=0.866]
-Epoch 44: 100%|█████████▉| 1658/1662 [08:03<00:01,  3.43it/s, v_num=rics, train_loss=0.000799, dev_f1=0.866]
-Epoch 44: 100%|█████████▉| 1659/1662 [08:04<00:00,  3.43it/s, v_num=rics, train_loss=0.000799, dev_f1=0.866]
-Epoch 44: 100%|█████████▉| 1659/1662 [08:04<00:00,  3.43it/s, v_num=rics, train_loss=0.00044, dev_f1=0.866] 
-Epoch 44: 100%|█████████▉| 1660/1662 [08:04<00:00,  3.43it/s, v_num=rics, train_loss=0.00044, dev_f1=0.866]
-Epoch 44: 100%|█████████▉| 1660/1662 [08:04<00:00,  3.43it/s, v_num=rics, train_loss=0.00849, dev_f1=0.866]
-Epoch 44: 100%|█████████▉| 1661/1662 [08:04<00:00,  3.43it/s, v_num=rics, train_loss=0.00849, dev_f1=0.866]
-Epoch 44: 100%|█████████▉| 1661/1662 [08:04<00:00,  3.43it/s, v_num=rics, train_loss=0.000202, dev_f1=0.866]
-Epoch 44: 100%|██████████| 1662/1662 [08:04<00:00,  3.43it/s, v_num=rics, train_loss=0.000202, dev_f1=0.866]
-Epoch 44: 100%|██████████| 1662/1662 [08:05<00:00,  3.43it/s, v_num=rics, train_loss=0.00512, dev_f1=0.866] [dev eval, checkpoint epoch 44] {'f1': 0.8676328502415459, 'precision': 0.8667953667953668, 'recall': 0.8684719535783365, 'tp': 449, 'fp': 69, 'fn': 68, 'ignored_predictions': 61, 'threshold': 0.935546875, 'n_candidates': 825, 'epoch': 44}
+Epoch 0:   0%|          | 1/1662 [00:01<35:14,  0.79it/s]
+Epoch 0:   0%|          | 1/1662 [00:01<35:15,  0.79it/s, v_num=rics, train_loss=83.40]
+Epoch 0:   0%|          | 2/1662 [00:01<19:06,  1.45it/s, v_num=rics, train_loss=83.40]
+Epoch 0:   0%|          | 2/1662 [00:01<21:40,  1.28it/s, v_num=rics, train_loss=41.60]
+Epoch 0:   0%|          | 3/1662 [00:01<15:23,  1.80it/s, v_num=rics, train_loss=41.60]
+Epoch 0:   0%|          | 3/1662 [00:01<17:07,  1.62it/s, v_num=rics, train_loss=28.30]
+Epoch 0:   0%|          | 4/1662 [00:01<13:33,  2.04it/s, v_num=rics, train_loss=28.30]
+Epoch 0:   0%|          | 4/1662 [00:02<14:50,  1.86it/s, v_num=rics, train_loss=36.60]
+Epoch 0:   0%|          | 5/1662 [00:02<12:26,  2.22it/s, v_num=rics, train_loss=36.60]
+Epoch 0:   0%|          | 5/1662 [00:02<13:28,  2.05it/s, v_num=rics, train_loss=9.900]
+Epoch 0:   0%|          | 6/1662 [00:02<11:42,  2.36it/s, v_num=rics, train_loss=9.900]
+Epoch 0:   0%|          | 6/1662 [00:02<12:33,  2.20it/s, v_num=rics, train_loss=7.170]
+Epoch 0:   0%|          | 7/1662 [00:02<11:10,  2.47it/s, v_num=rics, train_loss=7.170]
+Epoch 0:   0%|          | 7/1662 [00:03<11:54,  2.32it/s, v_num=rics, train_loss=5.680]
+Epoch 0:   0%|          | 8/1662 [00:03<10:46,  2.56it/s, v_num=rics, train_loss=5.680]
+Epoch 0:   0%|          | 8/1662 [00:03<11:24,  2.42it/s, v_num=rics, train_loss=4.570]
+Epoch 0:   1%|          | 9/1662 [00:03<10:27,  2.63it/s, v_num=rics, train_loss=4.570]
+Epoch 0:   1%|          | 9/1662 [00:03<11:01,  2.50it/s, v_num=rics, train_loss=5.100]
+Epoch 0:   1%|          | 10/1662 [00:03<10:12,  2.70it/s, v_num=rics, train_loss=5.100]
+Epoch 0:   1%|          | 10/1662 [00:03<10:43,  2.57it/s, v_num=rics, train_loss=3.880]
+Epoch 0:   1%|          | 11/1662 [00:04<10:00,  2.75it/s, v_num=rics, train_loss=3.880]
+Epoch 0:   1%|          | 11/1662 [00:04<10:28,  2.63it/s, v_num=rics, train_loss=4.030]
+Epoch 0:   1%|          | 12/1662 [00:04<09:50,  2.79it/s, v_num=rics, train_loss=4.030]
+Epoch 0:   1%|          | 12/1662 [00:04<10:15,  2.68it/s, v_num=rics, train_loss=3.620]
+Epoch 0:   1%|          | 13/1662 [00:04<09:41,  2.84it/s, v_num=rics, train_loss=3.620]
+Epoch 0:   1%|          | 13/1662 [00:04<10:05,  2.73it/s, v_num=rics, train_loss=3.850]
+Epoch 0:   1%|          | 14/1662 [00:04<09:33,  2.87it/s, v_num=rics, train_loss=3.850]
+Epoch 0:   1%|          | 14/1662 [00:05<09:55,  2.77it/s, v_num=rics, train_loss=3.390]
+Epoch 0:   1%|          | 15/1662 [00:05<09:27,  2.90it/s, v_num=rics, train_loss=3.390]
+Epoch 0:   1%|          | 15/1662 [00:05<09:47,  2.80it/s, v_num=rics, train_loss=4.000]
+Epoch 0:   1%|          | 16/1662 [00:05<09:21,  2.93it/s, v_num=rics, train_loss=4.000]
+Epoch 0:   1%|          | 16/1662 [00:05<09:40,  2.83it/s, v_num=rics, train_loss=3.220]
+Epoch 0:   1%|          | 17/1662 [00:05<09:16,  2.96it/s, v_num=rics, train_loss=3.220]
+[... 166302 lines elided ...]
+Epoch 49:  99%|█████████▉| 1652/1662 [08:04<00:02,  3.41it/s, v_num=rics, train_loss=0.000854, dev_f1=0.869]
+Epoch 49:  99%|█████████▉| 1653/1662 [08:04<00:02,  3.41it/s, v_num=rics, train_loss=0.000854, dev_f1=0.869]
+Epoch 49:  99%|█████████▉| 1653/1662 [08:04<00:02,  3.41it/s, v_num=rics, train_loss=0.00077, dev_f1=0.869] 
+Epoch 49: 100%|█████████▉| 1654/1662 [08:04<00:02,  3.41it/s, v_num=rics, train_loss=0.00077, dev_f1=0.869]
+Epoch 49: 100%|█████████▉| 1654/1662 [08:04<00:02,  3.41it/s, v_num=rics, train_loss=0.00183, dev_f1=0.869]
+Epoch 49: 100%|█████████▉| 1655/1662 [08:04<00:02,  3.41it/s, v_num=rics, train_loss=0.00183, dev_f1=0.869]
+Epoch 49: 100%|█████████▉| 1655/1662 [08:05<00:02,  3.41it/s, v_num=rics, train_loss=0.0824, dev_f1=0.869] 
+Epoch 49: 100%|█████████▉| 1656/1662 [08:05<00:01,  3.41it/s, v_num=rics, train_loss=0.0824, dev_f1=0.869]
+Epoch 49: 100%|█████████▉| 1656/1662 [08:05<00:01,  3.41it/s, v_num=rics, train_loss=0.000471, dev_f1=0.869]
+Epoch 49: 100%|█████████▉| 1657/1662 [08:05<00:01,  3.41it/s, v_num=rics, train_loss=0.000471, dev_f1=0.869]
+Epoch 49: 100%|█████████▉| 1657/1662 [08:05<00:01,  3.41it/s, v_num=rics, train_loss=0.0298, dev_f1=0.869]  
+Epoch 49: 100%|█████████▉| 1658/1662 [08:05<00:01,  3.41it/s, v_num=rics, train_loss=0.0298, dev_f1=0.869]
+Epoch 49: 100%|█████████▉| 1658/1662 [08:06<00:01,  3.41it/s, v_num=rics, train_loss=0.00124, dev_f1=0.869]
+Epoch 49: 100%|█████████▉| 1659/1662 [08:06<00:00,  3.41it/s, v_num=rics, train_loss=0.00124, dev_f1=0.869]
+Epoch 49: 100%|█████████▉| 1659/1662 [08:06<00:00,  3.41it/s, v_num=rics, train_loss=0.00353, dev_f1=0.869]
+Epoch 49: 100%|█████████▉| 1660/1662 [08:06<00:00,  3.41it/s, v_num=rics, train_loss=0.00353, dev_f1=0.869]
+Epoch 49: 100%|█████████▉| 1660/1662 [08:06<00:00,  3.41it/s, v_num=rics, train_loss=0.000643, dev_f1=0.869]
+Epoch 49: 100%|█████████▉| 1661/1662 [08:06<00:00,  3.41it/s, v_num=rics, train_loss=0.000643, dev_f1=0.869]
+Epoch 49: 100%|█████████▉| 1661/1662 [08:06<00:00,  3.41it/s, v_num=rics, train_loss=0.000349, dev_f1=0.869]
+Epoch 49: 100%|██████████| 1662/1662 [08:07<00:00,  3.41it/s, v_num=rics, train_loss=0.000349, dev_f1=0.869]
+Epoch 49: 100%|██████████| 1662/1662 [08:07<00:00,  3.41it/s, v_num=rics, train_loss=0.0477, dev_f1=0.869]  [dev eval, checkpoint epoch 49] {'f1': 0.8701421800947868, 'precision': 0.8531598513011153, 'recall': 0.8878143133462283, 'tp': 459, 'fp': 79, 'fn': 58, 'ignored_predictions': 65, 'threshold': 0.92431640625, 'n_candidates': 844, 'epoch': 49}
 
-Epoch 44: 100%|██████████| 1662/1662 [14:33<00:00,  1.90it/s, v_num=rics, train_loss=0.00512, dev_f1=0.868]
-Epoch 44: 100%|██████████| 1662/1662 [14:33<00:00,  1.90it/s, v_num=rics, train_loss=0.00512, dev_f1=0.868]
+Epoch 49: 100%|██████████| 1662/1662 [15:32<00:00,  1.78it/s, v_num=rics, train_loss=0.0477, dev_f1=0.870]`Trainer.fit` stopped: `max_epochs=50` reached.
+
+Epoch 49: 100%|██████████| 1662/1662 [15:32<00:00,  1.78it/s, v_num=rics, train_loss=0.0477, dev_f1=0.870]
 {
  "result_schema": 2,
  "exp_id": "satdino-f25-s0",
- "git_sha": "1a82d508fbeb9fdf6868a9637611e9018952fb43",
+ "git_sha": "06b2e61dbb85dc5fa5a5d5853f9ba15f6a87dca9",
  "detector_sha256": "c42ae65bf9045cc93f0d73ae1437b2f6a1300670cb49d8e93f83a39d58a62a12",
  "precision": "32-true",
  "micro_batch": 16,
  "gradient_accumulation": 1,
  "effective_batch": 16,
- "epochs_run": 45,
- "best_dev_f1": 0.8802281368821293,
+ "epochs_run": 50,
+ "best_dev_f1": 0.8854368932038834,
  "best_dev": {
-  "f1": 0.8802281368821293,
-  "precision": 0.8654205607476636,
-  "recall": 0.8955512572533849,
-  "tp": 463,
-  "fp": 72,
-  "fn": 54,
+  "f1": 0.8854368932038834,
+  "precision": 0.8888888888888888,
+  "recall": 0.8820116054158608,
+  "tp": 456,
+  "fp": 57,
+  "fn": 61,
   "ignored_predictions": 64,
-  "threshold": 0.91015625,
-  "n_candidates": 914,
-  "epoch": 24
+  "threshold": 0.9208984375,
+  "n_candidates": 885,
+  "epoch": 29
  },
  "best_checkpoint": {
   "relative_path": "checkpoints/best.ckpt",
-  "sha256": "23bd89f2ba572d816aff7a81a54008fa0771f06c75c3b7584ec80b6b2400767a",
-  "epoch": 24
+  "sha256": "a056163137b34380e655932897efc92560792216aeb37851a47c618c6000d894",
+  "epoch": 29
  },
  "last_dev": {
-  "f1": 0.8676328502415459,
-  "precision": 0.8667953667953668,
-  "recall": 0.8684719535783365,
-  "tp": 449,
-  "fp": 69,
-  "fn": 68,
-  "ignored_predictions": 61,
-  "threshold": 0.935546875,
-  "n_candidates": 825,
-  "epoch": 44
+  "f1": 0.8701421800947868,
+  "precision": 0.8531598513011153,
+  "recall": 0.8878143133462283,
+  "tp": 459,
+  "fp": 79,
+  "fn": 58,
+  "ignored_predictions": 65,
+  "threshold": 0.92431640625,
+  "n_candidates": 844,
+  "epoch": 49
  },
- "train_loss": 0.005117084830999374,
+ "train_loss": 0.04774858430027962,
  "h100_runtime_contract": {
   "schema": 1,
   "status": "verified",
@@ -178,7 +179,6 @@ Epoch 44: 100%|██████████| 1662/1662 [14:33<00:00,  1.90it/s
   }
  }
 }
-[2026-08-13T00:06:56] satdino-f25-s0: scoring frozen TEST with cohort-bound best-dev threshold
-[satdino_b] matched=150 missing=0 unexpected=0
-[2026-08-13T00:20:09] satdino-f25-s0: test F1 0.8279; near-shore F1 0.2000 on 2 GT
-[2026-08-13T00:20:09] scored 1 runs
+[2026-10-01T22:26:03] satdino-f25-s0: scoring frozen TEST with cohort-bound best-dev threshold
+[2026-10-01T22:39:00] satdino-f25-s0: test F1 0.8371; near-shore F1 0.2500 on 2 GT
+[2026-10-01T22:39:00] scored 1 runs
