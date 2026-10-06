@@ -133,6 +133,43 @@ def _curve_agrees(metrics_csv: Path, best_dev: Mapping[str, object], exp_id: str
         )
 
 
+def _terminal_recovery_agrees(
+    cell_dir: Path, marker: Mapping[str, object], exp_id: str
+) -> bool:
+    """Accept a missing curve only through a bound, zero-step terminal recovery.
+
+    A cell whose last development evaluation ran in a terminal resume has no
+    Lightning ``metrics.csv``. The marker must hash-bind the recovery record,
+    the record must add no optimizer, scheduler or training step, and it must
+    select exactly the marker's checkpoint and development result.
+    """
+
+    binding = marker.get("terminal_recovery")
+    if not isinstance(binding, Mapping):
+        return False
+    path = cell_dir / str(binding.get("relative_path", ""))
+    if path.name != "terminal_recovery.json" or _sha256_file(path) != binding.get("sha256"):
+        raise EvidenceError(f"{exp_id}: terminal recovery record does not hash to its marker binding")
+    record = _load_json(path, f"{exp_id} terminal recovery")
+    selected = record.get("selected_checkpoint")
+    best_checkpoint = marker.get("best_checkpoint")
+    if (
+        record.get("status") != "terminal-dev-recovered"
+        or record.get("exp_id") != exp_id
+        or record.get("metrics_csv_absent") is not True
+        or any(
+            record.get(key) != 0
+            for key in ("added_optimizer_steps", "added_scheduler_steps", "added_training_batches")
+        )
+        or record.get("selected_dev") != marker.get("best_dev")
+        or not isinstance(selected, Mapping)
+        or not isinstance(best_checkpoint, Mapping)
+        or selected.get("sha256") != best_checkpoint.get("sha256")
+    ):
+        raise EvidenceError(f"{exp_id}: terminal recovery does not select the marker's result without training")
+    return True
+
+
 def _validate_test_result(
     path: Path,
     *,
@@ -269,7 +306,13 @@ def validate_evidence(
         epochs_run = int(marker.get("epochs_run", 0))
         if epochs_run <= 0:
             raise EvidenceError(f"{exp_id}: epochs_run must be positive")
-        _curve_agrees(cell_dir / "metrics.csv", best_dev, exp_id)
+        if (cell_dir / "metrics.csv").is_file():
+            _curve_agrees(cell_dir / "metrics.csv", best_dev, exp_id)
+            curve = "lightning-csv"
+        elif _terminal_recovery_agrees(cell_dir, marker, exp_id):
+            curve = "absent-terminal-recovery"
+        else:
+            raise EvidenceError(f"{exp_id}: training curve is absent")
 
         runtime = _load_json(cell_dir / "runtime_provenance.json", f"{exp_id} runtime provenance")
         if runtime.get("exp_id") != exp_id or runtime.get("git_sha") != git_sha:
@@ -312,6 +355,7 @@ def validate_evidence(
             "gpu_hours": float(active) / 3600.0,
             "checkpoint_sha256": checkpoint_sha256,
             "marker_sha256": marker_sha256,
+            "curve": curve,
         }
 
     if test_results and missing_tests:
@@ -545,14 +589,15 @@ def render_training_dynamics(
                     if c["track"] == track and c["role"] == role and c["label_fraction"] == fraction
                 )
                 epochs, values = [], []
-                with (evidence_root / exp_id / "metrics.csv").open(
-                    newline="", encoding="utf-8"
-                ) as handle:
-                    for row in csv.DictReader(handle):
-                        raw = (row.get("dev_f1") or "").strip()
-                        if raw:
-                            epochs.append(int(float(row["epoch"])))
-                            values.append(float(raw))
+                curve_path = evidence_root / exp_id / "metrics.csv"
+                # A terminal-recovered cell has no curve; its selected point still plots.
+                if curve_path.is_file():
+                    with curve_path.open(newline="", encoding="utf-8") as handle:
+                        for row in csv.DictReader(handle):
+                            raw = (row.get("dev_f1") or "").strip()
+                            if raw:
+                                epochs.append(int(float(row["epoch"])))
+                                values.append(float(raw))
                 axis.plot(
                     epochs,
                     values,
