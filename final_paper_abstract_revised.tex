@@ -1,0 +1,60 @@
+% AIPR 2026 one-page abstract submission (Springer Meteor: https://meteor.springer.com/aipr2026).
+% Results-neutral draft for the final paper.
+\documentclass[runningheads]{llncs}
+
+\usepackage[T1]{fontenc}
+\usepackage{microtype}
+\usepackage[hidelinks]{hyperref}
+
+\begin{document}
+
+\title{Label-Efficient Dark-Vessel Detection in SAR: Does SAR-Domain
+Pretraining Outperform Optical and ImageNet Transfer Across ViT and CNN?}
+\titlerunning{Label-Efficient Dark-Vessel Detection in SAR}
+
+\author{John Roth\inst{1,2} \and Kyle Wagner\inst{1,3} \and Liv d'Aliberti\inst{1}}
+\authorrunning{J. Roth et al.}
+
+\institute{Johns Hopkins University, Baltimore MD, USA\\
+\email{\{jroth32,kwagne35,odalibe1\}@jh.edu}
+\and
+The MITRE Corporation, McLean VA, USA\\
+\email{johnroth@mitre.org}
+\and
+Boeing -- Phantom Works, St. Louis MO, USA\\
+\email{kyle.w.wagner@boeing.com}}
+
+\maketitle
+
+\begin{abstract}
+Detecting dark vessels---vessels lacking matched Automatic Identification
+System (AIS) reports---in spaceborne synthetic aperture radar (SAR) plays an important role in supporting
+maritime safety and enforcement, including monitoring activity potentially associated with sanctions evasion. 
+Since human-verified examples are scarce, we study whether source-domain pretraining improves label efficiency on
+xView3 (Sentinel-1 GRD, 10\,m pixel spacing) and whether the effect persists
+across architectures. Our controlled comparison uses approximately
+size-matched ViT-B/16 (86M parameters) and ConvNeXt-V2-Base (89M) tracks.
+Within each track, we compare random initialization with
+pretrained encoders from ImageNet, optical remote sensing, and SAR. The ViT
+track uses AugReg, SatDINO (DINO on fMoW-RGB), and SARMAE (masked autoencoding
+on SAR-1M); the ConvNeXt track uses FCMAE and BigEarthNet Sentinel-2 and Sentinel-1
+models. Because the
+checkpoints differ in pretraining recipe as well as source domain, domain
+effects are interpreted within architecture. Matched-role cross-track
+comparisons test whether the observed pattern persists across architectures.
+
+All arms use the same [VH, VV, VH$-$VV] input, CenterNet-style, anchor-free Gaussian-heatmap point detector,
+optimizer, schedule, scene-level splits, and seed. We fine-tune nested 10\%,
+25\%, 50\%, and 100\% fractions of the training scenes in a stratified
+150-scene study subset. We report seed-0 distance-matched F1 on held-out
+scenes, plus dark-vessel recall and near-shore F1 on a disjoint, near-shore,
+50-scene human-verified set used once for final evaluation. Because training
+subsets are not restricted to near-shore scenes, this final measure tests
+coastal generalization under distinct clutter conditions. All reported values are seed-0 point estimates.
+
+\keywords{Synthetic aperture radar \and Dark-vessel detection \and Transfer
+learning \and Label efficiency \and Vision transformers \and Convolutional
+neural networks \and xView3-SAR.}
+\end{abstract}
+
+\end{document}
