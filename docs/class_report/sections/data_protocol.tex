@@ -6,8 +6,9 @@ We use xView3-SAR Sentinel-1 ground-range-detected scenes with VH and VV
 polarizations at 10\,m pixel spacing~\cite{paolo2022xview3}. Scene identifiers
 define every split. A frozen seed-0 cohort contains 150 study scenes: 111
 train, 23 development, and 16 test. The split is stratified by coarse
-geographic region and shoreline presence. A separate set of 50
-human-verified scenes remains sealed for one final evaluation. The four
+geographic region and shoreline presence. A separate, disjoint set of 50
+near-shore, human-verified scenes stayed sealed until the training cohort
+and the test results were frozen, and was then scored once. The four
 training budgets are exact nested sets of 12, 28, 56, and 111 scenes:
 \begin{equation}
 S_{10} \subset S_{25} \subset S_{50} \subset S_{100}.
@@ -33,8 +34,8 @@ maps the scene centroids of the frozen splits.
 \begin{table}[t]
 \centering
 \caption{Frozen scene-level data protocol and annotation support under the
-corrected ground-truth contract. The 50 verified scenes remain sealed for a
-separate, once-only final evaluation.}
+corrected ground-truth contract. The 50 verified scenes served one
+once-only final evaluation; their row gives the vessel support scored there.}
 \label{tab:data-protocol}
 \small
 \setlength{\tabcolsep}{6pt}
@@ -45,7 +46,11 @@ Partition & Scenes & Vessel H/M & Non-vessel H/M & LOW ignore \\
 Training-time dev subset & \HevCountDevEightScenes & \HevCountDevEightPositive & \HevCountDevEightBackground & \HevCountDevEightIgnore \\
 Development (full) & \HevCountDevFullScenes & \HevCountDevFullPositive & \HevCountDevFullBackground & \HevCountDevFullIgnore \\
 Test & \HevCountTestScenes & \HevCountTestPositive & \HevCountTestBackground & \HevCountTestIgnore \\
+\ifHevFinalEval
+Verified final & 50 & \HevFinalPositives & \multicolumn{2}{c}{\HevFinalDarkSupport{} dark, \HevFinalNearShoreSupport{} near shore} \\
+\else
 Verified final & 50 & \multicolumn{3}{c}{sealed, human verified} \\
+\fi
 \bottomrule
 \end{tabular}
 \end{table}

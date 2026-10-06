@@ -52,20 +52,17 @@ approximately size-matched tracks use ViT-B/16 and ConvNeXt-V2-Base. Within
 each track, random, ImageNet, optical remote-sensing, and SAR initializations
 share one detector, training recipe, scene split, and seed. We fine-tuned four
 nested budgets from 12 to 111 training scenes (10\%, 25\%, 50\%, and
-100\%), for 32 controlled cells. On
-corrected development-selection F1, every pretrained ViT and two of three
-pretrained CNNs beat their random floors at 12 scenes. The SAR--optical
-ranking depended on the backbone: SAR led at every CNN budget, while optical
-led the ViT track at 10\% and 25\%.\ifHevTestComplete{} The once-scored
-16-scene test split preserved these rankings. At full data, development
-selection favored ImageNet in both tracks, but test scoring favored SAR over
-ImageNet in the ViT track. Two SAR test curves exceeded the predeclared 0.02
-non-monotonicity tolerance, so the experiment failed its monotonicity
-gate.\else{} Held-out test scoring remains pending.\fi{} All values are
-seed-0 point estimates.\ifHevFinalEval{} The once-only 50-scene evaluation
-supplies dark-vessel recall and near-shore performance.\else{} The 50
-human-verified scenes remain sealed, so this report does not yet measure
-dark-vessel recall or near-shore performance.\fi
+100\%), for 32 controlled cells. A seeded three-channel stem turned the
+ten-band optical CNN checkpoint's apparent negative transfer into a gain. At
+12 scenes, every pretrained arm beat its random floor.\ifHevTestComplete{}
+On the once-scored 16-scene test split, SAR led optical in the CNN track at
+12 to 56 scenes but trailed at 111, the ViT track showed no stable order,
+and two SAR curves failed the predeclared monotonicity gate.\else{} Held-out
+test scoring remains pending.\fi\ifHevFinalEval{} On the once-only 50-scene
+human-verified set, F1 fell to \HevFinalFMin--\HevFinalFMax{} and no cell
+exceeded \HevFinalDarkRecallMax{} dark-vessel recall, yet pretraining still
+beat random initialization at 12 scenes.\else{} The 50 human-verified scenes
+remain sealed.\fi{} All values are seed-0 point estimates.
 \end{abstract}
 \label{mainbody:start}
 \input{sections/introduction}

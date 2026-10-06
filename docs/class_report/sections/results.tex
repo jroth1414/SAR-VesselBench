@@ -3,17 +3,20 @@
 
 \paragraph{Execution summary and reporting contract.}
 
-All 32 cells completed on eight \HevHardware{} in FP32 and used
-\HevGPUHours{} GPU-hours. Table~\ref{tab:dev-matrix} reports corrected
+All 32 cells trained from initialization on eight \HevHardware{} GPUs in
+FP32 (code \texttt{\HevCodeSHAShort}) and used \HevGPUHours{} GPU-hours.
+Table~\ref{tab:dev-matrix} reports corrected
 development-selection F1. Each cell selects its checkpoint and operating
 threshold on the same eight-scene subset. These scores therefore include
 model-selection optimism and are not held-out estimates.
 Figure~\ref{fig:label-efficiency} shows the four-point curves, and
 Fig.~\ref{fig:training-dynamics} shows their training histories in the
 appendix. The evidence generator reconstructs every value from the frozen
-cohort, checkpoint-bound completion records, and full training curves. It
-rejects an incomplete cohort or a value that disagrees with its source
-record.
+cohort, checkpoint-bound completion records, and full training curves. Two
+cells ran their last development evaluation in a zero-step resume that did
+not save the curve; their markers bind the recovery record instead
+(Appendix~\ref{app:audit}). The generator rejects an incomplete cohort or a
+value that disagrees with its source record.
 
 \begin{table}[t]
 \centering
@@ -52,91 +55,118 @@ Values are seed-0 point estimates. We draw no uncertainty ribbon.}
 
 \paragraph{Label-efficiency curves and transfer gains.}
 
-At 12 scenes, all three pretrained ViTs beat the random ViT. Their gains are
-\HevDeltaFTenViTOptical{} for optical, \HevDeltaFTenViTSar{} for SAR, and
-\HevDeltaFTenViTImageNet{} for ImageNet (Eq.~\eqref{eq:gain} and
-Fig.~\ref{fig:transfer-gains}). In the CNN track, SAR gains
-\HevDeltaFTenCNNSar{} and ImageNet gains \HevDeltaFTenCNNImageNet{} over the
-12-scene random floor. The optical CNN matches random at 12 scenes
-(both \HevDevFCNNOpticalTen) and trails it at every larger budget. Transfer
-benefit is therefore specific to the checkpoint rather than guaranteed by
-pretraining.
+At 12 scenes, every pretrained arm beats its random floor in both tracks.
+The ViT gains are \HevDeltaFTenViTOptical{} for optical,
+\HevDeltaFTenViTSar{} for SAR, and \HevDeltaFTenViTImageNet{} for ImageNet
+(Eq.~\eqref{eq:gain} and Fig.~\ref{fig:transfer-gains}). The CNN gains are
+\HevDeltaFTenCNNOptical{}, \HevDeltaFTenCNNSar{}, and
+\HevDeltaFTenCNNImageNet. CNN-optical now beats random at every budget
+because of the input adapter (Sect.~\ref{sec:methods}).
 
-More labeled scenes did not raise every development curve. ViT-optical falls
-from \HevDevFViTOpticalTen{} to \HevDevFViTOpticalTwentyFive{} between the
-first two budgets. ViT-SAR falls from \HevDevFViTSarTen{} to
-\HevDevFViTSarTwentyFive. We report these declines without smoothing or
-reruns. With one seed and 517 positives on the selection subset, this study
-cannot separate optimization variation, subset composition, and selection
-error.
-
-We also measure the smallest tested budget that reaches the track's
-full-data random floor. CNN-ImageNet reaches that reference at 28 scenes
-(\HevDevFCNNImageNetTwentyFive{} versus
-\HevDevFCNNRandomHundred). Every ViT transfer arm and CNN-SAR reaches it at
-56 scenes. CNN-optical never does. At 12 scenes, the strongest transferred
-model in each track falls just short of its full-data random floor. The
-tested checkpoints can therefore approach, but do not match, the selected
-development score of a random model trained on all 111 scenes.
+At 12 scenes, ViT-ImageNet comes within 0.002 of the full-data ViT random
+floor (\HevDevFViTImageNetTen{} versus \HevDevFViTRandomHundred).
 
 \paragraph{Source-domain contrasts and architecture generality.}
 
-The SAR--optical ranking changes with the backbone
-(Eq.~\eqref{eq:contrast} and Fig.~\ref{fig:transfer-gains}). CNN-SAR leads
-CNN-optical at every budget. The largest gap occurs at 12 scenes
-(\HevDevFCNNSarTen{} versus \HevDevFCNNOpticalTen). The BigEarthNet
-Sentinel-1 and Sentinel-2 checkpoints share their architecture, dataset
-family, and supervised task, which makes this the cleanest modality
-comparison in the study.
+The SAR--optical ranking depends on the backbone
+(Eq.~\eqref{eq:contrast} and Fig.~\ref{fig:transfer-gains}). On
+development F1, CNN-SAR leads CNN-optical at every budget, but the gap
+shrinks from \HevDevFCNNSarTen{} versus \HevDevFCNNOpticalTen{} at 12 scenes
+to \HevDevFCNNSarHundred{} versus \HevDevFCNNOpticalHundred{} at 111. The
+BigEarthNet Sentinel-1 and Sentinel-2 checkpoints share their architecture,
+dataset family, and supervised task, which makes this the cleanest modality
+comparison in the study. In the ViT track, optical leads SAR at 10\%, 25\%,
+and 50\%, and SAR leads only at 100\%. The scarce-label SAR--optical order
+therefore does not replicate across architectures. The ViT checkpoints also
+differ in objective and source corpus, so their ranking cannot identify a
+modality-only effect.
 
-The ViT ranking reverses below half data. Optical leads SAR at 10\% and 25\%
-(\HevDevFViTOpticalTen{} versus \HevDevFViTSarTen, and
-\HevDevFViTOpticalTwentyFive{} versus \HevDevFViTSarTwentyFive). SAR moves
-ahead at 56 and 111 scenes. The scarce-label SAR--optical order therefore
-does not replicate across architectures. The ViT checkpoints also differ in
-objective and source corpus, so their ranking cannot identify a modality-only
-effect.
-
-At 111 scenes, development selection ranks ImageNet first in both tracks
-(\HevDevFViTImageNetHundred{} and \HevDevFCNNImageNetHundred). Held-out
-scoring tests whether these full-data rankings persist.
-
-\paragraph{Held-out results.}
+\paragraph{Held-out test results.}
 
 \ifHevTestComplete
 All 32 cells were scored once on the frozen 16-scene test split with their
 development-bound thresholds and \HevTestInferencePrecision{} inference.
 The test column appears only after every result validates against the frozen
-cohort. Test F1 is lower than development F1 for every cell. The gap ranges
-from 0.041 to 0.142 and averages \HevTestMeanGap{} F1. A negative gap is
-compatible with selection on eight scenes, but this experiment cannot
-separate selection optimism, threshold transfer, and scene-distribution differences.
+cohort. Test F1 is lower than development F1 for every cell, by 0.029 to
+0.142 and \HevTestMeanGap{} on average, as selection on eight scenes leads
+one to expect.
 
-The central SAR--optical ranking persists at every budget. CNN-SAR remains
-above CNN-optical throughout. In ViT, optical remains ahead at 10\% and 25\%,
-then SAR leads at 50\% and 100\%. The full-data ranking changes in one track.
-ViT-SAR reaches \HevTestFViTSarHundred, above ImageNet's
-\HevTestFViTImageNetHundred. CNN-ImageNet retains its lead at
-\HevTestFCNNImageNetHundred.
+Every pretrained arm still beats its random floor at 12 scenes. In the CNN
+track, SAR leads optical at 12, 28, and 56 scenes (\HevTestFCNNSarTen{}
+versus \HevTestFCNNOpticalTen{} at 12) and trails it at 111
+(\HevTestFCNNSarHundred{} versus \HevTestFCNNOpticalHundred). In the ViT
+track, the two arms tie at 12 scenes (\HevTestFViTSarTen{} versus
+\HevTestFViTOpticalTen), optical leads at 28, and SAR leads at 56 and 111.
+The full-data winner changes in one track: ViT-SAR reaches
+\HevTestFViTSarHundred, above ImageNet's \HevTestFViTImageNetHundred, while
+CNN-ImageNet keeps its lead at \HevTestFCNNImageNetHundred. On test, 28
+pretrained scenes already match the full-data random floor in both tracks.
+The 28 cells outside the CNN-optical arm repeat the recipe and seed of an
+earlier cohort (code \texttt{1a82d508}), yet their test F1 differs from it
+by up to 0.043, so we treat contrasts below about 0.04 as run-to-run
+variation.
 
 The predeclared monotonicity gate failed on two SAR test curves. ViT-SAR
-falls from \HevTestFViTSarTen{} at 10\% to
-\HevTestFViTSarTwentyFive{} at 25\%. CNN-SAR rises on development from
-\HevDevFCNNSarFifty{} at 50\% to \HevDevFCNNSarHundred{} at 100\%, but its
-test F1 falls from \HevTestFCNNSarFifty{} to
-\HevTestFCNNSarHundred. Both test declines exceed the allowed 0.02. The
-experiment therefore does not establish a monotone label-efficiency curve.
-Appendix~\ref{app:inventory} lists the full test column.
+falls from \HevTestFViTSarTen{} at 10\% to \HevTestFViTSarTwentyFive{} at
+25\%, and CNN-SAR falls from \HevTestFCNNSarFifty{} at 50\% to
+\HevTestFCNNSarHundred{} at 100\% although its development F1 rises. Both
+declines exceed the allowed 0.02, so the experiment does not establish a
+monotone label-efficiency curve. The final evaluation proceeded with this
+failure disclosed, with no retraining and no threshold tuning.
 \else
 The 16-scene test split has not been scored in this build. The held-out
 contract first freezes the 32-cell cohort. It then applies each cell's
 development-bound threshold and writes one immutable result. The generator
 admits test values only when all 32 results validate.
 \fi
+
+\paragraph{Once-only human-verified evaluation.}
+
 \ifHevFinalEval
-The sealed 50-scene human-verified evaluation ran once for all 32 cells.
-Dark-vessel recall and near-shore results appear in
-Appendix~\ref{app:inventory}.
+\begin{table}[t]
+\centering
+\caption{F1 on the \HevFinalScenes{} human-verified scenes, scored once
+with each cell's development-bound threshold. Appendix~\ref{app:inventory}
+adds recall, dark-vessel recall, and near-shore F1.}
+\label{tab:final}
+\small
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{@{}llcccc@{}}
+\toprule
+Track & Initialization & 10\% (12) & 25\% (28) & 50\% (56) & 100\% (111) \\
+\midrule
+ViT-B/16 & Random & \HevFinalFViTRandomTen & \HevFinalFViTRandomTwentyFive & \HevFinalFViTRandomFifty & \HevFinalFViTRandomHundred \\
+ & Optical & \HevFinalFViTOpticalTen & \HevFinalFViTOpticalTwentyFive & \HevFinalFViTOpticalFifty & \HevFinalFViTOpticalHundred \\
+ & SAR & \HevFinalFViTSarTen & \HevFinalFViTSarTwentyFive & \HevFinalFViTSarFifty & \HevFinalFViTSarHundred \\
+ & ImageNet & \HevFinalFViTImageNetTen & \HevFinalFViTImageNetTwentyFive & \HevFinalFViTImageNetFifty & \HevFinalFViTImageNetHundred \\
+\midrule
+ConvNeXt-V2-B & Random & \HevFinalFCNNRandomTen & \HevFinalFCNNRandomTwentyFive & \HevFinalFCNNRandomFifty & \HevFinalFCNNRandomHundred \\
+ & Optical & \HevFinalFCNNOpticalTen & \HevFinalFCNNOpticalTwentyFive & \HevFinalFCNNOpticalFifty & \HevFinalFCNNOpticalHundred \\
+ & SAR & \HevFinalFCNNSarTen & \HevFinalFCNNSarTwentyFive & \HevFinalFCNNSarFifty & \HevFinalFCNNSarHundred \\
+ & ImageNet & \HevFinalFCNNImageNetTen & \HevFinalFCNNImageNetTwentyFive & \HevFinalFCNNImageNetFifty & \HevFinalFCNNImageNetHundred \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+All 32 cells were scored once on the \HevFinalScenes{} human-verified
+scenes (Table~\ref{tab:final}). They hold \HevFinalPositives{} vessels, of
+which \HevFinalDarkSupport{} are dark and \HevFinalNearShoreSupport{} lie
+within 2\,km of shore. F1 falls to \HevFinalFMin--\HevFinalFMax, on average
+\HevFinalMeanTestGap{} below test F1. Precision stays between
+\HevFinalPrecisionMin{} and \HevFinalPrecisionMax, but recall drops to
+\HevFinalRecallMin--\HevFinalRecallMax. The detectors therefore miss most
+verified vessels rather than over-detect. No cell exceeds
+\HevFinalNearShoreFMax{} near-shore F1 or \HevFinalDarkRecallMax{}
+dark-vessel recall.
+
+The 12-scene pretraining advantage survives this shift: the six gains over
+random range from \HevDeltaFinalTenCNNOptical{} to
+\HevDeltaFinalTenViTImageNet, and ViT-ImageNet at 12 scenes matches the ViT
+random floor at 111 (\HevFinalFViTImageNetTen{} versus
+\HevFinalFViTRandomHundred). CNN-SAR again leads optical only with few
+labels (\HevFinalFCNNSarTen{} versus \HevFinalFCNNOpticalTen{} at 12 scenes,
+\HevFinalFCNNSarHundred{} versus \HevFinalFCNNOpticalHundred{} at 111). Both
+SAR declines from the test split recur on this set and grow larger.
 \else
 The 50 human-verified scenes remain sealed. Dark-vessel recall and near-shore
 performance are defined only on that set, so neither result is available in

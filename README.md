@@ -12,19 +12,25 @@ stay fixed. Encoder initialization changes within two architecture tracks:
   Sentinel-1 SAR, and ImageNet-1K FCMAE followed by supervised fine-tuning.
 
 Each arm uses seed `0` and four nested scene budgets: 10%, 25%, 50%, and 100%.
-The matrix contains 32 core cells, all trained on H100 GPUs in strict FP32 and
-all scored once on a frozen 16-scene held-out test split. Headline findings:
-transfer concentrates its value under label scarcity; the SAR-versus-optical
-contrast is architecture-dependent (SAR wins the CNN track at every budget,
-optical leads the ViT track below half data, and the held-out split confirms
-the sign at every budget); and held-out scoring reverses one
-development-selection conclusion, the full-data ViT winner.
+The matrix contains 32 core cells, all trained on H100 GPUs in strict FP32,
+scored once on a frozen 16-scene held-out test split, and then scored once on
+a disjoint 50-scene near-shore human-verified set. Headline findings: every
+pretrained arm beats random initialization at 12 training scenes on all
+three evaluations; SAR beats optical in the CNN track only while labels are
+scarce (it trails at 111 scenes on test), and the ViT track has no stable
+SAR-optical order; adapting the ten-band BigEarthNet-S2 checkpoint with a
+seeded three-channel stem, rather than band slicing, turns its apparent
+negative transfer into a gain; and on the human-verified set every detector
+misses most dark and near-shore vessels (dark-vessel recall at most 0.228,
+near-shore F1 at most 0.041).
 
 ## Evidence and results
 
 `results/h100/evidence/` is the single source for every published number. It
-carries, from the completed campaign (code `1a82d508`, strict IEEE FP32,
-seed 0):
+carries the replacement32 cohort (code `06b2e61`, cohort `a8996efd`, strict
+IEEE FP32, seed 0): all 32 cells retrained from initialization after the
+BigEarthNet-S2 stem fix. The earlier August cohort (code `1a82d508`, cohort
+`9b1ba03e`) remains in git history. The evidence tree holds:
 
 - `TRAINING_COHORT.json` — the frozen 32-cell cohort, byte-exact. It binds
   the committed `configs/detector.yaml` by SHA-256 and records each cell's
@@ -35,29 +41,37 @@ seed 0):
 - `<exp_id>/test_metrics.json` — each cell's immutable held-out test result,
   scored once on the node with the cohort-bound threshold; each must rebuild
   exactly from the frozen cohort.
-- `<exp_id>/metrics.csv` — each cell's full training curve.
+- `<exp_id>/metrics.csv` — each cell's full training curve. Two cells
+  (`beS2-f10-s0`, `vitin1k-f10-s0`) ran their last dev evaluation in a
+  zero-step resume that did not save the curve; their markers hash-bind
+  `terminal_recovery.json` instead.
+- `<exp_id>/final_verified_metrics.json` — each cell's once-only 50-scene
+  human-verified result; each must hash to its entry in
+  `FINAL_EVAL_COMPLETE.json` and bind the cohort, its test result, and its
+  threshold.
 - `<exp_id>/runtime_provenance.json` — sanitized runtime receipt (hardware
   class, attempt history, active seconds; private cluster paths replaced,
   with originals hashed in `REDACTIONS.json`).
 - `EVAL_GROUND_TRUTH_VALIDATED.json` — the audit receipt that binds every
   annotation-support count to the frozen split file by SHA-256.
-- `grid.csv` — the node's 32-row summary of the completed grid.
 
 Checkpoint bytes stay outside the repository; their SHA-256 bindings are
 published so the operator archive can re-verify them. The generator
 re-derives every published value from these bytes and fails closed on any
 inconsistency (marker-to-cohort hashes, TP/FP/FN consistency, best-dev
-versus training-curve agreement, all-or-nothing test admission):
+versus training-curve agreement, all-or-nothing test and final admission):
 
 ```bash
 python -m src.analysis.heldout_results --output-dir docs/results/generated
 ```
 
-The separate 50-scene human-verified set remains sealed until
-`final_verified.csv` exists; dark-vessel recall is defined only there.
+`scripts/stage_evidence.py` builds this tree from a delivered run tree, and
+`python -m src.analysis.replacement_compare` tabulates any two validated
+cohorts side by side.
 
 `src/analysis/analysis.ipynb` is an executed, in-depth analysis notebook
-over the same validated evidence: dev-versus-test matrices and contrasts
+over the earlier August cohort (not yet re-executed on replacement32):
+dev-versus-test matrices and contrasts
 with a programmatic sign-agreement check, shrinkage structure, monotonicity
 under the grid gate's tolerance, operating-point movement, cost-performance,
 training-curve timing, and full per-arm training and loss curves (including
@@ -66,7 +80,7 @@ eight cells' curves). It reads only through the fail-closed validator and
 runs from the repository root with `jupyter`/`nbclient` installed.
 
 `results/h100/h100_campaign_snapshot.json` remains the sanitized operator
-status record from the campaign deadline, rendered by
+status record from the August campaign deadline, rendered by
 `python -m src.analysis.h100_results generate`; its import machinery stays
 available for a fully receipted reverse handback. `results/h100/logs/`
 carries head/tail excerpts of each cell's raw H100 training log with

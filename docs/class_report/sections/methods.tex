@@ -10,6 +10,14 @@ detectors contain 89{,}996{,}801 trainable parameters for ViT and
 93{,}988{,}865 for
 CNN.
 
+\paragraph{Input adaptation for the BigEarthNet-S2 checkpoint.}
+The Sentinel-2 checkpoint expects ten optical bands. An earlier cohort kept
+three band kernels of its first convolution and scaled them by 10/3, which
+raised the first-layer weight norm 5.85-fold and left the arm at or below
+random. Here the target model keeps its seeded three-channel first
+convolution and loads every other pretrained tensor. All 32 cells were then
+retrained from initialization under one code version.
+
 \begin{table}[t]
 \centering
 \caption{Controlled initialization roles. All non-random entries are

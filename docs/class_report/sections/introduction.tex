@@ -33,9 +33,11 @@ We then compare SAR with optical pretraining inside each architecture.
 Once-scored held-out results test whether those rankings survive model
 selection on eight development scenes.
 The results do not support one backbone-independent ordering of pretraining
-sources. SAR leads optical at every CNN budget, while optical leads the ViT
-track at the two smallest budgets.\ifHevTestComplete{} The held-out test
-split preserves this pattern, but two SAR curves fail the predeclared
-monotonicity gate.\fi{} The detector is intentionally conventional. The
+sources. Every pretrained arm beats random initialization with 12 training
+scenes. SAR leads optical in the CNN track only while labels are scarce, and
+the ViT track shows no stable order.\ifHevTestComplete{} Two SAR test curves
+fail the predeclared monotonicity gate.\fi\ifHevFinalEval{} A once-only
+human-verified evaluation shows that every detector misses most dark and
+near-shore vessels.\fi{} The detector is intentionally conventional. The
 contribution is a controlled comparison of released checkpoints, supported
 by one label contract and checkpoint-bound operating thresholds.

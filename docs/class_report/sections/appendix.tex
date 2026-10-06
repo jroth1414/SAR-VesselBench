@@ -4,6 +4,8 @@
 Table~\ref{tab:inventory} lists every cell: development-selection F1, the
 checkpoint-bound operating threshold, the epoch of the selected checkpoint,
 the epochs run, measured GPU-hours, and held-out test F1 where admitted.
+\ifHevFinalEval Table~\ref{tab:final-inventory} lists the once-only
+human-verified results.\fi
 The build re-derives all values from the committed cohort, markers,
 training curves, and runtime receipts. Dashes mean the fail-closed
 generator admitted no value, never zero performance.
@@ -57,9 +59,62 @@ CNN ImageNet & 100\% & \HevDevFCNNImageNetHundred & \HevThrCNNImageNetHundred & 
 \end{tabular}
 \end{table}
 
-The campaign's sanitized operator status snapshot (captured before the
-final cells closed) remains committed beside the evidence tree as a
-historical record of execution state at the deadline.
+\ifHevFinalEval
+\begin{table}[h]
+\centering
+\caption{Per-cell results on the 50 human-verified scenes, scored once with
+each cell's development-bound threshold. Dark-vessel recall covers the
+\HevFinalDarkSupport{} vessels without an AIS match; near-shore F1 covers
+the \HevFinalNearShoreSupport{} vessels within 2\,km of shore.}
+\label{tab:final-inventory}
+\scriptsize
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{0.95}
+\begin{tabular}{@{}llcccc@{}}
+\toprule
+Cell & Budget & Final F1 & Recall & Dark recall & Near-shore F1 \\
+\midrule
+ViT random & 10\% & \HevFinalFViTRandomTen & \HevFinalRecallViTRandomTen & \HevFinalDarkRecallViTRandomTen & \HevFinalNearShoreFViTRandomTen \\
+ViT random & 25\% & \HevFinalFViTRandomTwentyFive & \HevFinalRecallViTRandomTwentyFive & \HevFinalDarkRecallViTRandomTwentyFive & \HevFinalNearShoreFViTRandomTwentyFive \\
+ViT random & 50\% & \HevFinalFViTRandomFifty & \HevFinalRecallViTRandomFifty & \HevFinalDarkRecallViTRandomFifty & \HevFinalNearShoreFViTRandomFifty \\
+ViT random & 100\% & \HevFinalFViTRandomHundred & \HevFinalRecallViTRandomHundred & \HevFinalDarkRecallViTRandomHundred & \HevFinalNearShoreFViTRandomHundred \\
+ViT optical & 10\% & \HevFinalFViTOpticalTen & \HevFinalRecallViTOpticalTen & \HevFinalDarkRecallViTOpticalTen & \HevFinalNearShoreFViTOpticalTen \\
+ViT optical & 25\% & \HevFinalFViTOpticalTwentyFive & \HevFinalRecallViTOpticalTwentyFive & \HevFinalDarkRecallViTOpticalTwentyFive & \HevFinalNearShoreFViTOpticalTwentyFive \\
+ViT optical & 50\% & \HevFinalFViTOpticalFifty & \HevFinalRecallViTOpticalFifty & \HevFinalDarkRecallViTOpticalFifty & \HevFinalNearShoreFViTOpticalFifty \\
+ViT optical & 100\% & \HevFinalFViTOpticalHundred & \HevFinalRecallViTOpticalHundred & \HevFinalDarkRecallViTOpticalHundred & \HevFinalNearShoreFViTOpticalHundred \\
+ViT SAR & 10\% & \HevFinalFViTSarTen & \HevFinalRecallViTSarTen & \HevFinalDarkRecallViTSarTen & \HevFinalNearShoreFViTSarTen \\
+ViT SAR & 25\% & \HevFinalFViTSarTwentyFive & \HevFinalRecallViTSarTwentyFive & \HevFinalDarkRecallViTSarTwentyFive & \HevFinalNearShoreFViTSarTwentyFive \\
+ViT SAR & 50\% & \HevFinalFViTSarFifty & \HevFinalRecallViTSarFifty & \HevFinalDarkRecallViTSarFifty & \HevFinalNearShoreFViTSarFifty \\
+ViT SAR & 100\% & \HevFinalFViTSarHundred & \HevFinalRecallViTSarHundred & \HevFinalDarkRecallViTSarHundred & \HevFinalNearShoreFViTSarHundred \\
+ViT ImageNet & 10\% & \HevFinalFViTImageNetTen & \HevFinalRecallViTImageNetTen & \HevFinalDarkRecallViTImageNetTen & \HevFinalNearShoreFViTImageNetTen \\
+ViT ImageNet & 25\% & \HevFinalFViTImageNetTwentyFive & \HevFinalRecallViTImageNetTwentyFive & \HevFinalDarkRecallViTImageNetTwentyFive & \HevFinalNearShoreFViTImageNetTwentyFive \\
+ViT ImageNet & 50\% & \HevFinalFViTImageNetFifty & \HevFinalRecallViTImageNetFifty & \HevFinalDarkRecallViTImageNetFifty & \HevFinalNearShoreFViTImageNetFifty \\
+ViT ImageNet & 100\% & \HevFinalFViTImageNetHundred & \HevFinalRecallViTImageNetHundred & \HevFinalDarkRecallViTImageNetHundred & \HevFinalNearShoreFViTImageNetHundred \\
+\midrule
+CNN random & 10\% & \HevFinalFCNNRandomTen & \HevFinalRecallCNNRandomTen & \HevFinalDarkRecallCNNRandomTen & \HevFinalNearShoreFCNNRandomTen \\
+CNN random & 25\% & \HevFinalFCNNRandomTwentyFive & \HevFinalRecallCNNRandomTwentyFive & \HevFinalDarkRecallCNNRandomTwentyFive & \HevFinalNearShoreFCNNRandomTwentyFive \\
+CNN random & 50\% & \HevFinalFCNNRandomFifty & \HevFinalRecallCNNRandomFifty & \HevFinalDarkRecallCNNRandomFifty & \HevFinalNearShoreFCNNRandomFifty \\
+CNN random & 100\% & \HevFinalFCNNRandomHundred & \HevFinalRecallCNNRandomHundred & \HevFinalDarkRecallCNNRandomHundred & \HevFinalNearShoreFCNNRandomHundred \\
+CNN optical & 10\% & \HevFinalFCNNOpticalTen & \HevFinalRecallCNNOpticalTen & \HevFinalDarkRecallCNNOpticalTen & \HevFinalNearShoreFCNNOpticalTen \\
+CNN optical & 25\% & \HevFinalFCNNOpticalTwentyFive & \HevFinalRecallCNNOpticalTwentyFive & \HevFinalDarkRecallCNNOpticalTwentyFive & \HevFinalNearShoreFCNNOpticalTwentyFive \\
+CNN optical & 50\% & \HevFinalFCNNOpticalFifty & \HevFinalRecallCNNOpticalFifty & \HevFinalDarkRecallCNNOpticalFifty & \HevFinalNearShoreFCNNOpticalFifty \\
+CNN optical & 100\% & \HevFinalFCNNOpticalHundred & \HevFinalRecallCNNOpticalHundred & \HevFinalDarkRecallCNNOpticalHundred & \HevFinalNearShoreFCNNOpticalHundred \\
+CNN SAR & 10\% & \HevFinalFCNNSarTen & \HevFinalRecallCNNSarTen & \HevFinalDarkRecallCNNSarTen & \HevFinalNearShoreFCNNSarTen \\
+CNN SAR & 25\% & \HevFinalFCNNSarTwentyFive & \HevFinalRecallCNNSarTwentyFive & \HevFinalDarkRecallCNNSarTwentyFive & \HevFinalNearShoreFCNNSarTwentyFive \\
+CNN SAR & 50\% & \HevFinalFCNNSarFifty & \HevFinalRecallCNNSarFifty & \HevFinalDarkRecallCNNSarFifty & \HevFinalNearShoreFCNNSarFifty \\
+CNN SAR & 100\% & \HevFinalFCNNSarHundred & \HevFinalRecallCNNSarHundred & \HevFinalDarkRecallCNNSarHundred & \HevFinalNearShoreFCNNSarHundred \\
+CNN ImageNet & 10\% & \HevFinalFCNNImageNetTen & \HevFinalRecallCNNImageNetTen & \HevFinalDarkRecallCNNImageNetTen & \HevFinalNearShoreFCNNImageNetTen \\
+CNN ImageNet & 25\% & \HevFinalFCNNImageNetTwentyFive & \HevFinalRecallCNNImageNetTwentyFive & \HevFinalDarkRecallCNNImageNetTwentyFive & \HevFinalNearShoreFCNNImageNetTwentyFive \\
+CNN ImageNet & 50\% & \HevFinalFCNNImageNetFifty & \HevFinalRecallCNNImageNetFifty & \HevFinalDarkRecallCNNImageNetFifty & \HevFinalNearShoreFCNNImageNetFifty \\
+CNN ImageNet & 100\% & \HevFinalFCNNImageNetHundred & \HevFinalRecallCNNImageNetHundred & \HevFinalDarkRecallCNNImageNetHundred & \HevFinalNearShoreFCNNImageNetHundred \\
+\bottomrule
+\end{tabular}
+\end{table}
+\fi
+
+The sanitized operator status snapshot from the earlier cohort's deadline
+remains committed beside the evidence tree as a historical record of
+execution state. It does not describe the cohort reported here.
 
 \clearpage
 \section{Study Data and Figures}
@@ -88,9 +143,11 @@ generalization.}
 \includegraphics[width=\textwidth]{heldout_training_dynamics.pdf}
 \caption{Development-F1 evaluation history for the smallest (12 scenes,
 solid) and largest (111 scenes, dotted) budgets. A marker identifies each
-selected checkpoint. The SAR and ImageNet CNN arms separate from the random
-floor in the first evaluations. Several strong arms peak before the last
-evaluation, and checkpoint binding retains those peaks.}
+selected checkpoint. The 12-scene ViT-ImageNet and CNN-optical curves were
+not saved, so only their markers appear. Curves that start late belong to
+resumed runs, which kept only post-resume evaluations. The SAR and ImageNet
+CNN arms separate from the random floor in the first evaluations, and
+checkpoint binding retains peaks that occur before the last evaluation.}
 \label{fig:training-dynamics}
 \end{figure}
 
@@ -98,10 +155,10 @@ evaluation, and checkpoint binding retains those peaks.}
 \centering
 \includegraphics[width=\textwidth]{heldout_transfer_gains.pdf}
 \caption{Left and center: transfer gain over the track-matched random floor
-(Eq.~\eqref{eq:gain}) at each budget. The optical CNN arm is at or below
-zero everywhere. Right: the SAR--optical contrast
-(Eq.~\eqref{eq:contrast}). Its sign flips between tracks below half data,
-so the modality effect depends on the architecture.}
+(Eq.~\eqref{eq:gain}) at each budget. Every gain is positive. Right: the
+SAR--optical contrast (Eq.~\eqref{eq:contrast}). It is positive for the CNN
+at every budget and shrinks toward zero at full data, but negative for the
+ViT below full data, so the modality effect depends on the architecture.}
 \label{fig:transfer-gains}
 \end{figure}
 
@@ -135,8 +192,9 @@ point, precision exceeds recall in \HevCellsPrecOverRecall{} of the 32 cells
 \paragraph{Training dynamics and cost.}
 Figure~\ref{fig:training-dynamics} traces the development-F1 evaluation
 history for the smallest and largest budgets. The SAR and ImageNet CNN arms
-separate from the random floor in the first evaluations. The optical CNN
-does not show the same gap, and the ViT arms begin closer together. Early
+separate from the random floor in the first evaluations, and the ViT arms
+begin closer together. The 12-scene CNN-optical curve was not saved, but its
+selected checkpoint sits well above the random floor. Early
 stopping, with a patience of four development evaluations, ended
 \HevCellsEarlyStopped{} of the 32 cells before the 50-epoch cap. The median
 best-checkpoint epoch is \HevMedianBestEpochViT{} for the ViT track and
@@ -172,7 +230,14 @@ receipt (H100 hardware class, source SHA, strict-FP32 backend state), and
 the ground-truth audit receipt that binds every support count in
 Table~\ref{tab:data-protocol} to the frozen split file. The generator
 validates marker-to-cohort hashes, metric consistency, and curve agreement
-before it writes a manuscript artifact. Checkpoint bytes stay outside the
+before it writes a manuscript artifact. Two cells, 12-scene ViT-ImageNet
+and 12-scene CNN-optical, ran their last development evaluation in a resume
+that added no training step and did not save the curve. Their markers
+hash-bind the recovery record, and the generator accepts the missing curve
+only when that record selects exactly the marker's checkpoint and result.
+Each human-verified result must hash to its entry in the final-evaluation
+completion record and bind the cohort, the cell's test result, and its
+threshold; the generator admits all 32 or none. Checkpoint bytes stay outside the
 repository. We publish their SHA-256 bindings for archive verification.
 The submission excludes imagery, labels, weights, checkpoints, run trees,
 credentials, and private paths.

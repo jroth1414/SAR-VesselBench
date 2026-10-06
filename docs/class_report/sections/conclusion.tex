@@ -1,38 +1,41 @@
 \section{Conclusion and Future Work}
 
-Five of the six pretrained checkpoints beat their random floors at 12
-scenes, but no source won across both backbones and both selection stages.
-CNN-SAR also leads CNN-optical at every budget. The ViT track gives a
-different scarce-label result: optical leads SAR at 10\% and 25\%, then SAR
-leads at the two larger budgets.\ifHevTestComplete{} The held-out test split
-preserves these SAR--optical rankings. At 111 scenes, development selection
-ranks ImageNet first in both tracks, while test scoring ranks SAR above
-ImageNet for ViT.\fi
+Pretraining improved label efficiency where labels are scarcest. At 12
+scenes, all six pretrained checkpoints beat their random floors on
+development selection\ifHevTestComplete, on the held-out test split\fi\ifHevFinalEval,
+and on the once-only human-verified set\fi. No single source won across both
+backbones and all evaluation stages. In the CNN track, SAR pretraining leads
+optical pretraining with few labels, and the lead shrinks as labels
+grow.\ifHevTestComplete{} On test it reverses at 111 scenes.\fi{} The ViT
+track shows no stable SAR--optical order. The input adapter mattered as much as the source domain: a seeded
+three-channel stem turned the ten-band BigEarthNet-S2 checkpoint from no
+gain into a gain at every budget, so cross-sensor studies should report the
+adapter rule.
 
 \ifHevTestComplete
-The failed monotonicity gate limits these conclusions. Two SAR test curves
-decline by more than 0.02 as the label budget grows, including a 50\%--100\%
-drop that development selection misses. The complete grid is therefore a
-set of descriptive seed-0 point estimates, not evidence that performance
-improves monotonically with more labels.
+The failed monotonicity gate and rerun variation of up to 0.043 test F1
+limit these conclusions. The grid is a set of descriptive seed-0 point
+estimates, not evidence that performance improves monotonically with more
+labels.
 \else
 The frozen 16-scene test split remains the next held-out stage. It will use
 each cell's development-bound threshold without retuning.
 \fi
 
-The design adds further limits. Each cell uses one seed, checkpoint and
-threshold selection uses eight scenes, and the 16-scene test split measures
-in-region generalization. The ViT optical and SAR checkpoints also differ in
-objective and source corpus. The results support comparisons among these
-released checkpoints under one detector recipe. They do not identify a
-universal causal effect of pretraining domain.
-
 \ifHevFinalEval
-The once-only 50-scene human-verified evaluation supplies dark-vessel recall
-and near-shore performance.
+The human-verified set exposes the main open problem. Every detector loses
+about \HevFinalMeanTestGap{} F1 against test, and no cell exceeds
+\HevFinalDarkRecallMax{} dark-vessel recall or \HevFinalNearShoreFMax{}
+near-shore F1. The training subsets are not restricted to near-shore scenes,
+so this result measures coastal generalization under different clutter.
 \else
-The 50 human-verified scenes remain sealed. Their once-only evaluation is
-still required before the study can report dark-vessel recall and near-shore
-performance. Future experiments should add seeds, a geographically
-independent test cohort, and checkpoints with matched pretraining objectives.
+The 50 human-verified scenes remain sealed, so dark-vessel recall and
+near-shore performance are not yet measured.
 \fi
+
+Each cell uses one seed, selection uses eight scenes, and the ViT optical
+and SAR checkpoints differ in objective and corpus. The results compare
+released checkpoints under one recipe; they do not identify a universal
+causal effect of pretraining domain. Future work should add seeds,
+near-shore training scenes, a geographically independent test cohort, and
+checkpoints with matched pretraining objectives.
