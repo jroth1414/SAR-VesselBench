@@ -110,7 +110,9 @@ def poster_style() -> dict[str, object]:
 def save_both(fig, out_dir: Path, stem: str) -> list[Path]:
     out_dir.mkdir(parents=True, exist_ok=True)
     paths = [out_dir / f"{stem}.pdf", out_dir / f"{stem}.png"]
-    fig.savefig(paths[0], metadata={"CreationDate": None})
+    # In the PDF, dpi sets only the resolution of embedded imagery (lines and
+    # text stay vector); the default 100 dpi printed SAR crops at ~100 ppi.
+    fig.savefig(paths[0], dpi=300, metadata={"CreationDate": None})
     fig.savefig(paths[1], dpi=300)
     return paths
 
