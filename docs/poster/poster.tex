@@ -130,40 +130,30 @@
 % =====================================================================
 \column{0.22}
 \block{Motivation}{
-  \begin{itemize}
-    \item \textbf{Dark vessels} have no matching AIS report. Sentinel-1 SAR
-      \refn{2} sees them at night and through cloud.
-    \item Vessels fill a few pixels in a 25{,}000-pixel scene. Sea clutter
-      and coastlines give strong false returns.
-    \item \textbf{Human-verified labels are scarce.} Pretraining can lower
-      the label cost, but which source domain helps most, and does the
-      answer depend on the backbone?
-  \end{itemize}
+  \centering
+  \includegraphics[width=\linewidth]{poster_dark_vessels.pdf}\par
+  \vspace{3mm}\raggedright
+  \textbf{Dark vessels} send no AIS, yet radar \refn{2} still sees them.
+  Human-checked labels are scarce: which pretraining stretches them?
 }
 \block{Data: xView3-SAR \refn{1}}{
   \centering
-  \includegraphics[width=\linewidth]{poster_scene_context.pdf}\par
-  \vspace{4mm}\raggedright
+  \includegraphics[width=0.6\linewidth]{poster_scene_context.pdf}\par
+  \vspace{3mm}
+  \includegraphics[width=\linewidth]{poster_scene_map.pdf}\par
+  \vspace{3mm}\raggedright
   \begin{itemize}
-    \item 150 frozen study scenes: \textbf{111 train, 23 dev, 16 test}.
-      Nested budgets: \textbf{12 $\subset$ 28 $\subset$ 56 $\subset$ 111}
-      training scenes.
-    \item \textbf{Train, dev and test labels are machine-made:} AIS matching
-      plus automated detection \refn{1}. They miss vessels and are not
-      complete ground truth.
-    \item \textbf{50 near-shore, human-verified scenes}, opened once after
-      test scoring: \PNFinalVessels{} vessels, \PNFinalDark{} dark,
-      \PNFinalNearShore{} within 2\,km of shore.
+    \item \textbf{Machine-made labels} (AIS + automated detection) for
+      train, dev and test; they miss vessels.
+    \item \textbf{50 human-verified scenes}: \PNFinalVessels{} vessels.
   \end{itemize}
 }
 \block{What the best detector finds}{
   \centering
-  \includegraphics[width=\linewidth]{poster_detection_examples.pdf}\par
-  \vspace{2mm}{\small Best cell (\PNBestCellLabel) on two
-  8 $\times$ 8\,km verified crops (VH, dB): offshore it finds almost every
-  vessel; in this harbor, none. Its verified F1 is
-  \PNBestCellOffshoreFOne{} offshore and \PNBestCellNearShoreFOne{} within
-  2\,km of shore.\par}
+  \includegraphics[width=0.95\linewidth]{poster_detection_examples.pdf}\par
+  \vspace{2mm}{\small Best cell (\PNBestCellLabel), 8 $\times$ 8\,km
+  verified crops. Verified F1: \PNBestCellOffshoreFOne{} offshore,
+  \PNBestCellNearShoreFOne{} within 2\,km of shore.\par}
 }
 % =====================================================================
 \column{0.22}
@@ -178,19 +168,17 @@
     \role{rolesar}{SAR}          & SARMAE \refn{7} (SAR-1M) & BigEarthNet-S1 \refn{8} \\
     \role{roleimagenet}{ImageNet}& AugReg \refn{5} & FCMAE \refn{4} \\
     \bottomrule
-  \end{tabular}\par\vspace{5mm}
-  Only the initialization changes inside a track; we compare domains
-  \textbf{within} an architecture.
+  \end{tabular}\par\vspace{6mm}
+  \includegraphics[width=\linewidth]{poster_budget_waffle.pdf}\par
 }
 \block{One shared point detector}{
   \centering
   \input{figures/detector_pipeline.tex}\par
   \vspace{5mm}\raggedright
   \begin{itemize}
-    \item CenterNet-style heatmap \refn{9} with focal loss \refn{10};
-      strict FP32, \PNGpuHours{} H100 GPU-hours.
-    \item Same optimizer, schedule, data order and seed (0) in every cell.
-    \item 8 dev scenes pick each checkpoint and threshold; test and verified
+    \item CenterNet-style heatmap \refn{9}, focal loss \refn{10}; one
+      recipe and seed for every cell.
+    \item 8 dev scenes pick checkpoint and threshold; test and verified
       scenes are scored \textbf{once}.
   \end{itemize}
 }
@@ -209,23 +197,20 @@
   \centering
   \includegraphics[width=\linewidth]{poster_label_efficiency.pdf}\par
   \vspace{5mm}\raggedright
-  {\small F1 with 200\,m matching. Each of the \PNCells{} cells is scored once
-  with the threshold it picked on 8 dev scenes. Top: \PNTestScenes{}
-  held-out test scenes. Bottom: \PNFinalScenes{} near-shore, human-verified
-  scenes. Seed 0.\par}
+  {\small F1 with 200\,m matching, each cell scored once at the threshold
+  it picked on 8 dev scenes. Top: \PNTestScenes{} test scenes; bottom:
+  \PNFinalScenes{} verified scenes. $\bigstar$ YOLO26 at 111 scenes, test
+  only (\PNYoloTestFOne). Zero-shot LocateAnything-3B: \PNZeroShotFOne{} F1
+  on dev chips.\par}
 }
 \block{SAR vs.\ optical: no stable winner}{
   \centering
   \includegraphics[width=\linewidth]{poster_sar_minus_optical.pdf}\par
   \vspace{5mm}\raggedright
-  {\small \textbf{How to read:} each point is SAR F1 minus optical F1 at
-  one label budget. Above 0, SAR wins; below 0, optical wins. Solid: test
-  scenes; dotted: verified scenes. A bar that does not cross 0 is a win;
-  the \PNSarVsOpticalComparisons{} points here are the comparisons counted
-  in the answer above. Bars are 95\% intervals from
-  \PNBootstrapResamples{} paired scene resamples and cover scene sampling
-  only: retraining \PNRerunCells{} unchanged cells moved test F1 by up to
-  \PNRerunMax.\par}
+  {\small \textbf{How to read:} each point is SAR F1 minus optical F1;
+  above 0, SAR wins, and a bar clear of 0 is a win. Solid: test; dotted:
+  verified. Bars: 95\% intervals over \PNBootstrapResamples{} scene
+  resamples; retraining moved test F1 by up to \PNRerunMax.\par}
 }
 % Two columns of five; references.tex holds the same list with page ranges.
 \block{References}{
@@ -252,59 +237,37 @@
 }
 % =====================================================================
 \column{0.26}
-% Column 4 is the fullest (widest column, all text): slightly tighter item
-% spacing, and the two lower blocks are lifted (offsets add up: 7 mm, then
-% 14 mm) so each gap above them shrinks by 7 mm.
 \block{Findings}{
   \begin{enumerate}[itemsep=0.45em]
-    \item \textbf{Pretraining pays off with few labels.} Gains at 12
-      scenes: \PNTestGainTwelveMin{} to \PNTestGainTwelveMax{} test F1,
-      \PNFinalGainTwelveMin{} to \PNFinalGainTwelveMax{} verified F1.
-    \item \textbf{SAR's edge over optical depends on backbone and budget.}
-      CNN: \PNTestCnnSarMinusOptTen{} \PNTestCnnSarMinusOptTenCi{} test F1
-      at 12 scenes, but \PNFinalCnnSarMinusOptHundred{}
-      \PNFinalCnnSarMinusOptHundredCi{} verified F1 at 111. ViT: the order
-      flips between 28 and 56 scenes.
-    \item \textbf{The input adapter matters.} With a seeded 3-channel stem
-      instead of band slicing, BigEarthNet-S2 beats random at every budget
-      (\PNCnnOpticalTestGainMin{} to \PNCnnOpticalTestGainMax{} test F1).
+    \item \textbf{Pretraining pays off with few labels:}
+      \PNTestGainTwelveMin{} to \PNTestGainTwelveMax{} test F1 at 12 scenes.
+    \item \textbf{SAR pretraining rarely wins:}\par\vspace{2mm}
+      \includegraphics[width=0.97\linewidth]{poster_scoreboard.pdf}
+    \item \textbf{The input adapter matters:} a seeded 3-channel stem lifts
+      BigEarthNet-S2 above random at every budget.
     \item \textbf{No detector works near shore:} recall
       $\leq$\,\PNFinalNearShoreRecallMax{} within 2\,km in every cell.
-      Training labels put \PNTrainNearShorePct{} of vessels there; the
-      verified set, \PNFinalNearShorePct.
-    \item \textbf{ImageNet is the strongest default.} ImageNet beats SAR
-      pretraining in \PNSarVsImagenetRivalWins{} of
-      \PNSarVsImagenetComparisons{} comparisons (SAR wins
-      \PNSarVsImagenetSarWins). The best cell on both test
-      (\PNBestCellTest) and verified F1 (\PNBestCellFinal) is the ImageNet
-      ConvNeXt with 111 scenes.
   \end{enumerate}
 }
-\block[titleoffsety=7mm,bodyoffsety=7mm]{Limits}{
+\block{Inside the detector}{
+  \centering
+  \includegraphics[width=\linewidth]{poster_detector_heatmaps.pdf}\par
+  \vspace{2mm}\raggedright
+  {\small Best cell, same two crops: peak \PNHeatmapPeakOffshore{}
+  offshore, \PNHeatmapPeakNearShore{} in the harbor.\par}
+}
+\block{Limits}{
   \begin{itemize}[itemsep=0.25em]
-    \item One seed per cell; 8 dev scenes pick checkpoints and thresholds.
-    \item Dev and test labels are machine-made, so test F1 measures
-      agreement with them, not with every vessel.
-    \item Two SAR test curves drop by more than 0.02 as labels grow.
-      ViT-SAR at 28 scenes overfit after warm-up; early stopping kept
-      epoch \PNSarmaeFTwentyFiveBestEpoch.
-    \item Checkpoints differ in objective and corpus, not only domain.
-    \item In-region test: Sentinel-1 revisits put some test scenes near
-      training scenes, so test F1 measures in-region generalization, not
-      generalization to new regions.
+    \item One seed per cell; 8 dev scenes for selection.
+    \item Machine-made test labels; in-region test scenes.
+    \item Checkpoints also differ in objective and data.
   \end{itemize}
 }
-\block[titleoffsety=14mm,bodyoffsety=14mm]{Open questions \& next steps}{
+\block{Open questions \& next steps}{
   \begin{itemize}[itemsep=0.25em]
-    \item How do geospatial foundation models pretrained jointly on SAR and
-      optical imagery fare against these single-source checkpoints?
-    \item Does SAR pretraining still trail ImageNet when both use the same
-      objective, architecture and number of pretraining images?
-    \item Does SAR pretraining help where optical cannot: near shore and
-      for small dark vessels?
-    \item \textbf{Next:} near-shore training labels, a shoreline input
-      channel, several seeds, and matched pretraining objectives across
-      sensors.
+    \item Would joint SAR + optical foundation models win?
+    \item Does SAR trail ImageNet with matched pretraining?
+    \item \textbf{Next:} near-shore labels, shoreline input, seeds.
   \end{itemize}
 }
 \end{columns}

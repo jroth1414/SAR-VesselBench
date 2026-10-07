@@ -11,6 +11,22 @@ All numbers match `generated/poster_numbers.json` and the committed evidence
 (`results/h100/evidence`, replacement32 cohort). Part 7 has the full
 per-cell table and every bootstrap interval.
 
+### Poster v2: what changed (read first)
+
+Version 2 keeps the layout and swaps text for pictures. Bullets that are no
+longer printed are still described below; use them as talking points.
+
+| Block | v2 change | Notes section |
+|---|---|---|
+| Motivation | Dark-vessel radar crop + one sentence (3 bullets removed) | 2, "Dark-vessel radar crop" |
+| Data | Scene map added; 2 short bullets (study-scene bullet removed) | 2, "Scene map" |
+| 8 arms × 4 budgets | Nested-budget waffle replaces the "only the initialization changes" sentence | 3, "Budget waffle" |
+| Detector | 2 bullets (the FP32 / GPU-hours note is now a talking point) | 3 |
+| Label-efficiency chart | ★ YOLO26 reference; LocateAnything-3B in the caption | 4, "Reference detectors" |
+| Findings | 4 items; the win/tie/loss scoreboard replaces old findings 2 and 5 | 5, "Scoreboard" |
+| Inside the detector | New block: the best cell's heatmaps on the two crops | 5, "Inside the detector" |
+| Limits, Open questions | One line each (3 + 3); the longer v1 wording below is background | 5 |
+
 ---
 
 ## 0. Pitch (memorize this)
@@ -25,9 +41,10 @@ few labels, but radar pretraining wins in only 6 of 16 comparisons against
 optical and 3 of 16 against ImageNet. And no detector works near shore,
 because the training labels have almost no near-shore vessels."
 
-**2-minute walk.** Answer strip → Motivation → Data (scene and chip) → the
-8 × 4 table → detector → big label-efficiency chart → SAR-vs-optical chart
-→ near-shore chart and crops → Findings → Limits → Open questions.
+**2-minute walk (v2).** Answer strip → dark-vessel crop → scene and map →
+the 8 × 4 table and waffle → detector → label-efficiency chart (point at the
+YOLO26 star) → scoreboard → near-shore chart, crops and heatmaps → Limits →
+Open questions.
 
 ### Numbers to have ready
 
@@ -48,6 +65,9 @@ because the training labels have almost no near-shore vessels."
 | Labels within 2 km | 0.4% of training vessels (27 of 7,678) vs 31% of verified (2,686 of 8,642) |
 | Dark-vessel recall | 0.136–0.228 (3,644 dark vessels) |
 | Rerun variation | 28 unchanged cells retrained: test F1 moved 0.008 on average, up to 0.043 |
+| YOLO26 reference (111 scenes) | 0.896 test F1 (test only; near-shore F1 0.000) |
+| LocateAnything-3B zero-shot | 0.122 F1 on dev chips (best prompt "boat") |
+| Best-cell heatmap peak | 0.987 offshore crop vs 0.001 harbor crop (threshold 0.896) |
 
 ---
 
@@ -101,6 +121,28 @@ Outperform Optical and ImageNet Transfer Across ViT and CNN?"
 
 ### Motivation
 
+**Dark-vessel radar crop (v2).** A 14 × 5.6 km VH window from verified scene
+`9b89b9dcce7dc85ev`: yellow circles are vessels matched to AIS (12), orange
+squares are dark vessels with no AIS match (7). Printed text: "Dark vessels
+send no AIS, yet radar [2] still sees them. Human-checked labels are scarce:
+which pretraining stretches them?"
+- **Say:** "Every mark here is a real verified vessel. The yellow ones
+  broadcast AIS; the orange ones don't, but the radar shows them just as
+  clearly. That's the gap satellites fill."
+- **Background:**
+  - The window was picked by a fixed rule in code: among windows more than
+    5 km offshore with at least 3 AIS and 3 dark vessels, the one with the
+    most of both (HIGH/MEDIUM confidence only).
+  - "Dark" means the label's source is manual only (no AIS correlation).
+  - In two spots a circle and a square overlap: two separate labels sit
+    within a few hundred metres (for example, vessels side by side).
+- **If asked "Did the detector find these?"** That's a different figure
+  ("What the best detector finds" and "Inside the detector"). This crop shows
+  only the labels.
+
+The three v1 bullets below are no longer printed; they are the background
+for this picture.
+
 **Bullet 1: dark vessels, Sentinel-1 SAR [2].**
 - **Say:** "Dark vessels have no matching AIS report; radar sees them anyway."
 - **Background:**
@@ -147,6 +189,24 @@ Outperform Optical and ImageNet Transfer Across ViT and CNN?"
 - **If asked "Where is this?"** It's one of the study scenes; the chip shows a
   rocky coastline with small islands, the kind of place where clutter is
   worst.
+
+**Scene map (v2).** Every study scene (111 train, 23 dev, 16 test) and the
+50 verified scenes, colored by split, on Natural Earth coastlines; an inset
+covers the Gulf of Guinea.
+- **Say:** "Scenes cover the Bay of Biscay and Iberia, the North Sea,
+  Iceland, the Adriatic and the Gulf of Guinea. Test scenes sit near training
+  scenes, so this measures in-region performance."
+- **Background:**
+  - Each marker is the mean position of that scene's labels (xView3 gives
+    every label a latitude and longitude); the scene footprints themselves
+    are about 300 × 200 km.
+  - The map projection is a simple latitude/longitude plot with a mild
+    vertical stretch; it's a locator, not an area-true map.
+- **If asked "Why does that matter?"** It's Limits 2: revisits put test
+  scenes close to training scenes, so we can't claim transfer to new regions.
+
+The v1 bullet below ("150 frozen study scenes") is no longer printed; the
+map and the waffle carry it.
 
 **Bullet: 150 frozen study scenes, 111/23/16; nested budgets.**
 - **Say:** "We froze 150 scenes, split by scene, so no scene appears in two
@@ -265,6 +325,17 @@ Outperform Optical and ImageNet Transfer Across ViT and CNN?"
 - **If asked "Doesn't optical pretraining on RGB lose information?"** All
   arms see the same 3-channel radar input; pretraining only sets the starting
   weights. Fine-tuning updates the full encoder.
+
+### Budget waffle (v2, under the arms table)
+
+111 squares, one per training scene, in columns of four. The darkest block
+is the 12-scene budget; each lighter block adds scenes up to 28, 56 and 111.
+- **Say:** "Each square is a labeled training scene. The budgets are nested:
+  the 28-scene set contains the 12, and so on, so a bigger budget only adds
+  data."
+- **Background:** It replaces the v1 sentence "Only the initialization
+  changes inside a track; we compare domains within an architecture." Say
+  that sentence aloud when you walk the table.
 
 ### One shared point detector (diagram and bullets)
 
@@ -407,6 +478,30 @@ best cell.
   - With more data (ViT-SAR at 56 and 111) the run trained to epoch 39.
   - The August cohort reproduced the ViT-SAR dip exactly.
 
+### Reference detectors (v2: ★ on the chart, note in the caption)
+
+**YOLO26 (★ in both test panels).** A standard supervised box detector
+trained on all 111 scenes in the earlier V100 reference campaign, scored on
+the same 16 test scenes with the same label rules and scorer: test F1 0.896
+(1,062 found, 144 false alarms, 103 missed; near-shore F1 0.000). It sits
+just right of the 111 tick so it doesn't hide data, and it was never run on
+the verified set.
+- **Say:** "A tuned off-the-shelf detector with all the labels lands where
+  our best cell does. The study is about the low-label end, where the
+  starting weights matter."
+- **If asked "Why not include it in the comparison?"** It's a different
+  detector family with its own recipe and only one budget, so it's context,
+  not an arm.
+
+**LocateAnything-3B zero-shot (caption).** NVIDIA's open-vocabulary
+vision-language model, prompted with text and no training on SAR. Best
+prompt "boat": F1 0.122 (precision 0.161, recall 0.098) on a sample of dev
+chips holding 244 vessels; "ship" 0.047, "vessel" 0.016.
+- **Say:** "General vision-language models don't transfer to radar out of
+  the box."
+- **If asked "Why only in the caption?"** It was scored on dev chips, not the
+  test scenes, so plotting it beside the others would mislead.
+
 ### SAR vs. optical: no stable winner (difference chart)
 
 - **How to read it:** each point is SAR F1 minus optical F1 at one budget.
@@ -463,6 +558,29 @@ full titles and page ranges.
 ## 5. Column 4
 
 ### Findings
+
+**v2 printed findings:**
+1. **Pretraining pays off with few labels:** +0.063 to +0.143 test F1 at 12
+   scenes.
+2. **SAR pretraining rarely wins:** the scoreboard (below).
+3. **The input adapter matters:** a seeded 3-channel stem lifts
+   BigEarthNet-S2 above random at every budget.
+4. **No detector works near shore:** recall ≤ 0.021 within 2 km in every
+   cell.
+
+**Scoreboard (v2, finding 2).** Two 4 × 4 dot grids. Rows are budgets (12,
+28, 56, 111 scenes); columns are ViT test, ViT verified, CNN test, CNN
+verified. Blue = SAR wins, orange = optical wins, green = ImageNet wins,
+hollow = tie. A win means the whole 95% interval of SAR F1 minus the rival's
+F1 is on one side of zero.
+- **Say:** "Each dot is one head-to-head. Against optical, SAR wins 6, loses
+  2 and ties 8, and its wins cluster in the CNN at 12–28 scenes. Against
+  ImageNet it wins 3 and loses 7."
+- **Background:** It carries v1 findings 2 and 5 (below) and the answer
+  strip. The difference chart in column 3 shows the same SAR-vs-optical
+  intervals as numbers.
+
+The v1 findings below are the background for each item.
 
 **1. Pretraining pays off with few labels.** Gains at 12 scenes: +0.063 to
 +0.143 test F1, +0.048 to +0.111 verified F1.
@@ -526,7 +644,34 @@ verified F1 (0.574) is the ImageNet ConvNeXt with 111 scenes.
   result at 111 on test. A matched comparison would settle it (Open
   questions).
 
+### Inside the detector (v2)
+
+The best cell's heatmap (ImageNet ConvNeXt, 111 scenes) on the same two
+crops as "What the best detector finds", over the radar image. Color is
+detector confidence (0–1); the blue tick on the color bar is its operating
+threshold (0.896, shown as 0.90). Peak confidence: 0.987 offshore, 0.001 in
+the harbor.
+- **Say:** "This is what the network actually outputs. Offshore every vessel
+  lights up above threshold. In the harbor the model isn't unsure, it's
+  silent: its highest confidence anywhere in the window is 0.001."
+- **Background:**
+  - Made on the local GPU from the cell's `best.ckpt`, whose SHA-256 matches
+    the evidence. The code repeats the scorer's own tiling (512-pixel tiles
+    at stride 384, max-pasted), so these are the values the scorer saw.
+  - Each peak covers a few 40 m cells, so the display widens it with a
+    200 m maximum filter (the matching radius). The peak values come from
+    the raw heatmap.
+- **If asked "So is the coast the problem, or the labels?"** Confident
+  silence points to learned suppression: training labels had 27 vessels
+  within 2 km, so near land the model learned "no vessel here". A
+  confused model would show medium confidence on clutter instead.
+
 ### Limits
+
+**v2 printed limits:** "One seed per cell; 8 dev scenes for selection.",
+"Machine-made test labels; in-region test scenes.", "Checkpoints also differ
+in objective and data." The v1 versions below give the detail, and the
+SARMAE overfitting story (v1 item 3) is now talk-only.
 
 1. **One seed per cell; 8 dev scenes pick checkpoints and thresholds.**
    Single seed because 32 full fine-tunes cost 567.6 GPU-hours. The rerun
@@ -551,6 +696,11 @@ verified F1 (0.574) is the ImageNet ConvNeXt with 111 scenes.
   scattered, no consistent order), which is robust to that choice.
 
 ### Open questions & next steps
+
+**v2 printed lines:** "Would joint SAR + optical foundation models win?",
+"Does SAR trail ImageNet with matched pretraining?", "Next: near-shore
+labels, shoreline input, seeds." The v1 detail follows; the "where optical
+can't help" question (v1 item 3) is now talk-only.
 
 1. **Geospatial foundation models pretrained jointly on SAR and optical:**
    do they beat these single-source checkpoints? Multi-sensor pretraining is

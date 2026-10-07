@@ -396,12 +396,16 @@ def write_macros(strings: Mapping[str, str], path: Path) -> None:
 
 
 # --------------------------------------------------------------------------- figures
-def figure_label_efficiency(g, out_dir: Path) -> list[Path]:
-    """2x2: rows = test (16 scenes) and verified (50 scenes); columns = tracks."""
+def figure_label_efficiency(g, out_dir: Path, yolo_test_f1: float | None = None) -> list[Path]:
+    """2x2: rows = test (16 scenes) and verified (50 scenes); columns = tracks.
+
+    ``yolo_test_f1`` adds the YOLO26 reference (111 scenes, scored on test only)
+    as a star in both test panels.
+    """
 
     import matplotlib.pyplot as plt
 
-    fig, axes = plt.subplots(2, 2, figsize=(14.6, 10.6), sharex=True)
+    fig, axes = plt.subplots(2, 2, figsize=(14.6, 10.9), sharex=True)
     rows = (("test", "Test F1 (16 scenes)", (0.64, 0.90)),
             ("final", "Verified F1 (50 scenes)", (0.40, 0.59)))
     for r, (metric, ylabel, ylim) in enumerate(rows):
@@ -412,6 +416,11 @@ def figure_label_efficiency(g, out_dir: Path) -> list[Path]:
                 axis.plot(range(len(FRACTIONS)), ys, **role_line_kwargs(role))
             axis.set_ylim(*ylim)
             fraction_axis(axis, label=(r == 1))
+            if r == 0 and yolo_test_f1 is not None:
+                # Just right of the 111 tick so the star never hides a data point; named in the legend.
+                star_x = len(FRACTIONS) - 1 + 0.22
+                axis.plot([star_x], [yolo_test_f1], marker="*", markersize=34, color=INK, zorder=5, clip_on=False,
+                          linestyle="none", label="YOLO26 (test)" if c == 0 else None)
             if r == 0:
                 axis.set_title(TRACK_TITLE[track], color=INK)
             if c == 0:
@@ -419,7 +428,7 @@ def figure_label_efficiency(g, out_dir: Path) -> list[Path]:
             else:
                 axis.tick_params(labelleft=True)
     handles, labels = axes[0][0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="upper center", ncol=4, bbox_to_anchor=(0.5, 1.035),
+    fig.legend(handles, labels, loc="upper center", ncol=len(labels), bbox_to_anchor=(0.5, 1.035),
                handlelength=2.6, columnspacing=1.6)
     fig.tight_layout(h_pad=2.2, w_pad=2.4, rect=(0, 0, 1, 0.965))
     paths = save_both(fig, out_dir, "poster_label_efficiency")
@@ -433,7 +442,7 @@ def figure_sar_minus_optical(details: Mapping[str, object], out_dir: Path) -> li
     import matplotlib.pyplot as plt
 
     intervals: Mapping[str, Mapping[str, float]] = details["intervals"]  # type: ignore[assignment]
-    fig, axes = plt.subplots(1, 2, figsize=(14.6, 6.45), sharey=True)
+    fig, axes = plt.subplots(1, 2, figsize=(14.6, 7.2), sharey=True)
     styles = (("test", "Test (16 scenes)", "-", "o", -0.09), ("final", "Verified (50 scenes)", (0, (1.2, 1.4)), "s", 0.09))
     for axis, track in zip(axes, TRACKS):
         axis.axhline(0, color=MUTED, lw=1.6, zorder=1)
@@ -466,7 +475,7 @@ def figure_sar_minus_optical(details: Mapping[str, object], out_dir: Path) -> li
 
 
 # --------------------------------------------------------------------------- main
-def _coastal(args, validated, details, kwargs) -> tuple[dict[str, object], tuple]:
+def _coastal(args, validated, details, kwargs) -> tuple[dict[str, object], tuple, list, dict]:
     """Distance-to-shore figure, example crops and their numbers (needs local xView3 data)."""
 
     import tempfile
@@ -488,7 +497,41 @@ def _coastal(args, validated, details, kwargs) -> tuple[dict[str, object], tuple
     crops = pc.choose_crops(rescored["scenes"][best_key])
     cache = args.imagery_cache or Path(tempfile.gettempdir()) / "xview3-vh-cache"
     pc.figure_detection_examples(crops, rescored["scenes"][best_key], args.verified_imagery, cache, args.output_dir)
-    return pc.coastal_numbers(train_counts, verified_counts, rescored, best_key, crops), best_key
+    return (pc.coastal_numbers(train_counts, verified_counts, rescored, best_key, crops), best_key, crops,
+            rescored["scenes"][best_key])
+
+
+def _extras(args, validated, details, kwargs, coastal_parts) -> tuple[dict[str, object], int]:
+    """Poster v2 visuals: scoreboard, budget waffle, scene map, dark-vessel crop, detector heatmaps."""
+
+    import tempfile
+
+    from src.analysis import poster_extras as px
+
+    out = args.output_dir
+    numbers: dict[str, object] = {}
+    px.figure_scoreboard(details["intervals"], out)
+    px.figure_budget_waffle(out)
+    figures = 2
+    cache = args.imagery_cache or Path(tempfile.gettempdir()) / "xview3-vh-cache"
+    if args.land_geojson is not None and args.train_labels is not None:
+        splits = json.loads(kwargs["splits_config"].read_text(encoding="utf-8"))["splits"]
+        px.figure_scene_map(splits, [args.train_labels, args.verified_labels], args.land_geojson, out)
+        figures += 1
+    if args.verified_labels is not None:
+        _, dark = px.figure_dark_vessels(args.verified_labels, args.verified_imagery, cache, out)
+        numbers.update(dark)
+        figures += 1
+    if args.runs_root is not None and coastal_parts is not None:
+        from src.analysis import poster_heatmaps as ph
+
+        best_key, crops, per_scene = coastal_parts
+        cell = validated["cells"][_cell_ids(validated)[best_key]]  # type: ignore[index]
+        _, peaks = ph.build(cell, args.runs_root, crops, per_scene, args.verified_imagery, cache,
+                            kwargs["splits_config"].parent / "stats.json", out, device=args.device)
+        numbers.update(peaks)
+        figures += 1
+    return numbers, figures
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -506,6 +549,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--imagery-cache", type=Path, help="where extracted VH rasters are kept between runs")
     parser.add_argument("--context-scene", type=Path,
                         help="xView3 scene directory with VH_dB.tif for the scene-and-chip figure (poster_scene)")
+    # Poster v2 visuals (poster_extras, poster_heatmaps).
+    parser.add_argument("--references", default=Path("results/h100/references"), type=Path,
+                        help="reference-detector metrics with SHA256SUMS (YOLO26, LocateAnything)")
+    parser.add_argument("--land-geojson", type=Path, help="Natural Earth ne_50m_land.geojson for the scene map")
+    parser.add_argument("--runs-root", type=Path, help="run tree holding <exp_id>/checkpoints/best.ckpt")
+    parser.add_argument("--device", default="cuda", help="device for the heatmap forward passes")
     args = parser.parse_args(argv)
     coastal_inputs = (args.train_labels, args.verified_labels, args.verified_imagery)
     if any(coastal_inputs) and not all(coastal_inputs):
@@ -528,13 +577,23 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     out = args.output_dir
     out.mkdir(parents=True, exist_ok=True)
-    figure_label_efficiency(grids(validated), out)
+    references = None
+    if args.references is not None and args.references.exists():
+        from src.analysis.poster_extras import reference_numbers
+
+        references = reference_numbers(args.references, int(validated["gt_counts"]["test"]["positive"]))
+    figure_label_efficiency(grids(validated), out, references["yolo_test_f1"] if references else None)
     figure_sar_minus_optical(details, out)
     figures = 2
     coastal = None
+    coastal_parts = None
     if args.train_labels is not None:
-        coastal, best_key = _coastal(args, validated, details, kwargs)
+        coastal, best_key, crops, per_scene = _coastal(args, validated, details, kwargs)
+        coastal_parts = (best_key, crops, per_scene)
         figures += 2
+    extra_numbers, extra_figures = _extras(args, validated, details, kwargs, coastal_parts)
+    figures += extra_figures
+    coastal = {**(coastal or {}), **extra_numbers, **(references or {})}
     if args.context_scene is not None:
         import tempfile
 

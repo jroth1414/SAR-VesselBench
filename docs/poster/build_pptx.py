@@ -95,7 +95,8 @@ def text(slide, x, y, w, h, paragraphs, *, size=BODY_PT, align=PP_ALIGN.LEFT, na
             _list_marker(para, f'<a:buChar {nsdecls("a")} char="&#9632;"/>', 0.38)
             para._p.get_or_add_pPr().insert(1, parse_xml(f'<a:buSzPct {nsdecls("a")} val="70000"/>'))
         if spec.get("numbered"):
-            _list_marker(para, f'<a:buAutoNum {nsdecls("a")} type="arabicPlain"/>', 0.45)
+            start = f' startAt="{spec["start_at"]}"' if spec.get("start_at") else ""
+            _list_marker(para, f'<a:buAutoNum {nsdecls("a")} type="arabicPlain"{start}/>', 0.45)
         if spec.get("refnum"):
             _list_marker(para, f'<a:buAutoNum {nsdecls("a")} type="arabicParenR"/>', 0.45)
         for chunk, opts in spec["runs"]:
@@ -263,30 +264,28 @@ def build(n: dict[str, str]) -> Presentation:
 
     # column 1 ----------------------------------------------------------------
     x, y, w = section(slide, 1, 7.21, "Motivation")
-    text(slide, x, y, w, 5.9, [
-        P(B("Dark vessels"), " have no matching AIS report. Sentinel-1 SAR ", R(2),
-          " sees them at night and through cloud.", bullet=True),
-        P("Vessels fill a few pixels in a 25,000-pixel scene. Sea clutter and coastlines give strong false returns.",
-          bullet=True),
-        P(B("Human-verified labels are scarce."), " Pretraining can lower the label cost, but which source domain "
-          "helps most, and does the answer depend on the backbone?", bullet=True),
+    _, img_h = picture(slide, GENERATED / "poster_dark_vessels.png", x, y, w, "figure: dark vessels")
+    text(slide, x, y + img_h + 0.25, w, 2.0, [
+        P(B("Dark vessels"), " send no AIS, yet radar ", R(2), " still sees them. Human-checked labels are scarce: "
+          "which pretraining stretches them?"),
     ], name="motivation")
-    x, y, w = section(slide, 1, 14.60, "Data: xView3-SAR [1]")
-    _, img_h = picture(slide, GENERATED / "poster_scene_context.png", x, y, w, "figure: scene and chip")
-    text(slide, x, y + img_h + 0.3, w, 26.3 - (y + img_h + 0.3), [
-        P("150 frozen study scenes: ", B("111 train, 23 dev, 16 test"), ". Nested budgets: ",
-          B("12 ⊂ 28 ⊂ 56 ⊂ 111"), " training scenes.", bullet=True),
-        P(B("Train, dev and test labels are machine-made:"), " AIS matching plus automated detection ", R(1),
-          ". They miss vessels and are not complete ground truth.", bullet=True),
-        P(B(f"{n['final_scenes']} near-shore, human-verified scenes"), ", opened once after test scoring: "
-          f"{n['final_vessels']} vessels, {n['final_dark']} dark, {n['final_near_shore']} within 2 km of shore.",
+    x, y, w = section(slide, 1, 15.25, "Data: xView3-SAR [1]")
+    scene_w = 0.6 * w
+    _, scene_h = picture(slide, GENERATED / "poster_scene_context.png", x + (w - scene_w) / 2, y, scene_w,
+                         "figure: scene and chip")
+    _, map_h = picture(slide, GENERATED / "poster_scene_map.png", x, y + scene_h + 0.15, w, "figure: scene map")
+    top = y + scene_h + map_h + 0.4
+    text(slide, x, top, w, 26.8 - top, [
+        P(B("Machine-made labels"), " (AIS + automated detection) for train, dev and test; they miss vessels.",
           bullet=True),
+        P(B(f"{n['final_scenes']} human-verified scenes"), f": {n['final_vessels']} vessels.", bullet=True),
     ], name="data bullets")
-    x, y, w = section(slide, 1, 26.46, "What the best detector finds")
-    _, img_h = picture(slide, GENERATED / "poster_detection_examples.png", x, y, w, "figure: detection examples")
-    text(slide, x, y + img_h + 0.1, w, 1.2, [P((f"Best cell ({n['best_cell_label']}) on two 8 × 8 km verified crops "
-                                               "(VH, dB): offshore it finds almost every vessel; in this harbor, none. "
-                                               f"Its verified F1 is {n['best_cell_offshore_f1']} offshore and "
+    x, y, w = section(slide, 1, 26.9, "What the best detector finds")
+    crops_w = 0.95 * w
+    _, img_h = picture(slide, GENERATED / "poster_detection_examples.png", x + (w - crops_w) / 2, y, crops_w,
+                       "figure: detection examples")
+    text(slide, x, y + img_h + 0.1, w, 0.8, [P((f"Best cell ({n['best_cell_label']}), 8 × 8 km verified crops. "
+                                               f"Verified F1: {n['best_cell_offshore_f1']} offshore, "
                                                f"{n['best_cell_near_shore_f1']} within 2 km of shore.",
                                                {"size": FOOT_PT}), align=PP_ALIGN.CENTER)], name="detection caption")
 
@@ -311,18 +310,16 @@ def build(n: dict[str, str]) -> Presentation:
             run = cell.text_frame.paragraphs[0].add_run()
             run.text = value
             _font(run, BODY_PT - 3, bold=(c == 0 and r > 0), color=role_colors[r] if c == 0 else INK)
-    text(slide, x, y + 4.7, w, 1.2, [P("Only the initialization changes inside a track; we compare domains ",
-                                      B("within"), " an architecture.")], name="design note")
-    x, y, w = section(slide, 2, 15.04, "One shared point detector")
+    picture(slide, GENERATED / "poster_budget_waffle.png", x, y + 4.75, w, "figure: nested budgets")
+    x, y, w = section(slide, 2, 16.31, "One shared point detector")
     bottom = pipeline(slide, x, y, w)
     text(slide, x, bottom + 0.35, w, 24.7 - bottom - 0.35, [
-        P("CenterNet-style heatmap ", R(9), " with focal loss ", R(10), f"; strict FP32, {n['gpu_hours']} "
-          "H100 GPU-hours.", bullet=True),
-        P("Same optimizer, schedule, data order and seed (0) in every cell.", bullet=True),
-        P("8 dev scenes pick each checkpoint and threshold; test and verified scenes are scored ", B("once"), ".",
+        P("CenterNet-style heatmap ", R(9), ", focal loss ", R(10), "; one recipe and seed for every cell.",
+          bullet=True),
+        P("8 dev scenes pick checkpoint and threshold; test and verified scenes are scored ", B("once"), ".",
           bullet=True),
     ], name="detector bullets")
-    x, y, w = section(slide, 2, 24.79, "Recall falls toward the coast")
+    x, y, w = section(slide, 2, 24.78, "Recall falls toward the coast")
     _, img_h = picture(slide, GENERATED / "poster_recall_by_distance.png", x + 0.1, y, w - 0.2,
                        "figure: recall by distance to shore")
     text(slide, x, y + img_h + 0.12, w, 34.6 - (y + img_h + 0.12), [P((
@@ -333,20 +330,18 @@ def build(n: dict[str, str]) -> Presentation:
     # column 3 ----------------------------------------------------------------
     x, y, w = section(slide, 3, 7.33, "Pretraining helps most when labels are scarce")
     _, img_h = picture(slide, GENERATED / "poster_label_efficiency.png", x + 0.1, y, w - 0.2, "figure: label efficiency")
-    text(slide, x, y + img_h + 0.15, w, 1.0, [P((
-        f"F1 with 200 m matching. Each of the {n['cells']} cells is scored once with the threshold it picked on 8 dev "
-        f"scenes. Top: {n['test_scenes']} held-out test scenes. Bottom: {n['final_scenes']} near-shore, "
-        "human-verified scenes. Seed 0.", {"size": FOOT_PT}))], name="figure 1 caption")
-    x, y, w = section(slide, 3, 19.95, "SAR vs. optical: no stable winner")
+    text(slide, x, y + img_h + 0.15, w, 1.3, [P((
+        f"F1 with 200 m matching, each cell scored once at the threshold it picked on 8 dev scenes. Top: "
+        f"{n['test_scenes']} test scenes; bottom: {n['final_scenes']} verified scenes. ★ YOLO26 at 111 scenes, test "
+        f"only ({n['yolo_test_f1']}). Zero-shot LocateAnything-3B: {n['zero_shot_f1']} F1 on dev chips.",
+        {"size": FOOT_PT}))], name="figure 1 caption")
+    x, y, w = section(slide, 3, 19.73, "SAR vs. optical: no stable winner")
     _, img_h = picture(slide, GENERATED / "poster_sar_minus_optical.png", x + 0.1, y, w - 0.2, "figure: SAR minus optical")
-    text(slide, x, y + img_h + 0.15, w, 1.6, [P(B("How to read: ", size=FOOT_PT), (
-        "each point is SAR F1 minus optical F1 at one label budget. Above 0, SAR wins; below 0, optical wins. "
-        "Solid: test scenes; dotted: verified scenes. A bar that does not cross 0 is a win; the "
-        f"{n['sar_vs_optical_comparisons']} points here are the comparisons counted in the answer above. Bars are "
-        f"95% intervals from {n['bootstrap_resamples']} paired scene resamples and cover scene sampling only: "
-        f"retraining {n['rerun_cells']} unchanged cells moved test F1 by up to {n['rerun_max']}.",
-        {"size": FOOT_PT}))], name="figure 2 caption")
-    x, y, w = section(slide, 3, 29.77, "References")
+    text(slide, x, y + img_h + 0.15, w, 1.3, [P(B("How to read: ", size=FOOT_PT), (
+        "each point is SAR F1 minus optical F1; above 0, SAR wins, and a bar clear of 0 is a win. Solid: test; "
+        f"dotted: verified. Bars: 95% intervals over {n['bootstrap_resamples']} scene resamples; retraining moved "
+        f"test F1 by up to {n['rerun_max']}.", {"size": FOOT_PT}))], name="figure 2 caption")
+    x, y, w = section(slide, 3, 29.51, "References")
     refs = [
         "F. S. Paolo et al. xView3-SAR: Detecting dark fishing activity using SAR imagery. NeurIPS 2022.",
         "R. Torres et al. GMES Sentinel-1 mission. Remote Sens. Environ. 2012.",
@@ -368,45 +363,37 @@ def build(n: dict[str, str]) -> Presentation:
 
     # column 4 ----------------------------------------------------------------
     x, y, w = section(slide, 4, 7.33, "Findings")
-    text(slide, x, y, w, 18.7 - y, [
-        P(B("Pretraining pays off with few labels."), f" Gains at 12 scenes: {n['test_gain12_min']} to "
-          f"{n['test_gain12_max']} test F1, {n['final_gain12_min']} to {n['final_gain12_max']} verified F1.",
-          numbered=True, space_after=10),
-        P(B("SAR's edge over optical depends on backbone and budget."),
-          f" CNN: {n['test_cnn_sar_minus_opt_10']} {n['test_cnn_sar_minus_opt_10_ci']} test F1 at 12 scenes, but "
-          f"{n['final_cnn_sar_minus_opt_100']} {n['final_cnn_sar_minus_opt_100_ci']} verified F1 at 111. "
-          "ViT: the order flips between 28 and 56 scenes.", numbered=True, space_after=10),
-        P(B("The input adapter matters."), " With a seeded 3-channel stem instead of band slicing, BigEarthNet-S2 "
-          f"beats random at every budget ({n['cnn_optical_test_gain_min']} to {n['cnn_optical_test_gain_max']} "
-          "test F1).", numbered=True, space_after=10),
+    text(slide, x, y, w, 2.0, [
+        P(B("Pretraining pays off with few labels:"), f" {n['test_gain12_min']} to {n['test_gain12_max']} test F1 "
+          "at 12 scenes.", numbered=True, space_after=10),
+        P(B("SAR pretraining rarely wins:"), numbered=True, space_after=0),
+    ], name="findings 1-2")
+    board_x = x + 0.45
+    _, board_h = picture(slide, GENERATED / "poster_scoreboard.png", board_x, y + 1.95, 0.97 * (w - 0.45),
+                         "figure: SAR scoreboard")
+    top = y + 1.95 + board_h + 0.2
+    text(slide, x, top, w, 18.5 - top, [
+        P(B("The input adapter matters:"), " a seeded 3-channel stem lifts BigEarthNet-S2 above random at every "
+          "budget.", numbered=True, start_at=3, space_after=10),
         P(B("No detector works near shore:"), f" recall ≤ {n['final_near_shore_recall_max']} within 2 km in every "
-          f"cell. Training labels put {n['train_near_shore_pct']} of vessels there; the verified set, "
-          f"{n['final_near_shore_pct']}.", numbered=True, space_after=10),
-        P(B("ImageNet is the strongest default."), f" ImageNet beats SAR pretraining in "
-          f"{n['sar_vs_imagenet_rival_wins']} of {n['sar_vs_imagenet_comparisons']} comparisons (SAR wins "
-          f"{n['sar_vs_imagenet_sar_wins']}). The best cell on both test ({n['best_cell_test']}) and verified F1 "
-          f"({n['best_cell_final']}) is the ImageNet ConvNeXt with 111 scenes.", numbered=True),
-    ], name="findings")
-    x, y, w = section(slide, 4, 18.78, "Limits")
-    text(slide, x, y, w, 27.1 - y, [
-        P("One seed per cell; 8 dev scenes pick checkpoints and thresholds.", bullet=True),
-        P("Dev and test labels are machine-made, so test F1 measures agreement with them, not with every vessel.",
-          bullet=True),
-        P("Two SAR test curves drop by more than 0.02 as labels grow. ViT-SAR at 28 scenes overfit after warm-up; "
-          f"early stopping kept epoch {n['sarmae_f25_best_epoch']}.", bullet=True),
-        P("Checkpoints differ in objective and corpus, not only domain.", bullet=True),
-        P("In-region test: Sentinel-1 revisits put some test scenes near training scenes, so test F1 measures "
-          "in-region generalization, not generalization to new regions.", bullet=True),
+          "cell.", numbered=True, start_at=3),
+    ], name="findings 3-4")
+    x, y, w = section(slide, 4, 18.6, "Inside the detector")
+    _, img_h = picture(slide, GENERATED / "poster_detector_heatmaps.png", x, y, w, "figure: detector heatmaps")
+    text(slide, x, y + img_h + 0.1, w, 0.7, [P((
+        f"Best cell, same two crops: peak {n['heatmap_peak_offshore']} offshore, {n['heatmap_peak_near_shore']} in "
+        "the harbor.", {"size": FOOT_PT}))], name="heatmap caption")
+    x, y, w = section(slide, 4, 27.32, "Limits")
+    text(slide, x, y, w, 31.2 - y, [
+        P("One seed per cell; 8 dev scenes for selection.", bullet=True),
+        P("Machine-made test labels; in-region test scenes.", bullet=True),
+        P("Checkpoints also differ in objective and data.", bullet=True),
     ], name="limits")
-    x, y, w = section(slide, 4, 27.19, "Open questions & next steps")
+    x, y, w = section(slide, 4, 31.36, "Open questions & next steps")
     text(slide, x, y, w, 34.6 - y, [
-        P("How do geospatial foundation models pretrained jointly on SAR and optical imagery fare against these "
-          "single-source checkpoints?", bullet=True),
-        P("Does SAR pretraining still trail ImageNet when both use the same objective, architecture and number of "
-          "pretraining images?", bullet=True),
-        P("Does SAR pretraining help where optical cannot: near shore and for small dark vessels?", bullet=True),
-        P(B("Next:"), " near-shore training labels, a shoreline input channel, several seeds, and matched pretraining "
-          "objectives across sensors.", bullet=True),
+        P("Would joint SAR + optical foundation models win?", bullet=True),
+        P("Does SAR trail ImageNet with matched pretraining?", bullet=True),
+        P(B("Next:"), " near-shore labels, shoreline input, seeds.", bullet=True),
     ], name="open questions")
     return prs
 
