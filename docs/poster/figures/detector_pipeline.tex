@@ -1,0 +1,31 @@
+% Poster-scale version of docs/class_report/figures/detector_pipeline.tex:
+% two rows so it fits one 0.22 column at native type size.
+\begin{tikzpicture}[font=\sffamily\normalsize, line width=1.8pt,
+  >={Stealth[length=6mm, width=5mm]},
+  stage/.style={draw, rounded corners=4pt, align=center, inner sep=8pt,
+                minimum height=30mm, text=ink},
+  data/.style={stage, fill=black!6, draw=black!45},
+  enc/.style={stage, fill=rolesar!10, draw=rolesar!80!black, minimum width=66mm, minimum height=26mm},
+  neck/.style={stage, fill=rolesar!5, draw=rolesar!60!black},
+  cal/.style={stage, fill=roleoptical!15, draw=roleoptical!85!black},
+  endst/.style={stage, fill=roleimagenet!12, draw=roleimagenet!80!black},
+  flow/.style={->, draw=ink, rounded corners=3pt}]
+\node[data, minimum width=50mm] (inp) {[VH, VV,\\ VH − VV]\\ 512² crop};
+\node[enc, anchor=west] (vit) at ($(inp.east)+(18mm,13mm)$) {ViT-B/16, stride 16};
+\node[enc, anchor=west] (cnn) at ($(inp.east)+(18mm,-13mm)$) {ConvNeXt-V2-B, s32 + up};
+% tikzposter owns the pgf layer list, so the group box is drawn unfilled.
+\node[draw=black!35, dashed, rounded corners=6pt, inner sep=5mm,
+      fit=(vit)(cnn)] (encbox) {};
+\node[anchor=south, font=\sffamily\small, text=black!60]
+  at (encbox.north) {one encoder per track};
+\node[neck, anchor=west, minimum width=40mm] (head) at ($(encbox.east)+(10mm,0)$) {shared\\ 256-ch\\ head};
+\node[neck, anchor=north east, minimum width=62mm] (dec) at ($(head.south east)+(0,-16mm)$) {heatmap peaks\\ $\geq 0.05$, 120\,m NMS};
+\node[cal, anchor=east, minimum width=60mm] (op) at ($(dec.west)+(-14mm,0)$) {threshold $\tau$\\ picked on dev};
+\node[endst, anchor=east, minimum width=60mm] (mat) at ($(op.west)+(-14mm,0)$) {F1, 200\,m\\ geo match};
+\draw[flow] (inp.east) -- ($(inp.east)+(8mm,0)$) |- (vit.west);
+\draw[flow] (inp.east) -- ($(inp.east)+(8mm,0)$) |- (cnn.west);
+\draw[flow] (encbox.east) -- (head.west);
+\draw[flow] (head.south) -- (head.south |- dec.north);
+\draw[flow] (dec) -- (op);
+\draw[flow] (op) -- (mat);
+\end{tikzpicture}

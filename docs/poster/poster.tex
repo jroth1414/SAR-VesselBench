@@ -1,0 +1,259 @@
+% AIPR 2026 poster, 48 x 36 in landscape. Build from this directory:
+%   python -m src.analysis.poster_figures --evidence-root <tree> --output-dir docs/poster/generated
+%   tectonic -X compile poster.tex
+% Every number comes from generated/poster_macros.tex; none is typed here.
+\documentclass[25pt,a0paper,margin=0mm,innermargin=22mm,colspace=18mm,
+  subcolspace=0mm,blockverticalspace=16mm]{tikzposter}
+\geometry{paperwidth=48in,paperheight=36in}
+% tikzposter sized its canvas for A0 portrait at class load; re-derive it.
+\makeatletter
+\setlength{\TP@visibletextwidth}{\textwidth-2\TP@innermargin}
+\setlength{\TP@visibletextheight}{\textheight-2\TP@innermargin}
+\makeatother
+
+\usepackage[T1]{fontenc}
+\usepackage[sfdefault]{roboto}
+\usepackage{amsmath,amssymb,booktabs,graphicx,qrcode,enumitem,array,ragged2e}
+\usetikzlibrary{calc,positioning,arrows.meta,fit,backgrounds}
+\graphicspath{{generated/}{../class_report/figures/static/}}
+\input{generated/poster_macros.tex}
+
+% ---- palette (Okabe-Ito roles shared with the report figures) ----------
+\definecolor{ink}{HTML}{1F2328}
+\definecolor{navy}{HTML}{14213D}
+\definecolor{rolefloor}{HTML}{5D5D5D}
+\definecolor{roleoptical}{HTML}{E69F00}
+\definecolor{rolesar}{HTML}{0072B2}
+\definecolor{roleimagenet}{HTML}{009E73}
+\definecolor{callout}{HTML}{FFF4DE}
+
+\definecolorstyle{svb}{
+  \colorlet{colorOne}{navy}\colorlet{colorTwo}{rolesar}\colorlet{colorThree}{roleoptical}
+}{
+  \colorlet{backgroundcolor}{white}
+  \colorlet{framecolor}{white}
+  \colorlet{titlefgcolor}{white}
+  \colorlet{titlebgcolor}{navy}
+  \colorlet{blocktitlebgcolor}{navy}
+  \colorlet{blocktitlefgcolor}{white}
+  \colorlet{blockbodybgcolor}{navy!3}
+  \colorlet{blockbodyfgcolor}{ink}
+  \colorlet{innerblocktitlebgcolor}{white}
+  \colorlet{innerblocktitlefgcolor}{ink}
+  \colorlet{innerblockbodybgcolor}{white}
+  \colorlet{innerblockbodyfgcolor}{ink}
+  \colorlet{notefgcolor}{ink}
+  \colorlet{notebgcolor}{callout}
+  \colorlet{noteframecolor}{roleoptical}
+}
+\usecolorstyle{svb}
+\usebackgroundstyle{Empty}
+\usetitlestyle{Filled}
+\useblockstyle[titleleft,titleinnersep=6mm,bodyinnersep=8mm,linewidth=0pt]{Default}
+\makeatletter
+\settitle{%
+  \centering
+  \vspace*{14mm}
+  % tikzposter boxes \@title on one line, so the break is explicit here.
+  \parbox{46.5in}{\centering\fontsize{78}{98}\selectfont\bfseries
+    \color{titlefgcolor}Label-Efficient Dark-Vessel Detection in SAR:\\
+    Does SAR-Domain Pretraining Outperform Optical and ImageNet Transfer
+    Across ViT and CNN?}\par
+  \vspace{12mm}
+  {\fontsize{44}{54}\selectfont\color{titlefgcolor}\@author\par}
+  \vspace{6mm}
+  {\fontsize{32}{40}\selectfont\color{titlefgcolor!85}\@institute\par}
+  \vspace*{12mm}}
+\makeatother
+
+\setlist[itemize]{leftmargin=1.1em,itemsep=0.35em,topsep=0.3em,label=\textcolor{navy}{\raisebox{0.12em}{\scalebox{0.8}{$\blacksquare$}}}}
+\setlist{before=\RaggedRight}
+\setlist[enumerate]{leftmargin=1.6em,labelsep=0.5em,itemsep=0.6em,topsep=0.3em,label=\textbf{\textcolor{navy}{\arabic*}}}
+\newcommand{\role}[2]{\textcolor{role#1}{\textbf{#2}}}
+\newcommand{\calloutcolors}{\colorlet{blocktitlebgcolor}{roleoptical!85!black}%
+  \colorlet{blockbodybgcolor}{callout}}
+\newcommand{\normalcolors}{\colorlet{blocktitlebgcolor}{navy}%
+  \colorlet{blockbodybgcolor}{navy!3}}
+\newcommand{\statnum}[1]{{\fontsize{56}{62}\selectfont\bfseries\color{navy}#1}}
+\newcommand{\statlabel}[1]{{\small\begin{tabular}[t]{@{}c@{}}#1\end{tabular}}}
+
+\title{Label-Efficient Dark-Vessel Detection in SAR: Does SAR-Domain
+  Pretraining Outperform Optical and ImageNet Transfer Across ViT and CNN?}
+\author{John Roth\textsuperscript{1,2} \qquad Kyle Wagner\textsuperscript{1,3}
+  \qquad Liv d'Aliberti\textsuperscript{1}}
+\institute{\textsuperscript{1}Johns Hopkins University \qquad
+  \textsuperscript{2}The MITRE Corporation \qquad
+  \textsuperscript{3}Boeing -- Phantom Works \qquad
+  \{jroth32, kwagne35, odalibe1\}@jh.edu}
+
+\tikzposterlatexaffectionproofoff
+\begin{document}
+\maketitle[roundedcorners=0,linewidth=0pt,innersep=0pt]
+
+\begin{columns}
+% =====================================================================
+\column{0.22}
+\block{Why it matters}{
+  \begin{itemize}
+    \item \textbf{Dark vessels} have no matching AIS report. Sentinel-1 SAR
+      sees them at night and through cloud.
+    \item Vessels fill a few pixels in a 25{,}000-pixel scene. Sea clutter
+      and coastlines give strong false returns.
+    \item \textbf{Human-verified labels are scarce.} Pretraining can lower the
+      label cost, but which source domain helps most?
+  \end{itemize}
+}
+\block{Question}{
+  Does \role{sar}{SAR} pretraining beat \role{optical}{optical remote-sensing}
+  and \role{imagenet}{ImageNet} pretraining when labels are few? Does the
+  answer hold for both a ViT and a CNN?
+}
+\block{Data: xView3-SAR}{
+  \centering
+  \includegraphics[width=\linewidth]{scene_context.png}\par
+  \vspace{2mm}{\small One Sentinel-1 scene (about 300 $\times$ 220\,km) and
+  one 800-pixel chip (8 $\times$ 8\,km).\par}
+  \vspace{4mm}\raggedright
+  \begin{itemize}
+    \item 150 frozen study scenes: \textbf{111 train, 23 dev, 16 test}.
+    \item Nested budgets: \textbf{12 $\subset$ 28 $\subset$ 56 $\subset$ 111}
+      training scenes (10, 25, 50, 100\%).
+    \item \textbf{50 near-shore, human-verified scenes}, opened once after
+      test scoring: \PNFinalVessels{} vessels, \PNFinalDark{} dark,
+      \PNFinalNearShore{} within 2\,km of shore.
+    \item Input [VH, VV, VH − VV] in dB, 10\,m pixels.
+  \end{itemize}
+}
+\calloutcolors
+\block{Fix before the final cohort}{%
+  BigEarthNet-S2 expects 10 optical bands. The first adapter kept 3 band
+  kernels and scaled them by 10/3: first-layer weight norm
+  \textbf{\PNStemWeightNormRatio}. A seeded 3-channel stem plus every other
+  transferred tensor raised dev F1 from \PNStemDevBefore{} to
+  \PNStemDevAfter{} (12 scenes). We then retrained \textbf{all
+  \PNCells{} cells} from initialization.}
+\normalcolors
+% =====================================================================
+\column{0.22}
+\block{8 arms $\times$ 4 budgets = \PNCells{} cells}{
+  \renewcommand{\arraystretch}{1.25}\setlength{\tabcolsep}{3mm}
+  \begin{tabular}{@{}l>{\raggedright\arraybackslash}p{0.355\linewidth}>{\raggedright\arraybackslash}p{0.355\linewidth}@{}}
+    \toprule
+    Role & ViT-B/16 (86M) & ConvNeXt-V2-B (89M) \\
+    \midrule
+    \role{floor}{Random}     & fresh init       & fresh init \\
+    \role{optical}{Optical}  & SatDINO (fMoW-RGB) & BigEarthNet-S2 \\
+    \role{sar}{SAR}          & SARMAE (SAR-1M)  & BigEarthNet-S1 \\
+    \role{imagenet}{ImageNet}& AugReg           & FCMAE \\
+    \bottomrule
+  \end{tabular}\par\vspace{5mm}
+  Only the initialization changes inside a track. We compare domains
+  \textbf{within} an architecture, then check whether the pattern repeats
+  across the two.
+}
+\block{One shared point detector}{
+  \centering
+  \input{figures/detector_pipeline.tex}\par
+  \vspace{5mm}\raggedright
+  \begin{itemize}
+    \item CenterNet-style Gaussian heatmap and focal loss; F1 with 200\,m
+      geographic matching.
+    \item Same optimizer, schedule, crops, data order and seed (0) for
+      every cell. Strict FP32: \PNGpuHours{} H100 GPU-hours.
+  \end{itemize}
+}
+\block{Once-only held-out protocol}{
+  \centering
+  \input{figures/protocol.tex}\par
+}
+% =====================================================================
+\column{0.34}
+\block{Pretraining helps most when labels are scarce}{
+  \centering
+  \includegraphics[width=\linewidth]{poster_label_efficiency.pdf}\par
+  \vspace{5mm}\raggedright
+  {\small F1 with 200\,m matching. Each of the \PNCells{} cells is scored once
+  with the threshold it picked on 8 dev scenes. Top: \PNTestScenes{}
+  held-out test scenes. Bottom: \PNFinalScenes{} near-shore, human-verified
+  scenes. Seed 0; no intervals.\par}
+}
+\block{SAR vs.\ optical depends on backbone and budget}{
+  \centering
+  \includegraphics[width=\linewidth]{poster_sar_minus_optical.pdf}\par
+  \vspace{5mm}\raggedright
+  {\small Gray band: the largest test-F1 change across \PNRerunCells{} cells
+  that we retrained with the same recipe and seed ($\pm$\PNRerunMax). A
+  contrast inside the band is within rerun variation.\par}
+}
+\block{The verified scenes are a coastal stress test}{
+  \centering
+  \begin{tabular}{@{}c@{\hspace{14mm}}c@{\hspace{14mm}}c@{}}
+    \statnum{\PNFinalFOneMin--\PNFinalFOneMax} &
+    \statnum{$\le$\,\PNFinalDarkRecallMax} &
+    \statnum{$\le$\,\PNFinalNearShoreFOneMax} \\[2mm]
+    \statlabel{verified F1, all 32 cells\\(test: \PNTestFOneMin--\PNTestFOneMax)} &
+    \statlabel{dark-vessel recall\\(\PNFinalDark{} dark vessels)} &
+    \statlabel{near-shore F1\\(\PNFinalNearShore{} vessels within 2\,km)} \\
+  \end{tabular}\par
+  \vspace{5mm}\raggedright
+  {\small Precision stays at \PNFinalPrecisionMin--\PNFinalPrecisionMax{}
+  while recall falls to \PNFinalRecallMin--\PNFinalRecallMax: the
+  detectors miss coastal vessels rather than over-fire.\par}
+}
+% =====================================================================
+\column{0.22}
+\block{Findings}{
+  \begin{center}
+    {\fontsize{64}{70}\selectfont\bfseries\color{roleimagenet}12 $\approx$ 111}\par
+    \vspace{3mm}
+    On the verified scenes, ImageNet ViT with 12 training scenes matches
+    random ViT with 111 (\PNFinalVitBestTwelve{} vs.\
+    \PNFinalVitRandomOneEleven{} F1).\par
+  \end{center}
+  \vspace{4mm}
+  \begin{enumerate}
+    \item \textbf{Pretraining pays off with few labels.} At 12 scenes every
+      pretrained arm beats random: \PNTestGainTwelveMin{} to
+      \PNTestGainTwelveMax{} test F1, \PNFinalGainTwelveMin{} to
+      \PNFinalGainTwelveMax{} verified F1.
+    \item \textbf{SAR beats optical only while labels are scarce.} CNN:
+      \PNTestCnnSarMinusOptTen{} test F1 at 12 scenes,
+      \PNTestCnnSarMinusOptHundred{} at 111. ViT: no stable order.
+    \item \textbf{The input adapter matters.} With a seeded 3-channel stem,
+      BigEarthNet-S2 beats random at every budget
+      (\PNCnnOpticalTestGainMin{} to \PNCnnOpticalTestGainMax{} test F1).
+    \item \textbf{Coastal and dark vessels stay hard.} Verified F1 is
+      \PNFinalFOneMin--\PNFinalFOneMax{} (test: \PNTestFOneMin--\PNTestFOneMax).
+      Dark-vessel recall $\le$ \PNFinalDarkRecallMax; near-shore
+      F1 $\le$ \PNFinalNearShoreFOneMax.
+  \end{enumerate}
+}
+\block{Limits}{
+  \begin{itemize}
+    \item One seed per cell; 8 dev scenes pick checkpoints and thresholds.
+    \item The predeclared monotonicity gate failed: two SAR test curves
+      drop by more than 0.02 as labels grow. We report the grid as
+      descriptive.
+    \item Checkpoints differ in objective and corpus as well as domain.
+      We compare released checkpoints, not a causal domain effect.
+  \end{itemize}
+}
+\block{Code and checkpoints}{
+  \begin{tabular}{@{}c@{\hspace{12mm}}c@{}}
+    \qrcode[height=7cm]{https://github.com/jroth1414/SAR-VesselBench} &
+    \qrcode[height=7cm]{https://huggingface.co/roth1414/SAR-VesselBench} \\[3mm]
+    \small GitHub: code, evidence & \small Hugging Face: weights
+  \end{tabular}
+}
+\block{References}{
+  \footnotesize\raggedright
+  Paolo et al., xView3-SAR, NeurIPS 2022.
+  Zhou et al., Objects as Points, 2019.
+  Steiner et al., How to Train Your ViT?, TMLR 2022.
+  Woo et al., ConvNeXt V2, CVPR 2023.
+  Straka \& Gruber, SatDINO, 2025.
+  Liu et al., SARMAE, CVPR 2026.
+  Clasen et al., reBEN, IGARSS 2025.\par
+}
+\end{columns}
+\end{document}

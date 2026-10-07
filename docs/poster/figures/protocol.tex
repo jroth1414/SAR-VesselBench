@@ -1,0 +1,23 @@
+% Once-only held-out protocol: each stage opens only after the previous one froze.
+\begin{tikzpicture}[font=\sffamily\normalsize, line width=1.8pt,
+  >={Stealth[length=6mm, width=5mm]},
+  stage/.style={draw, rounded corners=4pt, align=left, inner sep=9pt,
+               text width=0.74\linewidth, text=ink},
+  num/.style={circle, fill=navy, text=white, font=\sffamily\bfseries\normalsize,
+              minimum size=12mm, inner sep=0pt},
+  flow/.style={->, draw=ink}]
+\node[stage,fill=black!5, draw=black!40] (s1)
+  {\textbf{Train \PNCells{} cells.} A sweep on 8 dev scenes picks each checkpoint and threshold.};
+\node[stage,fill=rolesar!8, draw=rolesar!70!black, below=6mm of s1] (s2)
+  {\textbf{Freeze the cohort.} Hash-bind every marker and checkpoint.};
+\node[stage,fill=roleoptical!14, draw=roleoptical!85!black, below=6mm of s2] (s3)
+  {\textbf{Score \PNTestScenes{} test scenes once.} Same thresholds, \textbf{no retuning}.};
+\node[stage,fill=roleimagenet!12, draw=roleimagenet!80!black, below=6mm of s3] (s4)
+  {\textbf{Open \PNFinalScenes{} verified scenes once.} Same thresholds, all \PNCells{} cells.};
+\foreach \s/\n in {s1/1, s2/2, s3/3, s4/4} {
+  \node[num, anchor=east] at ($(\s.west)+(-6mm,0)$) {\n};
+}
+\draw[flow] (s1) -- (s2);
+\draw[flow] (s2) -- (s3);
+\draw[flow] (s3) -- (s4);
+\end{tikzpicture}
