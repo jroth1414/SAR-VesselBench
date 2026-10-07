@@ -46,7 +46,7 @@ ROLE = {
 OPTICAL_LINE = RGBColor(0xC4, 0x87, 0x00)
 
 # Matched to the PDF (body ~29.9 pt, headings 42.8 pt, captions 20.7 pt).
-BODY_PT, SMALL_PT, FOOT_PT, HEAD_PT = 29, 22, 20, 42
+BODY_PT, SMALL_PT, FOOT_PT, REF_PT, HEAD_PT = 29, 22, 20, 17, 42
 
 # Grid measured from poster.pdf: column (x, width) and section title tops.
 COLUMNS = {1: (0.86, 9.63), 2: (11.20, 9.63), 3: (21.53, 15.27), 4: (37.51, 9.63)}
@@ -282,11 +282,12 @@ def build(n: dict[str, str]) -> Presentation:
           f"{n['final_vessels']} vessels, {n['final_dark']} dark, {n['final_near_shore']} within 2 km of shore.",
           bullet=True),
     ], name="data bullets")
-    # References [n] are printed separately (references.tex); their slot shows the detection crops.
     x, y, w = section(slide, 1, 26.46, "What the best detector finds")
     _, img_h = picture(slide, GENERATED / "poster_detection_examples.png", x, y, w, "figure: detection examples")
-    text(slide, x, y + img_h + 0.1, w, 0.8, [P((f"Best cell ({n['best_cell_label']}) on two 8 × 8 km verified crops "
-                                               "(VH, dB): offshore it finds almost every vessel; in this harbor, none.",
+    text(slide, x, y + img_h + 0.1, w, 1.2, [P((f"Best cell ({n['best_cell_label']}) on two 8 × 8 km verified crops "
+                                               "(VH, dB): offshore it finds almost every vessel; in this harbor, none. "
+                                               f"Its verified F1 is {n['best_cell_offshore_f1']} offshore and "
+                                               f"{n['best_cell_near_shore_f1']} within 2 km of shore.",
                                                {"size": FOOT_PT}), align=PP_ALIGN.CENTER)], name="detection caption")
 
     # column 2 ----------------------------------------------------------------
@@ -345,26 +346,25 @@ def build(n: dict[str, str]) -> Presentation:
         f"95% intervals from {n['bootstrap_resamples']} paired scene resamples and cover scene sampling only: "
         f"retraining {n['rerun_cells']} unchanged cells moved test F1 by up to {n['rerun_max']}.",
         {"size": FOOT_PT}))], name="figure 2 caption")
-    x, y, w = section(slide, 3, 30.26, "Near shore, every detector fails")
-    tiles = [
-        (f"{n['best_cell_near_shore_f1']} vs {n['best_cell_offshore_f1']}",
-         ["best cell's verified F1:", "within 2 km vs offshore"]),
-        (f"≤ {n['final_near_shore_recall_max']}", ["near-shore recall,", "every cell"]),
-        (f"{n['train_near_shore_pct']} vs {n['final_near_shore_pct']}",
-         ["vessels within 2 km of shore:", "training vs verified labels"]),
+    x, y, w = section(slide, 3, 29.57, "References")
+    refs = [
+        "F. S. Paolo et al. xView3-SAR: Detecting dark fishing activity using SAR imagery. NeurIPS 2022.",
+        "R. Torres et al. GMES Sentinel-1 mission. Remote Sens. Environ. 2012.",
+        "A. Dosovitskiy et al. An image is worth 16×16 words. ICLR 2021.",
+        "S. Woo et al. ConvNeXt V2: Co-designing and scaling ConvNets with masked autoencoders. CVPR 2023.",
+        "A. Steiner et al. How to train your ViT? TMLR 2022.",
+        "J. Straka and I. Gruber. SatDINO: A deep dive into self-supervised pretraining for remote sensing. "
+        "arXiv:2508.21402, 2025.",
+        "D. Liu et al. SARMAE: Masked autoencoder for SAR representation learning. CVPR 2026.",
+        "K. N. Clasen et al. reBEN: Refined BigEarthNet dataset. IGARSS 2025.",
+        "X. Zhou, D. Wang, and P. Krähenbühl. Objects as points. arXiv:1904.07850, 2019.",
+        "T.-Y. Lin et al. Focal loss for dense object detection. ICCV 2017.",
     ]
-    tile_w = w / 3
-    for i, (big, label) in enumerate(tiles):
-        tx = x + i * tile_w
-        text(slide, tx, y - 0.1, tile_w, 0.9, [P(B(big, size=52, color=NAVY), align=PP_ALIGN.CENTER, space_after=0)],
-             name=f"stat {i + 1} value")
-        text(slide, tx, y + 0.85, tile_w, 0.85, [P((line, {"size": FOOT_PT}), align=PP_ALIGN.CENTER, space_after=0)
-                                                  for line in label], name=f"stat {i + 1} label")
-    text(slide, x, y + 1.85, w, 0.9, [P((
-        "The machine-made training labels place almost no vessels near shore, and the detectors almost never fire "
-        f"there: the best cell puts {n['best_cell_near_shore_predictions']} of its {n['best_cell_predictions']} "
-        f"predictions within 2 km. Precision stays at {n['final_precision_min']}–{n['final_precision_max']} in every "
-        "cell.", {"size": FOOT_PT}))], name="stat note")
+    half_w = (w - 0.3) / 2
+    for column, first in enumerate((0, 5)):  # two columns of five, as in the PDF
+        text(slide, x + column * (half_w + 0.3), y, half_w, 34.6 - y, [
+            P((f"[{i}]  ", {"color": CITE, "size": REF_PT}), (ref, {"size": REF_PT}), space_after=4)
+            for i, ref in enumerate(refs[first:first + 5], first + 1)], name=f"references {column + 1}")
 
     # column 4 ----------------------------------------------------------------
     x, y, w = section(slide, 4, 7.33, "Findings")

@@ -6,8 +6,9 @@ figures and numbers, plus a reference handout:
 - `poster.pdf`: tikzposter source `poster.tex` (TeX Gyre Heros, vector figures).
 - `poster.pptx`: editable PowerPoint built by `build_pptx.py` (Arial; text,
   the detector pipeline and the stat tiles are native shapes).
-- `references.pdf`: letter-size handout from `references.tex`. The poster
-  cites `[n]` only and the handout is printed separately.
+- `references.pdf`: letter-size handout from `references.tex`, the same list
+  as the poster's two-column References block with full titles and page
+  ranges.
 
 Every number on the poster comes from `generated/poster_numbers.json`, which
 `src.analysis.poster_figures` derives from `results/h100/evidence` through the

@@ -156,13 +156,14 @@
       \PNFinalNearShore{} within 2\,km of shore.
   \end{itemize}
 }
-% References [n] are printed separately: see references.tex.
 \block{What the best detector finds}{
   \centering
   \includegraphics[width=\linewidth]{poster_detection_examples.pdf}\par
   \vspace{2mm}{\small Best cell (\PNBestCellLabel) on two
   8 $\times$ 8\,km verified crops (VH, dB): offshore it finds almost every
-  vessel; in this harbor, none.\par}
+  vessel; in this harbor, none. Its verified F1 is
+  \PNBestCellOffshoreFOne{} offshore and \PNBestCellNearShoreFOne{} within
+  2\,km of shore.\par}
 }
 % =====================================================================
 \column{0.22}
@@ -226,22 +227,29 @@
   only: retraining \PNRerunCells{} unchanged cells moved test F1 by up to
   \PNRerunMax.\par}
 }
-\block{Near shore, every detector fails}{
-  \centering
-  \begin{tabular}{@{}c@{\hspace{12mm}}c@{\hspace{12mm}}c@{}}
-    \statnum{\PNBestCellNearShoreFOne{} vs \PNBestCellOffshoreFOne} &
-    \statnum{$\leq$\,\PNFinalNearShoreRecallMax} &
-    \statnum{\PNTrainNearShorePct{} vs \PNFinalNearShorePct} \\[2mm]
-    \statlabel{best cell's verified F1:\\within 2\,km vs offshore} &
-    \statlabel{near-shore recall,\\every cell} &
-    \statlabel{vessels within 2\,km of shore:\\training vs verified labels} \\
-  \end{tabular}\par
-  \vspace{5mm}\raggedright
-  {\small The machine-made training labels place almost no vessels near
-  shore, and the detectors almost never fire there: the best cell puts
-  \PNBestCellNearShorePredictions{} of its \PNBestCellPredictions{}
-  predictions within 2\,km. Precision stays at
-  \PNFinalPrecisionMin--\PNFinalPrecisionMax{} in every cell.\par}
+% Two columns of five; references.tex holds the same list with page ranges.
+% The offsets lift this last block of the column, as in column 2.
+\block[titleoffsety=14mm,bodyoffsety=14mm]{References}{
+  \footnotesize\hyphenpenalty=10000\exhyphenpenalty=10000
+  \setlist[enumerate]{label={[\arabic*]},leftmargin=2.1em,labelsep=0.35em,itemsep=0.2em,topsep=0pt}
+  \begin{minipage}[t]{0.49\linewidth}
+  \begin{enumerate}
+    \item F.~S. Paolo et al. xView3-SAR: Detecting dark fishing activity using SAR imagery. NeurIPS 2022.
+    \item R. Torres et al. GMES Sentinel-1 mission. Remote Sens.\ Environ.\ 2012.
+    \item A. Dosovitskiy et al. An image is worth 16$\times$16 words. ICLR 2021.
+    \item S. Woo et al. ConvNeXt V2: Co-designing and scaling ConvNets with masked autoencoders. CVPR 2023.
+    \item A. Steiner et al. How to train your ViT? TMLR 2022.
+  \end{enumerate}
+  \end{minipage}\hfill
+  \begin{minipage}[t]{0.49\linewidth}
+  \begin{enumerate}[start=6]
+    \item J. Straka and I. Gruber. SatDINO: A deep dive into self-supervised pretraining for remote sensing. arXiv:2508.21402, 2025.
+    \item D. Liu et al. SARMAE: Masked autoencoder for SAR representation learning. CVPR 2026.
+    \item K.~N. Clasen et al. reBEN: Refined BigEarthNet dataset. IGARSS 2025.
+    \item X. Zhou, D. Wang, and P. Kr\"ahenb\"uhl. Objects as points. arXiv:1904.07850, 2019.
+    \item T.-Y. Lin et al. Focal loss for dense object detection. ICCV 2017.
+  \end{enumerate}
+  \end{minipage}
 }
 % =====================================================================
 \column{0.22}
