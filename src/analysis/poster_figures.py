@@ -4,9 +4,16 @@ One source feeds both poster formats. Every figure is written twice, as a
 vector PDF for the tikzposter build and as a 300-dpi PNG for the PowerPoint
 build. Every number the poster quotes is written to ``poster_numbers.json``
 and, as LaTeX macros, to ``poster_macros.tex``. Values come only through
-``heldout_results.validate_evidence``; the optional rerun reference is a
-second validated cohort (the August tree, e.g. exported with
-``git archive 481200e results/h100/evidence``).
+``heldout_results.validate_evidence`` and the per-scene records of the files
+it validated:
+
+* 95% intervals come from a paired scene bootstrap (``scene_bootstrap``);
+  they cover scene sampling, not training-seed variation;
+* the optional rerun reference is a second validated cohort (the August
+  tree, e.g. ``git archive 481200e results/h100/evidence``) and measures how
+  far test F1 moves when unchanged cells are retrained;
+* the near-shore label gap uses the evidence tree's bound
+  ``TRAIN_LABEL_PROFILE.json``.
 
 The report-scale renderers in ``heldout_results`` stay untouched; this module
 reuses only their role palette, markers and labels.
@@ -21,8 +28,11 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+
+import numpy as np
 
 from src.analysis.heldout_results import (
     FRACTION_SCENES,
@@ -34,43 +44,27 @@ from src.analysis.heldout_results import (
     EvidenceError,
     validate_evidence,
 )
+from src.analysis.scene_bootstrap import PairedBootstrap, micro_f1, scene_counts
 
 TRACKS = ("vit", "cnn")
 TRACK_TITLE = {"vit": "ViT-B/16", "cnn": "ConvNeXt-V2-Base"}
 PRETRAINED = ("optical", "sar", "imagenet")
+METRIC_FILE = {"test": "test_metrics.json", "final": "final_verified_metrics.json"}
+NEAR_SHORE_KM = 2.0
+BOOTSTRAP_RESAMPLES, BOOTSTRAP_SEED = 10_000, 0
 INK = "#1F2328"
 MUTED = "#6B7280"
 GRID = "#E5E7EB"
-BAND = "#D9DDE3"
-# Poster type scale (points). Body text on the poster is ~25 pt.
+OPTICAL_TEXT = "#9A6700"
+# Poster type scale (points), sized against ~30 pt body text on the poster.
 TITLE_PT, LABEL_PT, TICK_PT, LEGEND_PT, ANNOT_PT = 30, 27, 24, 24, 23
-# Facts from the BigEarthNet-S2 diagnostic (DEV only, outside this evidence
-# tree): docs/BES2_FIRST_CONV_RESET_ACADEMIC_REPORT.md on
-# origin/sprint-8-final-eval-amendment and the 2026-09-14 owner amendment.
-STEM_DIAGNOSTIC = {"weight_norm_ratio": 5.85, "dev_f1_before": 0.799, "dev_f1_after": 0.837}
 
 
 # --------------------------------------------------------------------------- style
-def register_roboto() -> bool:
-    """Make the poster's text face available to matplotlib if Tectonic cached it."""
-
-    import glob
-
-    from matplotlib import font_manager
-
-    cache = os.path.join(os.environ.get("LOCALAPPDATA", ""), "TectonicProject", "Tectonic", "cache")
-    found = False
-    for face in ("Roboto-Regular.otf", "Roboto-Bold.otf"):
-        for path in glob.glob(os.path.join(cache, "**", face), recursive=True)[:1]:
-            font_manager.fontManager.addfont(path)
-            found = True
-    return found
-
-
 def poster_style() -> dict[str, object]:
     return {
         "font.family": "sans-serif",
-        "font.sans-serif": ["Roboto", "Arial", "DejaVu Sans"],
+        "font.sans-serif": ["Arial", "Helvetica", "DejaVu Sans"],
         "font.size": TICK_PT,
         "axes.titlesize": TITLE_PT,
         "axes.titleweight": "bold",
@@ -134,6 +128,13 @@ def fraction_axis(axis, *, label: bool) -> None:
 
 
 # --------------------------------------------------------------------------- data
+def _cell_ids(validated: Mapping[str, object]) -> dict[tuple[str, str, int], str]:
+    return {
+        (c["track"], c["role"], int(c["label_fraction"])): exp_id
+        for exp_id, c in validated["cells"].items()  # type: ignore[union-attr]
+    }
+
+
 def grids(validated: Mapping[str, object]) -> dict[str, dict[tuple[str, str, int], float]]:
     cells = validated["cells"]
     tests = validated["test_results"]
@@ -163,60 +164,119 @@ def rerun_variation(current: Mapping[str, object], reference: Mapping[str, objec
     return {"cells": len(deltas), "mean": sum(deltas) / len(deltas), "max": max(deltas)}
 
 
+def scene_details(evidence_root: Path, validated: Mapping[str, object]) -> dict[str, object]:
+    """Bootstrap intervals and near-shore breakdowns from the validated per-scene records."""
+
+    ids = _cell_ids(validated)
+    details: dict[str, object] = {"intervals": {}, "offshore": {}}
+    for metric, filename in METRIC_FILE.items():
+        payloads = {key: json.loads((evidence_root / exp_id / filename).read_text(encoding="utf-8"))
+                    for key, exp_id in ids.items()}
+        counts = {}
+        boot = None
+        for key, payload in payloads.items():
+            scenes, array = scene_counts(payload["per_scene"])
+            if boot is None:
+                boot = PairedBootstrap(scenes, n_resamples=BOOTSTRAP_RESAMPLES, seed=BOOTSTRAP_SEED)
+            boot.check(scenes)
+            counts[key] = array
+        intervals = details["intervals"]
+        for track in TRACKS:
+            for role in PRETRAINED:
+                intervals[f"{metric}_{track}_{role}_gain12"] = boot.difference(
+                    counts[(track, role, 10)], counts[(track, "floor", 10)])
+            for fraction in FRACTIONS:
+                intervals[f"{metric}_{track}_sar_minus_opt_{fraction}"] = boot.difference(
+                    counts[(track, "sar", fraction)], counts[(track, "optical", fraction)])
+        intervals[f"{metric}_vit_imagenet12_minus_random111"] = boot.difference(
+            counts[("vit", "imagenet", 10)], counts[("vit", "floor", 100)])
+        if metric == "final":
+            for key, payload in payloads.items():
+                total = np.array([sum(s["aggregate"][k] for s in payload["per_scene"].values())
+                                  for k in ("tp", "fp", "fn")], dtype=float)
+                near = np.array([sum(s["slices"]["near_shore"][k] for s in payload["per_scene"].values())
+                                 for k in ("tp", "fp", "fn")], dtype=float)
+                predictions = [p for scene in payload["thresholded_predictions"].values() for p in scene]
+                details["offshore"][key] = {
+                    "offshore_f1": float(micro_f1(total - near)),
+                    "near_shore_recall": float(near[0] / (near[0] + near[2])),
+                    "predictions": len(predictions),
+                    "near_shore_predictions": sum(
+                        1 for p in predictions if p["distance_from_shore_km"] <= NEAR_SHORE_KM),
+                }
+    return details
+
+
 # --------------------------------------------------------------------------- numbers
-def poster_numbers(validated: Mapping[str, object], rerun: Mapping[str, float] | None) -> dict[str, object]:
+def poster_numbers(
+    validated: Mapping[str, object],
+    rerun: Mapping[str, float] | None,
+    details: Mapping[str, object],
+) -> dict[str, object]:
     g = grids(validated)
+    ids = _cell_ids(validated)
     final = validated["final_results"]
     first = next(iter(final.values()))  # type: ignore[union-attr]
+    vessels = int(first["tp"] + first["fn"])
     n: dict[str, object] = {
         "cells": len(validated["cells"]),  # type: ignore[arg-type]
         "gpu_hours": round(float(validated["campaign"]["gpu_hours"]), 1),  # type: ignore[index]
-        "code_sha": str(validated["campaign"]["git_sha"])[:7],  # type: ignore[index]
         "test_scenes": 16,
         "final_scenes": 50,
-        "final_vessels": int(first["tp"] + first["fn"]),
+        "final_vessels": vessels,
         "final_dark": int(first["dark_support"]),
         "final_near_shore": int(first["near_shore_support"]),
+        "final_near_shore_pct": 100.0 * int(first["near_shore_support"]) / vessels,
+        "bootstrap_resamples": BOOTSTRAP_RESAMPLES,
     }
+    train = validated.get("train_labels")
+    if train:
+        n["train_positive"] = int(train["positive"])
+        n["train_near_shore"] = int(train["near_shore_positive"])
+        n["train_near_shore_pct"] = 100.0 * int(train["near_shore_positive"]) / int(train["positive"])
 
     def gains(metric: str, fraction: int) -> list[float]:
         return [g[metric][(t, r, fraction)] - g[metric][(t, "floor", fraction)] for t in TRACKS for r in PRETRAINED]
 
+    intervals: Mapping[str, Mapping[str, float]] = details["intervals"]  # type: ignore[assignment]
+    gain_keys = [k for k in intervals if k.endswith("_gain12")]
+    n["gain12_comparisons"] = len(gain_keys)
+    n["gain12_ci_above_zero"] = sum(1 for k in gain_keys if intervals[k]["low"] > 0)
     for metric in ("test", "final"):
         n[f"{metric}_gain12_min"] = min(gains(metric, 10))
         n[f"{metric}_gain12_max"] = max(gains(metric, 10))
         n[f"{metric}_f1_min"] = min(g[metric].values())
         n[f"{metric}_f1_max"] = max(g[metric].values())
         for track in TRACKS:
-            for fraction in (10, 25, 50, 100):
-                n[f"{metric}_{track}_sar_minus_opt_{fraction}"] = (
-                    g[metric][(track, "sar", fraction)] - g[metric][(track, "optical", fraction)]
-                )
+            for fraction in FRACTIONS:
+                key = f"{metric}_{track}_sar_minus_opt_{fraction}"
+                n[key] = g[metric][(track, "sar", fraction)] - g[metric][(track, "optical", fraction)]
+                n[f"{key}_ci"] = intervals[key]
             n[f"{metric}_{track}_random_111"] = g[metric][(track, "floor", 100)]
-            best12 = max(PRETRAINED, key=lambda r: g[metric][(track, r, 10)])
-            n[f"{metric}_{track}_best12_role"] = ROLE_LABEL[best12]
-            n[f"{metric}_{track}_best12"] = g[metric][(track, best12, 10)]
+        n[f"{metric}_vit_imagenet12"] = g[metric][("vit", "imagenet", 10)]
+        n[f"{metric}_vit_imagenet12_minus_random111_ci"] = intervals[f"{metric}_vit_imagenet12_minus_random111"]
     n["cnn_optical_test_gain_min"] = min(g["test"][("cnn", "optical", f)] - g["test"][("cnn", "floor", f)] for f in FRACTIONS)
     n["cnn_optical_test_gain_max"] = max(g["test"][("cnn", "optical", f)] - g["test"][("cnn", "floor", f)] for f in FRACTIONS)
-    n["cnn_optical_final_gain_min"] = min(g["final"][("cnn", "optical", f)] - g["final"][("cnn", "floor", f)] for f in FRACTIONS)
-    tests = [float(t["f1"]) for t in validated["test_results"].values()]  # type: ignore[union-attr]
+    tests = {e: float(t["f1"]) for e, t in validated["test_results"].items()}  # type: ignore[union-attr]
     finals = {e: float(r["f1"]) for e, r in final.items()}  # type: ignore[union-attr]
-    n["mean_test_minus_final"] = sum(
-        float(validated["test_results"][e]["f1"]) - finals[e] for e in finals  # type: ignore[index]
-    ) / len(finals)
-    n["test_f1_min"], n["test_f1_max"] = min(tests), max(tests)
+    n["mean_test_minus_final"] = sum(tests[e] - finals[e] for e in finals) / len(finals)
     for key in ("precision", "recall", "dark_recall", "near_shore_f1"):
         values = [float(r[key]) for r in final.values()]  # type: ignore[union-attr]
         n[f"final_{key}_min"], n[f"final_{key}_max"] = min(values), max(values)
-    best = max(finals, key=finals.get)
-    n["best_cell"] = best
-    n["best_cell_test"] = float(validated["test_results"][best]["f1"])  # type: ignore[index]
-    n["best_cell_final"] = finals[best]
+    offshore: Mapping[tuple, Mapping[str, float]] = details["offshore"]  # type: ignore[assignment]
+    n["final_offshore_f1_min"] = min(o["offshore_f1"] for o in offshore.values())
+    n["final_offshore_f1_max"] = max(o["offshore_f1"] for o in offshore.values())
+    n["final_near_shore_recall_max"] = max(o["near_shore_recall"] for o in offshore.values())
+    best_key = max(offshore, key=lambda k: finals[ids[k]])
+    best = offshore[best_key]
+    n["best_cell"] = ids[best_key]
+    n["best_cell_test"] = tests[ids[best_key]]
+    n["best_cell_final"] = finals[ids[best_key]]
+    n["best_cell_offshore_f1"] = best["offshore_f1"]
+    n["best_cell_predictions"] = int(best["predictions"])
+    n["best_cell_near_shore_predictions"] = int(best["near_shore_predictions"])
     n["vit_sar_test_drop_12_28"] = g["test"][("vit", "sar", 10)] - g["test"][("vit", "sar", 25)]
     n["cnn_sar_test_drop_56_111"] = g["test"][("cnn", "sar", 50)] - g["test"][("cnn", "sar", 100)]
-    n["stem_weight_norm_ratio"] = STEM_DIAGNOSTIC["weight_norm_ratio"]
-    n["stem_dev_before"] = STEM_DIAGNOSTIC["dev_f1_before"]
-    n["stem_dev_after"] = STEM_DIAGNOSTIC["dev_f1_after"]
     if rerun is not None:
         n["rerun_cells"] = int(rerun["cells"])
         n["rerun_mean"] = rerun["mean"]
@@ -239,11 +299,16 @@ def _signed(value: float) -> str:
 def number_strings(numbers: Mapping[str, object]) -> dict[str, str]:
     """Display strings shared by both poster builds (LaTeX and PowerPoint)."""
 
-    out = {key: _fmt(value) for key, value in numbers.items()}
+    out: dict[str, str] = {}
     for key, value in numbers.items():
-        if ("minus_opt" in key or "gain" in key) and isinstance(value, float):
+        if isinstance(value, Mapping):  # a bootstrap interval
+            out[key] = f"[{_signed(value['low'])}, {_signed(value['high'])}]"
+        elif ("minus_opt" in key or "gain" in key) and isinstance(value, float):
             out[key] = _signed(value)
-    out["stem_weight_norm_ratio"] = f"{float(numbers['stem_weight_norm_ratio']):.2f}×"
+        elif key.endswith("_pct"):
+            out[key] = f"{value:.1f}%" if value < 10 else f"{value:.0f}%"
+        else:
+            out[key] = _fmt(value)
     out["gpu_hours"] = f"{float(numbers['gpu_hours']):.1f}"
     return out
 
@@ -254,8 +319,6 @@ DIGIT_WORDS = {"1": "One", "10": "Ten", "12": "Twelve", "25": "TwentyFive", "28"
 
 def macro_name(key: str) -> str:
     """TeX control sequences take letters only, so digit runs become words."""
-
-    import re
 
     words = []
     for part in key.replace("-", "_").split("_"):
@@ -270,7 +333,8 @@ def macro_name(key: str) -> str:
 def write_macros(strings: Mapping[str, str], path: Path) -> None:
 
     def tex(value: str) -> str:
-        return value.replace("−", "$-$").replace("×", "$\\times$").replace(",", "{,}").replace("_", "\\_")
+        return (value.replace("−", "$-$").replace("×", "$\\times$").replace(",", "{,}")
+                .replace("_", "\\_").replace("%", "\\%"))
 
     lines = ["% GENERATED by src.analysis.poster_figures -- do not edit."]
     lines += [f"\\def\\{macro_name(k)}{{{tex(v)}}}" for k, v in sorted(strings.items())]
@@ -283,7 +347,7 @@ def figure_label_efficiency(g, out_dir: Path) -> list[Path]:
 
     import matplotlib.pyplot as plt
 
-    fig, axes = plt.subplots(2, 2, figsize=(14.6, 11.0), sharex=True)
+    fig, axes = plt.subplots(2, 2, figsize=(14.6, 9.8), sharex=True)
     rows = (("test", "Test F1 (16 scenes)", (0.64, 0.90)),
             ("final", "Verified F1 (50 scenes)", (0.40, 0.59)))
     for r, (metric, ylabel, ylim) in enumerate(rows):
@@ -309,39 +373,38 @@ def figure_label_efficiency(g, out_dir: Path) -> list[Path]:
     return paths
 
 
-def figure_sar_minus_optical(g, rerun: Mapping[str, float] | None, out_dir: Path) -> list[Path]:
-    """SAR minus optical F1 per budget, test and verified, with the rerun band."""
+def figure_sar_minus_optical(details: Mapping[str, object], out_dir: Path) -> list[Path]:
+    """SAR minus optical F1 per budget with 95% paired scene-bootstrap intervals."""
 
     import matplotlib.pyplot as plt
-    from matplotlib.patches import Patch
 
-    fig, axes = plt.subplots(1, 2, figsize=(14.6, 6.1), sharey=True)
-    styles = (("test", "Test (16 scenes)", "-", "o"), ("final", "Verified (50 scenes)", (0, (1.2, 1.4)), "s"))
+    intervals: Mapping[str, Mapping[str, float]] = details["intervals"]  # type: ignore[assignment]
+    fig, axes = plt.subplots(1, 2, figsize=(14.6, 5.9), sharey=True)
+    styles = (("test", "Test (16 scenes)", "-", "o", -0.09), ("final", "Verified (50 scenes)", (0, (1.2, 1.4)), "s", 0.09))
     for axis, track in zip(axes, TRACKS):
-        if rerun is not None:
-            axis.axhspan(-rerun["max"], rerun["max"], color=BAND, zorder=0, lw=0)
         axis.axhline(0, color=MUTED, lw=1.6, zorder=1)
-        for metric, label, linestyle, marker in styles:
-            ys = [g[metric][(track, "sar", f)] - g[metric][(track, "optical", f)] for f in FRACTIONS]
-            axis.plot(range(len(FRACTIONS)), ys, color=INK, linestyle=linestyle, marker=marker,
-                      markerfacecolor=INK if metric == "test" else "white", markeredgecolor=INK,
-                      markeredgewidth=2.5, label=label, zorder=3, clip_on=False)
+        for metric, label, linestyle, marker, offset in styles:
+            spans = [intervals[f"{metric}_{track}_sar_minus_opt_{f}"] for f in FRACTIONS]
+            xs = np.arange(len(FRACTIONS)) + offset
+            ys = np.array([s["point"] for s in spans])
+            err = np.array([[s["point"] - s["low"] for s in spans], [s["high"] - s["point"] for s in spans]])
+            axis.errorbar(xs, ys, yerr=err, color=INK, linestyle=linestyle, marker=marker,
+                          markerfacecolor=INK if metric == "test" else "white", markeredgecolor=INK,
+                          markeredgewidth=2.5, elinewidth=2.4, capsize=7, capthick=2.4, label=label,
+                          zorder=3, clip_on=False)
         axis.set_title(TRACK_TITLE[track], color=INK)
-        axis.set_ylim(-0.10, 0.10)
+        axis.set_ylim(-0.18, 0.14)
         fraction_axis(axis, label=True)
     # Direction labels sit outside the data area so they never cover a point.
-    axes[1].text(1.03, 0.92, "SAR\nahead", transform=axes[1].transAxes, va="top", ha="left",
+    axes[1].text(1.03, 0.94, "SAR\nahead", transform=axes[1].transAxes, va="top", ha="left",
                  fontsize=ANNOT_PT, color=ROLE_COLOR["sar"], fontweight="bold", linespacing=1.0)
-    axes[1].text(1.03, 0.08, "optical\nahead", transform=axes[1].transAxes, va="bottom", ha="left",
-                 fontsize=ANNOT_PT, color="#9A6700", fontweight="bold", linespacing=1.0)
+    axes[1].text(1.03, 0.06, "optical\nahead", transform=axes[1].transAxes, va="bottom", ha="left",
+                 fontsize=ANNOT_PT, color=OPTICAL_TEXT, fontweight="bold", linespacing=1.0)
     axes[0].set_ylabel("SAR − optical F1")
     axes[1].tick_params(labelleft=True)
     handles, labels = axes[0].get_legend_handles_labels()
-    if rerun is not None:
-        handles.append(Patch(facecolor=BAND, edgecolor="none"))
-        labels.append(f"Rerun variation (±{rerun['max']:.3f})")
-    fig.legend(handles, labels, loc="upper center", ncol=3, bbox_to_anchor=(0.5, 1.06),
-               handlelength=2.4, columnspacing=1.4)
+    fig.legend(handles, labels, loc="upper center", ncol=2, bbox_to_anchor=(0.5, 1.06),
+               handlelength=2.4, columnspacing=2.0)
     fig.tight_layout(w_pad=2.4, rect=(0, 0, 1, 0.94))
     paths = save_both(fig, out_dir, "poster_sar_minus_optical")
     plt.close(fig)
@@ -361,25 +424,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     kwargs = {"arms_config": args.arms_config, "detector_config": args.detector_config,
               "splits_config": args.splits_config}
     validated = validate_evidence(args.evidence_root, **kwargs)
-    if not validated["final_results"] or not validated["test_results"]:
-        raise EvidenceError("the poster needs the complete TEST and final evaluations")
+    if not validated["final_results"] or not validated["test_results"] or not validated["train_labels"]:
+        raise EvidenceError("the poster needs the complete TEST and final evaluations and the label profile")
     rerun = None
     if args.rerun_reference is not None:
         rerun = rerun_variation(validated, validate_evidence(args.rerun_reference, **kwargs))
+    details = scene_details(args.evidence_root, validated)
 
     os.environ.setdefault("SOURCE_DATE_EPOCH", "0")
     import matplotlib
 
     matplotlib.use("Agg")
-    register_roboto()
     matplotlib.rcParams.update(poster_style())
 
     out = args.output_dir
     out.mkdir(parents=True, exist_ok=True)
-    g = grids(validated)
-    figure_label_efficiency(g, out)
-    figure_sar_minus_optical(g, rerun, out)
-    numbers = poster_numbers(validated, rerun)
+    figure_label_efficiency(grids(validated), out)
+    figure_sar_minus_optical(details, out)
+    numbers = poster_numbers(validated, rerun, details)
     strings = number_strings(numbers)
     (out / "poster_numbers.json").write_text(
         json.dumps({"values": numbers, "display": strings}, indent=2, ensure_ascii=False) + "\n",
