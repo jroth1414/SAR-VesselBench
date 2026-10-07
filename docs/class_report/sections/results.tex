@@ -63,9 +63,6 @@ The ViT gains are \HevDeltaFTenViTOptical{} for optical,
 \HevDeltaFTenCNNImageNet. CNN-optical now beats random at every budget
 because of the input adapter (Sect.~\ref{sec:methods}).
 
-At 12 scenes, ViT-ImageNet comes within 0.002 of the full-data ViT random
-floor (\HevDevFViTImageNetTen{} versus \HevDevFViTRandomHundred).
-
 \paragraph{Source-domain contrasts and architecture generality.}
 
 The SAR--optical ranking depends on the backbone
@@ -111,8 +108,9 @@ falls from \HevTestFViTSarTen{} at 10\% to \HevTestFViTSarTwentyFive{} at
 25\%, and CNN-SAR falls from \HevTestFCNNSarFifty{} at 50\% to
 \HevTestFCNNSarHundred{} at 100\% although its development F1 rises. Both
 declines exceed the allowed 0.02, so the experiment does not establish a
-monotone label-efficiency curve. The final evaluation proceeded with this
-failure disclosed, with no retraining and no threshold tuning.
+monotone label-efficiency curve; Appendix~\ref{app:analysis} traces the
+ViT-SAR decline to early stopping. The final evaluation proceeded with this
+failure disclosed and no retuning.
 \else
 The 16-scene test split has not been scored in this build. The held-out
 contract first freezes the 32-cell cohort. It then applies each cell's

@@ -167,8 +167,6 @@
     \item K.~N. Clasen et al. reBEN: Refined BigEarthNet dataset. IGARSS 2025.
     \item X. Zhou, D. Wang, and P. Kr\"ahenb\"uhl. Objects as points. arXiv:1904.07850, 2019.
     \item T.-Y. Lin et al. Focal loss for dense object detection. ICCV 2017.
-    \item A. Fuller, K. Millard, and J.~R. Green. CROMA: Contrastive radar-optical masked autoencoders. NeurIPS 2023.
-    \item Z. Xiong et al. Neural plasticity-inspired multimodal foundation model for Earth observation (DOFA). arXiv:2403.15356, 2024.
   \end{enumerate}
 }
 % =====================================================================
@@ -185,9 +183,8 @@
     \role{roleimagenet}{ImageNet}& AugReg \refn{5} & FCMAE \refn{4} \\
     \bottomrule
   \end{tabular}\par\vspace{5mm}
-  Only the initialization changes inside a track (86M vs.\ 89M
-  parameters). We compare domains \textbf{within} an architecture, then
-  check whether the pattern repeats across the two.
+  Only the initialization changes inside a track; we compare domains
+  \textbf{within} an architecture.
 }
 \block{One shared point detector}{
   \centering
@@ -198,11 +195,20 @@
       with 200\,m geographic matching.
     \item Same optimizer, schedule, crops, data order and seed (0) for
       every cell. Strict FP32: \PNGpuHours{} H100 GPU-hours.
+    \item 8 dev scenes pick each checkpoint and threshold; test and verified
+      scenes are scored \textbf{once}, with no retuning.
   \end{itemize}
 }
-\block{Once-only held-out protocol}{
+\block{Why SARMAE dips at 28 scenes}{
   \centering
-  \input{figures/protocol.tex}\par
+  \includegraphics[width=\linewidth]{poster_sarmae_dynamics.pdf}\par
+  \vspace{4mm}\raggedright
+  {\small At 28 scenes SARMAE peaks as warm-up ends, then overfits
+  (training loss \PNSarmaeFTwentyFiveLossFirst{} $\rightarrow$
+  \PNSarmaeFTwentyFiveLossLast; dev precision
+  \PNSarmaeFTwentyFiveDevPrecisionFirst{} $\rightarrow$
+  \PNSarmaeFTwentyFiveDevPrecisionLast). Early stopping keeps the
+  epoch-\PNSarmaeFTwentyFiveBestEpoch{} checkpoint.\par}
 }
 % =====================================================================
 \column{0.34}
@@ -276,12 +282,12 @@
 }
 \block{Open questions \& next steps}{
   \begin{itemize}
-    \item How do multi-sensor foundation models such as CROMA \refn{11}
-      and DOFA \refn{12} fare against single-source checkpoints?
+    \item How do geospatial foundation models pretrained jointly on SAR and
+      optical imagery fare against these single-source checkpoints?
     \item Does SAR pretraining help where optical cannot: near shore and
       for small dark vessels?
-    \item Why does SARMAE peak at its first evaluation with 28 or fewer
-      scenes?
+    \item Would per-arm learning rates or longer early-stopping patience
+      remove the small-budget dips?
     \item \textbf{Next:} near-shore training labels, a shoreline input
       channel, several seeds, and matched pretraining objectives across
       sensors.

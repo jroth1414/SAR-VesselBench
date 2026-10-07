@@ -34,6 +34,13 @@ def test_headline_numbers_match_the_evidence(numbers: dict) -> None:
     assert shown["best_cell_near_shore_predictions"] == "34" and shown["best_cell_predictions"] == "4,302"
 
 
+def test_sarmae_dip_numbers_come_from_the_bound_markers_and_curves(numbers: dict) -> None:
+    assert (numbers["sarmae_f25_best_epoch"], numbers["sarmae_f25_epochs_run"]) == (4, 25)
+    assert (numbers["sarmae_f50_best_epoch"], numbers["satdino_f25_best_epoch"]) == (39, 29)
+    assert numbers["sarmae_f25_loss_last"] < numbers["sarmae_f25_loss_first"]
+    assert numbers["sarmae_f25_dev_precision_last"] < numbers["sarmae_f25_dev_precision_first"]
+
+
 def test_every_twelve_scene_gain_has_an_interval_above_zero(numbers: dict) -> None:
     assert numbers["gain12_comparisons"] == 12 and numbers["gain12_ci_above_zero"] == 12
     ci = numbers["final_cnn_sar_minus_opt_100_ci"]

@@ -26,6 +26,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import re
@@ -52,6 +53,10 @@ PRETRAINED = ("optical", "sar", "imagenet")
 METRIC_FILE = {"test": "test_metrics.json", "final": "final_verified_metrics.json"}
 NEAR_SHORE_KM = 2.0
 BOOTSTRAP_RESAMPLES, BOOTSTRAP_SEED = 10_000, 0
+# Training curves behind the ViT-SAR dip at 28 scenes, with SatDINO as the
+# same-budget comparison.
+DYNAMICS_CELLS = (("vit", "sar", 10), ("vit", "sar", 25), ("vit", "sar", 50), ("vit", "optical", 25))
+WARMUP_EPOCHS = 5  # shared recipe (configs: five warm-up epochs)
 INK = "#1F2328"
 MUTED = "#6B7280"
 GRID = "#E5E7EB"
@@ -204,7 +209,25 @@ def scene_details(evidence_root: Path, validated: Mapping[str, object]) -> dict[
                     "near_shore_predictions": sum(
                         1 for p in predictions if p["distance_from_shore_km"] <= NEAR_SHORE_KM),
                 }
+    details["curves"] = {key: training_curve(evidence_root / ids[key] / "metrics.csv") for key in DYNAMICS_CELLS}
     return details
+
+
+def training_curve(path: Path) -> dict[str, object]:
+    """Dev evaluations (epoch, F1, precision, recall) and mean training loss per epoch."""
+
+    dev: list[tuple[int, float, float, float]] = []
+    losses: dict[int, list[float]] = {}
+    with path.open(newline="", encoding="utf-8") as handle:
+        for row in csv.DictReader(handle):
+            if not (row.get("epoch") or "").strip():
+                continue  # learning-rate-only rows carry no epoch
+            epoch = int(float(row["epoch"]))
+            if (row.get("dev_f1") or "").strip():
+                dev.append((epoch, float(row["dev_f1"]), float(row["dev_precision"]), float(row["dev_recall"])))
+            if (row.get("train_loss") or "").strip():
+                losses.setdefault(epoch, []).append(float(row["train_loss"]))
+    return {"dev": dev, "loss": {e: sum(v) / len(v) for e, v in sorted(losses.items())}}
 
 
 # --------------------------------------------------------------------------- numbers
@@ -275,6 +298,17 @@ def poster_numbers(
     n["best_cell_offshore_f1"] = best["offshore_f1"]
     n["best_cell_predictions"] = int(best["predictions"])
     n["best_cell_near_shore_predictions"] = int(best["near_shore_predictions"])
+    cells = validated["cells"]
+    for label, key in (("sarmae_f10", ("vit", "sar", 10)), ("sarmae_f25", ("vit", "sar", 25)),
+                       ("sarmae_f50", ("vit", "sar", 50)), ("satdino_f25", ("vit", "optical", 25))):
+        n[f"{label}_best_epoch"] = int(cells[ids[key]]["best_epoch"])  # type: ignore[index]
+        n[f"{label}_epochs_run"] = int(cells[ids[key]]["epochs_run"])  # type: ignore[index]
+    curve = details["curves"][("vit", "sar", 25)]  # type: ignore[index]
+    first_eval, last_eval = curve["dev"][0], curve["dev"][-1]
+    n["sarmae_f25_dev_precision_first"], n["sarmae_f25_dev_precision_last"] = first_eval[2], last_eval[2]
+    n["sarmae_f25_dev_recall_first"], n["sarmae_f25_dev_recall_last"] = first_eval[3], last_eval[3]
+    losses = curve["loss"]
+    n["sarmae_f25_loss_first"], n["sarmae_f25_loss_last"] = losses[min(losses)], losses[max(losses)]
     n["vit_sar_test_drop_12_28"] = g["test"][("vit", "sar", 10)] - g["test"][("vit", "sar", 25)]
     n["cnn_sar_test_drop_56_111"] = g["test"][("cnn", "sar", 50)] - g["test"][("cnn", "sar", 100)]
     if rerun is not None:
@@ -411,6 +445,52 @@ def figure_sar_minus_optical(details: Mapping[str, object], out_dir: Path) -> li
     return paths
 
 
+def figure_sarmae_dynamics(validated: Mapping[str, object], details: Mapping[str, object], out_dir: Path) -> list[Path]:
+    """Dev F1 by epoch for SARMAE at 28 and 56 scenes and SatDINO at 28 scenes."""
+
+    import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
+
+    ids = _cell_ids(validated)
+    cells = validated["cells"]
+    curves: Mapping[tuple, Mapping[str, object]] = details["curves"]  # type: ignore[assignment]
+    series = (
+        (("vit", "sar", 50), "SARMAE · 56", ROLE_COLOR["sar"], (0, (3, 2)), 3.2),
+        (("vit", "optical", 25), "SatDINO · 28", ROLE_COLOR["optical"], "-", 3.2),
+        (("vit", "sar", 25), "SARMAE · 28", ROLE_COLOR["sar"], "-", 5.0),
+    )
+    fig, axis = plt.subplots(figsize=(9.6, 5.3))
+    axis.axvspan(0, WARMUP_EPOCHS, color=GRID, zorder=0, lw=0)
+    axis.text(WARMUP_EPOCHS / 2, 0.875, "warm-up", ha="center", va="center", rotation=90,
+              fontsize=ANNOT_PT - 4, color=MUTED)
+    for key, label, color, style, width in series:
+        epochs = [e for e, *_ in curves[key]["dev"]]
+        f1s = [f for _, f, *_ in curves[key]["dev"]]
+        axis.plot(epochs, f1s, color=color, linestyle=style, lw=width, marker="o", markersize=9, zorder=3)
+        cell = cells[ids[key]]  # type: ignore[index]
+        best = int(cell["best_epoch"])
+        axis.plot([best], [f1s[epochs.index(best)]], marker="o", markersize=24, markerfacecolor="none",
+                  markeredgecolor=color, markeredgewidth=3.5, zorder=4)
+        if int(cell["epochs_run"]) < 50:
+            axis.plot([epochs[-1]], [f1s[-1]], marker="X", markersize=20, color=INK, zorder=5)
+        axis.annotate(label, xy=(epochs[-1], f1s[-1]), xytext=(18, 0), textcoords="offset points",
+                      va="center", ha="left", fontsize=ANNOT_PT - 2, fontweight="bold", color=INK)
+    axis.set_xlim(0, 62)
+    axis.set_xticks([0, 10, 20, 30, 40, 50])
+    axis.set_ylim(0.83, 0.93)
+    axis.set_xlabel("Epoch")
+    axis.set_ylabel("Dev F1 (8 scenes)")
+    handles = [Line2D([], [], marker="o", markersize=20, markerfacecolor="none", markeredgecolor=INK,
+                      markeredgewidth=3, linestyle="none"),
+               Line2D([], [], marker="X", markersize=16, color=INK, linestyle="none")]
+    fig.legend(handles, ["selected checkpoint", "early stop"], loc="upper center", ncol=2,
+               bbox_to_anchor=(0.5, 1.03), handletextpad=0.3, columnspacing=1.5)
+    fig.tight_layout(rect=(0, 0, 1, 0.92))
+    paths = save_both(fig, out_dir, "poster_sarmae_dynamics")
+    plt.close(fig)
+    return paths
+
+
 # --------------------------------------------------------------------------- main
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -441,6 +521,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     out.mkdir(parents=True, exist_ok=True)
     figure_label_efficiency(grids(validated), out)
     figure_sar_minus_optical(details, out)
+    figure_sarmae_dynamics(validated, details, out)
     numbers = poster_numbers(validated, rerun, details)
     strings = number_strings(numbers)
     (out / "poster_numbers.json").write_text(
@@ -448,7 +529,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         encoding="utf-8", newline="\n",
     )
     write_macros(strings, out / "poster_macros.tex")
-    print(json.dumps({"figures": 2, "numbers": len(numbers), "rerun": rerun}, indent=2))
+    print(json.dumps({"figures": 3, "numbers": len(numbers), "rerun": rerun}, indent=2))
     return 0
 
 

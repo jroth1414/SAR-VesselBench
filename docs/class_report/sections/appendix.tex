@@ -205,6 +205,28 @@ a CNN cell averaged \HevMeanCellHoursCNN{} GPU-hours. The full matrix used
 fraction, so the scarce-label comparisons also require the least
 fine-tuning compute (Fig.~\ref{fig:operating-points}, right).
 
+\paragraph{Why ViT-SAR dips at 28 scenes.}
+The ViT-SAR (SARMAE) decline from 12 to 28 scenes appears on development,
+test, and verified scores alike, so it belongs to the selected checkpoint,
+not to one evaluation set. At both 12 and 28 scenes the run selected its
+first development evaluation (epoch \HevEpochViTSarTen{} and epoch
+\HevEpochViTSarTwentyFive), which falls as the five-epoch warm-up ends.
+Training loss then kept falling while development F1 drifted down:
+precision dropped and recall rose, the signature of overfitting a small
+training set. With a patience of four evaluations, early stopping ended the
+28-scene run after \HevEpochsRunViTSarTwentyFive{} epochs and kept the
+warm-up checkpoint, whose threshold transferred poorly to held-out scenes.
+SatDINO at 28 scenes dipped the same way but recovered just before patience
+ran out and selected epoch \HevEpochViTOpticalTwentyFive. With 56 scenes,
+SARMAE improved until epoch \HevEpochViTSarFifty{} and became the strongest
+ViT cell on the verified set. The post-peak decline is about as large as
+the bigger evaluation-to-evaluation swings of the eight-scene development
+metric, so the stopping decision rests on a noisy signal. The retrained
+cohort repeated the August values for this cell exactly, so the dip is
+reproducible rather than nondeterministic.
+Per-arm learning rates or longer patience may remove it; this study keeps
+one shared recipe.
+
 \paragraph{Qualitative example.}
 \begin{figure}[H]
 \centering

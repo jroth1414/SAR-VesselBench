@@ -230,28 +230,6 @@ def pipeline(slide, x: float, y: float, w: float) -> float:
     return row2 + box_h
 
 
-def protocol(slide, x: float, y: float, w: float, n: dict[str, str]) -> None:
-    steps = [
-        (f"Train {n['cells']} cells.", " A sweep on 8 dev scenes picks each checkpoint and threshold.",
-         RGBColor(0xF2, 0xF2, 0xF2), RGBColor(0x99, 0x99, 0x99)),
-        ("Freeze the cohort.", " Hash-bind every marker and checkpoint.", RGBColor(0xEB, 0xF4, 0xFA), ROLE["sar"]),
-        (f"Score {n['test_scenes']} test scenes once.", " Same thresholds, no retuning.",
-         RGBColor(0xFC, 0xF1, 0xDB), OPTICAL_LINE),
-        (f"Open {n['final_scenes']} verified scenes once.", f" Same thresholds, all {n['cells']} cells.",
-         RGBColor(0xE0, 0xF4, 0xEE), ROLE["imagenet"]),
-    ]
-    step_h, gap = 1.1, 0.55
-    for i, (head, rest, fill, line) in enumerate(steps):
-        sy = y + i * (step_h + gap)
-        node(slide, x + 0.15, sy + 0.25, 0.6, 0.6, [[(str(i + 1), {"bold": True, "color": WHITE})]],
-             fill=NAVY, line=NAVY, shape=MSO_SHAPE.OVAL, name=f"step {i + 1} number")
-        node(slide, x + 1.05, sy, w - 1.2, step_h, [[(head, {"bold": True}), (rest, {})]], fill=fill, line=line,
-             name=f"step {i + 1}", align=PP_ALIGN.LEFT)
-        if i < len(steps) - 1:
-            mid = x + 1.05 + (w - 1.2) / 2
-            arrow(slide, mid, sy + step_h, mid, sy + step_h + gap, name=f"step arrow {i + 1}")
-
-
 # --------------------------------------------------------------------------- poster
 def build(n: dict[str, str]) -> Presentation:
     prs = Presentation()
@@ -306,7 +284,7 @@ def build(n: dict[str, str]) -> Presentation:
           bullet=True),
         P("Input [VH, VV, VH−VV] in dB, 10 m pixels.", bullet=True),
     ], name="data bullets")
-    x, y, w = section(slide, 1, 26.18, "References")
+    x, y, w = section(slide, 1, 26.07, "References")
     refs = [
         "F. S. Paolo et al. xView3-SAR: Detecting dark fishing activity using SAR imagery. NeurIPS 2022.",
         "R. Torres et al. GMES Sentinel-1 mission. Remote Sens. Environ. 2012.",
@@ -318,9 +296,6 @@ def build(n: dict[str, str]) -> Presentation:
         "K. N. Clasen et al. reBEN: Refined BigEarthNet dataset. IGARSS 2025.",
         "X. Zhou, D. Wang, and P. Krähenbühl. Objects as points. arXiv:1904.07850, 2019.",
         "T.-Y. Lin et al. Focal loss for dense object detection. ICCV 2017.",
-        "A. Fuller, K. Millard, and J. R. Green. CROMA: Contrastive radar-optical masked autoencoders. NeurIPS 2023.",
-        "Z. Xiong et al. Neural plasticity-inspired multimodal foundation model for Earth observation (DOFA). "
-        "arXiv:2403.15356, 2024.",
     ]
     text(slide, x, y, w, 34.6 - y, [P((f"[{i}]  ", {"color": CITE, "size": REF_PT}), (ref, {"size": REF_PT}),
                                       space_after=3) for i, ref in enumerate(refs, 1)], name="references")
@@ -346,19 +321,25 @@ def build(n: dict[str, str]) -> Presentation:
             run = cell.text_frame.paragraphs[0].add_run()
             run.text = value
             _font(run, BODY_PT - 3, bold=(c == 0 and r > 0), color=role_colors[r] if c == 0 else INK)
-    text(slide, x, y + 4.7, w, 2.2, [P("Only the initialization changes inside a track (86M vs. 89M parameters). "
-                                      "We compare domains ", B("within"), " an architecture, then check whether the "
-                                      "pattern repeats across the two.")], name="design note")
-    x, y, w = section(slide, 2, 16.07, "One shared point detector")
+    text(slide, x, y + 4.7, w, 1.2, [P("Only the initialization changes inside a track; we compare domains ",
+                                      B("within"), " an architecture.")], name="design note")
+    x, y, w = section(slide, 2, 15.04, "One shared point detector")
     bottom = pipeline(slide, x, y, w)
-    text(slide, x, bottom + 0.35, w, 25.4 - bottom - 0.35, [
+    text(slide, x, bottom + 0.35, w, 26.3 - bottom - 0.35, [
         P("CenterNet-style heatmap ", R(9), " with focal loss ", R(10), "; F1 with 200 m geographic matching.",
           bullet=True),
         P(f"Same optimizer, schedule, crops, data order and seed (0) for every cell. Strict FP32: {n['gpu_hours']} "
           "H100 GPU-hours.", bullet=True),
+        P("8 dev scenes pick each checkpoint and threshold; test and verified scenes are scored ", B("once"),
+          ", with no retuning.", bullet=True),
     ], name="detector bullets")
-    x, y, w = section(slide, 2, 25.63, "Once-only held-out protocol")
-    protocol(slide, x, y, w, n)
+    x, y, w = section(slide, 2, 26.43, "Why SARMAE dips at 28 scenes")
+    _, img_h = picture(slide, GENERATED / "poster_sarmae_dynamics.png", x + 0.1, y, w - 0.2, "figure: SARMAE dynamics")
+    text(slide, x, y + img_h + 0.12, w, 34.6 - (y + img_h + 0.12), [P((
+        f"At 28 scenes SARMAE peaks as warm-up ends, then overfits (training loss {n['sarmae_f25_loss_first']} → "
+        f"{n['sarmae_f25_loss_last']}; dev precision {n['sarmae_f25_dev_precision_first']} → "
+        f"{n['sarmae_f25_dev_precision_last']}). Early stopping keeps the epoch-{n['sarmae_f25_best_epoch']} "
+        "checkpoint.", {"size": FOOT_PT}))], name="SARMAE caption")
 
     # column 3 ----------------------------------------------------------------
     x, y, w = section(slide, 3, 7.33, "Pretraining helps most when labels are scarce")
@@ -423,10 +404,10 @@ def build(n: dict[str, str]) -> Presentation:
     ], name="limits")
     x, y, w = section(slide, 4, 26.02, "Open questions & next steps")
     text(slide, x, y, w, 34.6 - y, [
-        P("How do multi-sensor foundation models such as CROMA ", R(11), " and DOFA ", R(12),
-          " fare against single-source checkpoints?", bullet=True),
+        P("How do geospatial foundation models pretrained jointly on SAR and optical imagery fare against these "
+          "single-source checkpoints?", bullet=True),
         P("Does SAR pretraining help where optical cannot: near shore and for small dark vessels?", bullet=True),
-        P("Why does SARMAE peak at its first evaluation with 28 or fewer scenes?", bullet=True),
+        P("Would per-arm learning rates or longer early-stopping patience remove the small-budget dips?", bullet=True),
         P(B("Next:"), " near-shore training labels, a shoreline input channel, several seeds, and matched pretraining "
           "objectives across sensors.", bullet=True),
     ], name="open questions")
