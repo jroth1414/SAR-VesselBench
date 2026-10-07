@@ -259,6 +259,68 @@ def audit_ground_truth_dataset(
     }
 
 
+PROFILE_SCHEMA = 1
+
+
+def profile_split_labels(
+    *, train_csv: str | Path, splits_json: str | Path, split: str = "train"
+) -> dict[str, object]:
+    """Count one frozen split's labels under the audited contract.
+
+    Unlike the audit, this has no expected counts: it describes the split (for
+    example, how many training positives lie within 2 km of shore) and binds
+    both inputs by SHA-256 so a consumer can tie it to the audit receipt.
+    """
+
+    train_path, splits_path = Path(train_csv), Path(splits_json)
+    train_raw, splits_raw = train_path.read_bytes(), splits_path.read_bytes()
+    scene_ids = _load_splits(splits_raw)[split]
+    wanted = set(scene_ids)
+    counts = _empty_counts()
+    seen: set[str] = set()
+    reader = csv.DictReader(io.StringIO(train_raw.decode("utf-8-sig"), newline=""))
+    missing_columns = REQUIRED_COLUMNS - set(reader.fieldnames or ())
+    if missing_columns:
+        raise ValueError(f"train CSV is missing columns: {sorted(missing_columns)}")
+    for line_number, row in enumerate(reader, start=2):
+        if row["scene_id"] not in wanted:
+            continue
+        try:
+            category = classify_label(row)
+            near_shore = _is_near_shore(row.get("distance_from_shore_km"))
+        except ValueError as error:
+            raise ValueError(f"invalid train CSV label at line {line_number}: {error}") from error
+        seen.add(row["scene_id"])
+        counts["rows"] = int(counts["rows"]) + 1
+        counts[category] = int(counts[category]) + 1
+        if near_shore:
+            near = counts["near_shore"]
+            assert isinstance(near, dict)
+            near["rows"] = int(near["rows"]) + 1
+            near[category] = int(near[category]) + 1
+    missing_scenes = sorted(wanted - seen)
+    if missing_scenes:
+        raise ValueError(f"split {split!r} has scenes with no train CSV rows: {missing_scenes}")
+    return {
+        "profile_schema": PROFILE_SCHEMA,
+        "contract": {
+            "positive": "is_vessel=true and confidence in {HIGH,MEDIUM}",
+            "background": "is_vessel=false and confidence in {HIGH,MEDIUM}",
+            "ignore": "confidence=LOW",
+            "near_shore_km_lte": NEAR_SHORE_KM,
+            "scene_ids_hash_encoding": "canonical-json-array-utf8-v1",
+        },
+        "inputs": {
+            "train_csv": {"name": train_path.name, "bytes": len(train_raw), "sha256": _sha256(train_raw)},
+            "splits_json": {"name": splits_path.name, "bytes": len(splits_raw), "sha256": _sha256(splits_raw)},
+        },
+        split: {
+            "scene_ids_sha256": scene_ids_sha256(scene_ids),
+            **_flat_counts(scene_count=len(scene_ids), counts=counts),
+        },
+    }
+
+
 def audit_ground_truth_scope(
     *,
     train_csv: str | Path,

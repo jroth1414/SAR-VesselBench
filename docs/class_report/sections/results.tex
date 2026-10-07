@@ -154,10 +154,13 @@ which \HevFinalDarkSupport{} are dark and \HevFinalNearShoreSupport{} lie
 within 2\,km of shore. F1 falls to \HevFinalFMin--\HevFinalFMax, on average
 \HevFinalMeanTestGap{} below test F1. Precision stays between
 \HevFinalPrecisionMin{} and \HevFinalPrecisionMax, but recall drops to
-\HevFinalRecallMin--\HevFinalRecallMax. The detectors therefore miss most
-verified vessels rather than over-detect. No cell exceeds
+\HevFinalRecallMin--\HevFinalRecallMax: the detectors miss vessels rather
+than over-detect. No cell exceeds
 \HevFinalNearShoreFMax{} near-shore F1 or \HevFinalDarkRecallMax{}
-dark-vessel recall.
+dark-vessel recall. The training labels explain much of this gap: only
+\HevTrainNearShorePositives{} of the \HevTrainPositives{} training vessels
+(\HevTrainNearShorePct\%) lie within 2\,km of shore, against
+\HevFinalNearShorePct\% of the verified vessels.
 
 The 12-scene pretraining advantage survives this shift: the six gains over
 random range from \HevDeltaFinalTenCNNOptical{} to

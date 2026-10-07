@@ -1,0 +1,34 @@
+{
+  "contract": {
+    "background": "is_vessel=false and confidence in {HIGH,MEDIUM}",
+    "ignore": "confidence=LOW",
+    "near_shore_km_lte": 2.0,
+    "positive": "is_vessel=true and confidence in {HIGH,MEDIUM}",
+    "scene_ids_hash_encoding": "canonical-json-array-utf8-v1"
+  },
+  "inputs": {
+    "splits_json": {
+      "bytes": 5128,
+      "name": "splits.json",
+      "sha256": "0d201003999b6e634bdb3f9cccaedbd391b9d0cdcdb7f9370470d56a5e391db6"
+    },
+    "train_csv": {
+      "bytes": 11134981,
+      "name": "train.csv",
+      "sha256": "42871b3ddf12d2a732d11d07897c21efc6c688c5d1a6c59a90839a5539e15415"
+    }
+  },
+  "profile_schema": 1,
+  "train": {
+    "background": 3079,
+    "ignore": 2412,
+    "near_shore_background": 12,
+    "near_shore_ignore": 19,
+    "near_shore_positive": 27,
+    "near_shore_rows": 58,
+    "positive": 7678,
+    "rows": 13169,
+    "scene_count": 111,
+    "scene_ids_sha256": "d79ea19c6793cc5195f142a34a8fb2e803b547f8c9727b2162b0aed1f936ddef"
+  }
+}

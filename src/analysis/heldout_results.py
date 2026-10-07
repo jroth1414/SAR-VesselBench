@@ -34,6 +34,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from src.analysis.h100_results import expected_cells
+from src.eval.ground_truth_audit import scene_ids_sha256
 from src.eval.heldout_contract import build_test_result, cohort_record
 
 FRACTIONS = (10, 25, 50, 100)
@@ -62,6 +63,7 @@ FINAL_COMPLETE_NAME = "FINAL_EVAL_COMPLETE.json"
 FINAL_RESULT_NAME = "final_verified_metrics.json"
 FINAL_POLICY = "replacement-only-all32-final50-once-v1"
 FINAL_SCENES = 50
+TRAIN_PROFILE_NAME = "TRAIN_LABEL_PROFILE.json"
 
 
 class EvidenceError(RuntimeError):
@@ -305,6 +307,35 @@ def _validate_final_results(
     return results
 
 
+def _validate_train_profile(
+    root: Path, *, audit: Mapping[str, object], train_scene_ids: Sequence[str]
+) -> dict[str, int] | None:
+    """Optional training-label profile; it must bind the audited labels and split."""
+
+    path = root / TRAIN_PROFILE_NAME
+    if not path.is_file():
+        return None
+    profile = _load_json(path, "training label profile")
+    inputs, audited = profile.get("inputs", {}), audit.get("inputs", {})
+    train = profile.get("train", {})
+    if (
+        profile.get("profile_schema") != 1
+        or not isinstance(inputs, Mapping)
+        or not isinstance(train, Mapping)
+        or any(
+            inputs.get(name, {}).get("sha256") != audited.get(name, {}).get("sha256")  # type: ignore[union-attr]
+            for name in ("train_csv", "splits_json")
+        )
+        or train.get("scene_ids_sha256") != scene_ids_sha256(train_scene_ids)
+        or train.get("scene_count") != len(train_scene_ids)
+    ):
+        raise EvidenceError("training label profile does not bind the audited labels and frozen train split")
+    positive, near = train.get("positive"), train.get("near_shore_positive")
+    if not (isinstance(positive, int) and isinstance(near, int) and 0 <= near <= positive and positive > 0):
+        raise EvidenceError("training label profile has invalid positive counts")
+    return {"positive": positive, "near_shore_positive": near}
+
+
 def validate_evidence(
     evidence_root: str | Path,
     *,
@@ -470,11 +501,15 @@ def validate_evidence(
     final_results = _validate_final_results(
         root, cells=cells, cohort_sha256=cohort_sha256, test_results=test_results
     )
+    train_labels = _validate_train_profile(
+        root, audit=audit, train_scene_ids=list(map(str, splits_payload["splits"]["train"]))
+    )
 
     return {
         "cells": cells,
         "test_results": test_results,
         "final_results": final_results,
+        "train_labels": train_labels,
         "gt_counts": gt_counts,
         "campaign": {
             "git_sha": git_sha,
@@ -519,6 +554,8 @@ def _render_final_macros(
     lines.append(f"\\def\\HevFinalPositives{{{_count_macro(int(first['tp'] + first['fn']))}}}")
     lines.append(f"\\def\\HevFinalDarkSupport{{{_count_macro(int(first['dark_support']))}}}")
     lines.append(f"\\def\\HevFinalNearShoreSupport{{{_count_macro(int(first['near_shore_support']))}}}")
+    share = 100.0 * float(first["near_shore_support"]) / float(first["tp"] + first["fn"])
+    lines.append(f"\\def\\HevFinalNearShorePct{{{share:.0f}}}")
     gaps = [float(tests[e]["f1"]) - float(r["f1"]) for e, r in final.items()]
     lines.append(f"\\def\\HevFinalMeanTestGap{{{sum(gaps) / len(gaps):.3f}}}")
     for fragment, key in (("F", "f1"), ("Precision", "precision"), ("Recall", "recall"),
@@ -622,6 +659,15 @@ def render_tex(validated: Mapping[str, object]) -> str:
                 lines.append(f"\\def\\HevHours{name}{{{float(cell['gpu_hours']):.1f}}}")
 
     lines.extend(_render_final_macros(validated, by_key))
+    train_labels = validated.get("train_labels")
+    if train_labels:
+        positive, near = int(train_labels["positive"]), int(train_labels["near_shore_positive"])
+        lines.append(f"\\def\\HevTrainPositives{{{_count_macro(positive)}}}")
+        lines.append(f"\\def\\HevTrainNearShorePositives{{{_count_macro(near)}}}")
+        lines.append(f"\\def\\HevTrainNearShorePct{{{100.0 * near / positive:.1f}}}")
+    else:
+        for name in ("Positives", "NearShorePositives", "NearShorePct"):
+            lines.append(f"\\def\\HevTrain{name}{{\\textemdash}}")
 
     scope_macro = {"dev8": "DevEight", "dev23": "DevFull", "test": "Test"}
     counts: Mapping[str, Mapping[str, int]] = validated["gt_counts"]  # type: ignore[assignment]

@@ -23,6 +23,10 @@ cohort (code `1a82d508`, cohort `9b1ba03e`) remains in git history.
   hash-bound by `FINAL_EVAL_COMPLETE.json`.
 - `<exp_id>/runtime_provenance.json` — sanitized copy (private cluster paths
   replaced; `REDACTIONS.json` records each original SHA-256).
+- `TRAIN_LABEL_PROFILE.json` — label counts for the frozen 111-scene training
+  split (7,678 positives, 27 within 2 km of shore), written by
+  `python -m scripts.profile_train_labels`. It must bind the same `train.csv`
+  and `splits.json` SHA-256 as the audit receipt.
 
 Checkpoint bytes stay outside the repository; their SHA-256 bindings are
 published so the operator archive can re-verify them.

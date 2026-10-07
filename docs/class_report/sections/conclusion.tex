@@ -26,16 +26,15 @@ each cell's development-bound threshold without retuning.
 The human-verified set exposes the main open problem. Every detector loses
 about \HevFinalMeanTestGap{} F1 against test, and no cell exceeds
 \HevFinalDarkRecallMax{} dark-vessel recall or \HevFinalNearShoreFMax{}
-near-shore F1. The training subsets are not restricted to near-shore scenes,
-so this result measures coastal generalization under different clutter.
+near-shore F1. Only \HevTrainNearShorePct\% of training vessels lie near
+shore, against \HevFinalNearShorePct\% of verified ones, so the gap reflects
+the training labels as much as coastal clutter.
 \else
 The 50 human-verified scenes remain sealed, so dark-vessel recall and
 near-shore performance are not yet measured.
 \fi
 
-Each cell uses one seed, selection uses eight scenes, and the ViT optical
-and SAR checkpoints differ in objective and corpus. The results compare
-released checkpoints under one recipe; they do not identify a universal
-causal effect of pretraining domain. Future work should add seeds,
-near-shore training scenes, a geographically independent test cohort, and
-checkpoints with matched pretraining objectives.
+Each cell uses one seed and eight selection scenes, and the ViT checkpoints
+differ in objective and corpus, so the results compare released checkpoints
+rather than a causal domain effect. Future work should add seeds,
+near-shore labels, an independent test region, and matched objectives.
