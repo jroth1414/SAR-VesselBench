@@ -269,12 +269,14 @@ def build(n: dict[str, str]) -> Presentation:
         P(B("Dark vessels"), " send no AIS, yet radar ", R(2), " still sees them. Human-checked labels are scarce: "
           "which pretraining stretches them?"),
     ], name="motivation")
-    x, y, w = section(slide, 1, 15.25, "Data: xView3-SAR [1]")
-    scene_w = 0.6 * w
-    _, scene_h = picture(slide, GENERATED / "poster_scene_context.png", x + (w - scene_w) / 2, y, scene_w,
+    # Positions below follow the owner's final hand layout (poster_v2.pptx).
+    x, y, w = section(slide, 1, 14.5, "Data: xView3-SAR [1]")
+    scene_w = 0.95 * w
+    _, scene_h = picture(slide, GENERATED / "poster_scene_context.png", x + (w - scene_w) / 2, y + 0.15, scene_w,
                          "figure: scene and chip")
-    _, map_h = picture(slide, GENERATED / "poster_scene_map.png", x, y + scene_h + 0.15, w, "figure: scene map")
-    top = y + scene_h + map_h + 0.4
+    map_y = y + 0.15 + scene_h + 0.11
+    _, map_h = picture(slide, GENERATED / "poster_scene_map.png", x, map_y, w, "figure: scene map")
+    top = map_y + map_h + 0.15
     text(slide, x, top, w, 26.8 - top, [
         P(B("Machine-made labels"), " (AIS + automated detection) for train, dev and test; they miss vessels.",
           bullet=True),
@@ -292,14 +294,16 @@ def build(n: dict[str, str]) -> Presentation:
     # column 2 ----------------------------------------------------------------
     x, y, w = section(slide, 2, 7.32, f"8 arms × 4 budgets = {n['cells']} cells")
     rows = [("Role", "ViT-B/16 [3]", "ConvNeXt V2 [4]"),
-            ("Random", "fresh init", "fresh init"),
+            ("Random", "random init", "random init"),
             ("Optical", "SatDINO [6] (fMoW-RGB)", "BigEarthNet-S2 [8]"),
             ("SAR", "SARMAE [7] (SAR-1M)", "BigEarthNet-S1 [8]"),
             ("ImageNet", "AugReg [5]", "FCMAE [4]")]
     role_colors = [INK, ROLE["floor"], ROLE["optical"], ROLE["sar"], ROLE["imagenet"]]
-    table = slide.shapes.add_table(len(rows), 3, Inches(x), Inches(y), Inches(w), Inches(4.4)).table
-    table.columns[0].width, table.columns[1].width = Inches(2.25), Inches(3.3)
-    table.columns[2].width = Inches(w - 5.55)
+    # The owner scaled the table up to the column's full width (poster_v2.pptx).
+    table_w = w + 0.56
+    table = slide.shapes.add_table(len(rows), 3, Inches(x), Inches(y), Inches(table_w), Inches(4.4)).table
+    table.columns[0].width, table.columns[1].width = Inches(2.39), Inches(3.5)
+    table.columns[2].width = Inches(table_w - 5.89)
     table._tbl.tblPr.set("firstRow", "0")
     table._tbl.tblPr.set("bandRow", "0")
     for r, row in enumerate(rows):
@@ -310,7 +314,8 @@ def build(n: dict[str, str]) -> Presentation:
             run = cell.text_frame.paragraphs[0].add_run()
             run.text = value
             _font(run, BODY_PT - 3, bold=(c == 0 and r > 0), color=role_colors[r] if c == 0 else INK)
-    picture(slide, GENERATED / "poster_budget_waffle.png", x, y + 4.75, w, "figure: nested budgets")
+    # The owner widened the waffle to span the column's full width.
+    picture(slide, GENERATED / "poster_budget_waffle.png", x - 0.48, y + 4.48, w + 1.46, "figure: nested budgets")
     x, y, w = section(slide, 2, 16.31, "One shared point detector")
     bottom = pipeline(slide, x, y, w)
     text(slide, x, bottom + 0.35, w, 24.7 - bottom - 0.35, [
@@ -378,22 +383,26 @@ def build(n: dict[str, str]) -> Presentation:
         P(B("No detector works near shore:"), f" recall ≤ {n['final_near_shore_recall_max']} within 2 km in every "
           "cell.", numbered=True, start_at=3),
     ], name="findings 3-4")
-    x, y, w = section(slide, 4, 18.6, "Inside the detector")
+    x, y, w = section(slide, 4, 17.57, "Inside the detector")
     _, img_h = picture(slide, GENERATED / "poster_detector_heatmaps.png", x, y, w, "figure: detector heatmaps")
     text(slide, x, y + img_h + 0.1, w, 0.7, [P((
         f"Best cell, same two crops: peak {n['heatmap_peak_offshore']} offshore, {n['heatmap_peak_near_shore']} in "
         "the harbor.", {"size": FOOT_PT}))], name="heatmap caption")
-    x, y, w = section(slide, 4, 27.32, "Limits")
-    text(slide, x, y, w, 31.2 - y, [
+    x, y, w = section(slide, 4, 25.71, "Limits")
+    text(slide, x, y, w, 30.3 - y, [
         P("One seed per cell; 8 dev scenes for selection.", bullet=True),
         P("Machine-made test labels; in-region test scenes.", bullet=True),
         P("Checkpoints also differ in objective and data.", bullet=True),
+        P("In-region test: Sentinel-1 revisits put some test scenes near training scenes, so test F1 measures "
+          "in-region generalization, not generalization to new regions.", bullet=True),
     ], name="limits")
-    x, y, w = section(slide, 4, 31.36, "Open questions & next steps")
+    x, y, w = section(slide, 4, 30.41, "Open questions & next steps")
     text(slide, x, y, w, 34.6 - y, [
         P("Would joint SAR + optical foundation models win?", bullet=True),
         P("Does SAR trail ImageNet with matched pretraining?", bullet=True),
-        P(B("Next:"), " near-shore labels, shoreline input, seeds.", bullet=True),
+        P(B("Next: make detectors work near shore"), f" (recall ≤ {n['final_near_shore_recall_max']} within 2 km): "
+          "train on human-labeled near-shore vessels, add a distance-to-shore input, and set shore-aware "
+          "thresholds.", bullet=True),
     ], name="open questions")
     return prs
 

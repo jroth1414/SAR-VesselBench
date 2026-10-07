@@ -25,7 +25,9 @@ longer printed are still described below; use them as talking points.
 | Label-efficiency chart | ★ YOLO26 reference; LocateAnything-3B in the caption | 4, "Reference detectors" |
 | Findings | 4 items; the win/tie/loss scoreboard replaces old findings 2 and 5 | 5, "Scoreboard" |
 | Inside the detector | New block: the best cell's heatmaps on the two crops | 5, "Inside the detector" |
-| Limits, Open questions | One line each (3 + 3); the longer v1 wording below is background | 5 |
+| Arms table | "fresh init" now reads "random init" | 3 |
+| Limits | Three one-liners plus the full "In-region test" bullet | 5, "Limits" |
+| Open questions | Two one-line questions plus an explicit near-shore Next step (advisor feedback) | 5, "Open questions & next steps" |
 
 ---
 
@@ -292,7 +294,7 @@ map and the waffle carry it.
 
 | Role | ViT-B/16 track | ConvNeXt-V2-Base track |
 |---|---|---|
-| Random | fresh initialization | fresh initialization |
+| Random | random initialization (printed "random init"; seeded, no pretrained weights) | random initialization |
 | Optical | SatDINO [6]: self-supervised DINO on fMoW-RGB (satellite RGB) | BigEarthNet-S2 [8]: supervised 19-class land cover on Sentinel-2 (10 bands) |
 | SAR | SARMAE [7]: masked autoencoder on SAR-1M | BigEarthNet-S1 [8]: supervised 19-class land cover on Sentinel-1 (VV, VH) |
 | ImageNet | AugReg [5]: supervised ImageNet-1k | FCMAE [4]: self-supervised FCMAE, then supervised ImageNet-1k fine-tune |
@@ -538,7 +540,11 @@ chips holding 244 vessels; "ship" 0.047, "vessel" 0.016.
 ### References
 
 Ten references in two columns; `references.pdf` is the printable copy with
-full titles and page ranges.
+full titles and page ranges. All ten were checked on 2026-10-07 against the
+publisher, Crossref, the CVF/NeurIPS proceedings or arXiv: titles, venues,
+years and page ranges match. SatDINO [6] is arXiv-only (no conference
+version). The SARMAE and SatDINO weights we used are the ones the authors'
+own GitHub READMEs link.
 
 | # | Reference | Cited for |
 |---|---|---|
@@ -668,10 +674,21 @@ the harbor.
 
 ### Limits
 
-**v2 printed limits:** "One seed per cell; 8 dev scenes for selection.",
-"Machine-made test labels; in-region test scenes.", "Checkpoints also differ
-in objective and data." The v1 versions below give the detail, and the
-SARMAE overfitting story (v1 item 3) is now talk-only.
+**v2 printed limits (four bullets):** "One seed per cell; 8 dev scenes for
+selection.", "Machine-made test labels; in-region test scenes.",
+"Checkpoints also differ in objective and data.", and the full in-region
+bullet: "In-region test: Sentinel-1 revisits put some test scenes near
+training scenes, so test F1 measures in-region generalization, not
+generalization to new regions."
+- **Say (on the in-region bullet):** "The satellite revisits the same
+  places, so some test scenes sit near training scenes; the map shows it. Our
+  test numbers are in-region, not a new-region test."
+- **If asked "So are the test numbers inflated?"** For absolute F1, probably
+  somewhat. For the comparison between initializations it matters less:
+  every arm sees the same splits.
+
+The v1 versions below give the detail; the SARMAE overfitting story (v1
+item 3) is talk-only.
 
 1. **One seed per cell; 8 dev scenes pick checkpoints and thresholds.**
    Single seed because 32 full fine-tunes cost 567.6 GPU-hours. The rerun
@@ -698,9 +715,39 @@ SARMAE overfitting story (v1 item 3) is now talk-only.
 ### Open questions & next steps
 
 **v2 printed lines:** "Would joint SAR + optical foundation models win?",
-"Does SAR trail ImageNet with matched pretraining?", "Next: near-shore
-labels, shoreline input, seeds." The v1 detail follows; the "where optical
-can't help" question (v1 item 3) is now talk-only.
+"Does SAR trail ImageNet with matched pretraining?", and
+
+> **Next: make detectors work near shore** (recall ≤ 0.021 within 2 km):
+> train on human-labeled near-shore vessels, add a distance-to-shore input,
+> and set shore-aware thresholds.
+
+The Next line was rewritten after advisor feedback asking for "better
+handling of shoreline" to be stated explicitly. It names the goal, the
+number that motivates it, and three concrete fixes.
+- **Say:** "Our clearest next step is the coast. Recall within 2 km is at
+  most 2% in every model. We'd fix it three ways: add human-labeled
+  near-shore vessels to training, give the model a distance-to-shore input,
+  and pick separate thresholds near shore."
+- **Why each fix (if asked):**
+  1. **Labels:** training has 27 vessels within 2 km of shore (0.4%), against
+     31% of verified vessels. The model learned "no vessels near land", which
+     the heatmap shows (peak 0.001 in the harbor). Without near-shore labels,
+     nothing else helps.
+  2. **Distance-to-shore input:** lets the model tell "bright spot on land"
+     from "bright spot on water next to land" (details below).
+  3. **Shore-aware thresholds:** one threshold is picked on 8 dev scenes,
+     mostly offshore. Near-shore scores, once the model produces them, are
+     likely lower and noisier, so a separate threshold (or a recalibration by
+     distance bin) would keep offshore precision while recovering near-shore
+     recall.
+- **If asked "Why not just lower the threshold now?"** Confidence near shore
+  is about 0.001, against a threshold of 0.896; no threshold recovers
+  vessels the model doesn't score at all. Labels come first.
+- **Seeds:** "Several seeds" moved off this line; Limits already states "one
+  seed per cell", and it's still a next step to mention.
+
+The v1 detail follows; the "where optical can't help" question (v1 item 3)
+is talk-only.
 
 1. **Geospatial foundation models pretrained jointly on SAR and optical:**
    do they beat these single-source checkpoints? Multi-sensor pretraining is
