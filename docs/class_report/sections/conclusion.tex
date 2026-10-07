@@ -12,12 +12,7 @@ three-channel stem turned the ten-band BigEarthNet-S2 checkpoint from no
 gain into a gain at every budget, so cross-sensor studies should report the
 adapter rule.
 
-\ifHevTestComplete
-The failed monotonicity gate and rerun variation of up to 0.043 test F1
-limit these conclusions. The grid is a set of descriptive seed-0 point
-estimates, not evidence that performance improves monotonically with more
-labels.
-\else
+\ifHevTestComplete\else
 The frozen 16-scene test split remains the next held-out stage. It will use
 each cell's development-bound threshold without retuning.
 \fi
@@ -34,7 +29,9 @@ The 50 human-verified scenes remain sealed, so dark-vessel recall and
 near-shore performance are not yet measured.
 \fi
 
-Each cell uses one seed and eight selection scenes, and the ViT checkpoints
-differ in objective and corpus, so the results compare released checkpoints
-rather than a causal domain effect. Future work should add seeds,
+Each cell uses one seed and eight selection scenes\ifHevTestComplete, the
+monotonicity gate failed, and retraining unchanged cells moved test F1 by up
+to 0.043\fi. The grid gives descriptive seed-0 point estimates, and the ViT
+checkpoints differ in objective and corpus, so the results compare released
+checkpoints rather than a causal domain effect. Future work should add seeds,
 near-shore labels, an independent test region, and matched objectives.

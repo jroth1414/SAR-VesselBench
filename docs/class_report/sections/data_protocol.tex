@@ -20,6 +20,10 @@ supply the normalization statistics. The pipeline cuts overlapping
 800-pixel chips, then samples shared 512-pixel crops during optimization.
 
 \paragraph{Ground-truth contract.}
+The train, development, and test labels are machine-made (CFAR detection, a
+convolutional filter, and AIS matching~\cite{paolo2022xview3}). They miss
+vessels, so test F1 measures agreement with them, not complete ground truth.
+Only the 50 verified scenes have human-reviewed labels.
 Training and evaluation use the same label rules
 (Fig.~\ref{fig:gt-contract}, Appendix~\ref{app:figures}). A row defines a
 positive vessel point only when \texttt{is\_vessel} is true at HIGH or MEDIUM
