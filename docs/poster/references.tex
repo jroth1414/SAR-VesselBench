@@ -1,0 +1,48 @@
+% Reference handout for the AIPR 2026 poster (the poster cites [n] only).
+% Build from this directory:  tectonic -X compile references.tex
+\documentclass[11pt]{article}
+\usepackage[letterpaper,margin=1in]{geometry}
+\usepackage{fontspec}
+\setsansfont{texgyreheros}[Extension=.otf, UprightFont=*-regular, BoldFont=*-bold,
+  ItalicFont=*-italic, BoldItalicFont=*-bolditalic]
+\renewcommand{\familydefault}{\sfdefault}
+\usepackage{enumitem,xcolor}
+\definecolor{navy}{HTML}{14213D}
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+\frenchspacing
+
+\begin{document}
+\raggedright
+{\color{navy}\Large\bfseries Label-Efficient Dark-Vessel Detection in SAR\par}
+\vspace{2pt}
+{\large Does SAR-Domain Pretraining Outperform Optical and ImageNet Transfer
+Across ViT and CNN?\par}
+\vspace{6pt}
+John Roth, Kyle Wagner, Liv d'Aliberti \quad$\cdot$\quad Johns Hopkins University
+\quad$\cdot$\quad AIPR 2026\par
+\vspace{14pt}
+{\color{navy}\large\bfseries References\par}
+\vspace{4pt}
+\begin{enumerate}[label={[\arabic*]},leftmargin=2.4em,labelsep=0.6em,itemsep=4pt]
+  \item F.~S. Paolo et al. xView3-SAR: Detecting dark fishing activity using
+    synthetic aperture radar imagery. \emph{NeurIPS}, 35:37604--37616, 2022.
+  \item R. Torres et al. GMES Sentinel-1 mission. \emph{Remote Sensing of
+    Environment}, 120:9--24, 2012.
+  \item A. Dosovitskiy et al. An image is worth 16$\times$16 words:
+    Transformers for image recognition at scale. \emph{ICLR}, 2021.
+  \item S. Woo et al. ConvNeXt V2: Co-designing and scaling ConvNets with
+    masked autoencoders. \emph{CVPR}, 16133--16142, 2023.
+  \item A. Steiner et al. How to train your ViT? Data, augmentation, and
+    regularization in vision transformers. \emph{TMLR}, 2022.
+  \item J. Straka and I. Gruber. SatDINO: A deep dive into self-supervised
+    pretraining for remote sensing. arXiv:2508.21402, 2025.
+  \item D. Liu et al. SARMAE: Masked autoencoder for SAR representation
+    learning. \emph{CVPR}, 6496--6507, 2026.
+  \item K.~N. Clasen et al. reBEN: Refined BigEarthNet dataset for remote
+    sensing image analysis. \emph{IGARSS}, 1264--1268, 2025.
+  \item X. Zhou, D. Wang, and P. Kr\"ahenb\"uhl. Objects as points.
+    arXiv:1904.07850, 2019.
+  \item T.-Y. Lin et al. Focal loss for dense object detection. \emph{ICCV}, 2980--2988, 2017.
+\end{enumerate}
+\end{document}

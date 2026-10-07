@@ -142,10 +142,7 @@
 }
 \block{Data: xView3-SAR \refn{1}}{
   \centering
-  \includegraphics[width=0.84\linewidth]{poster_detection_examples.pdf}\par
-  \vspace{2mm}{\small Best cell (\PNBestCellLabel) on two
-  8 $\times$ 8\,km verified crops: offshore it finds almost every vessel;
-  in this harbor, none.\par}
+  \includegraphics[width=\linewidth]{poster_scene_context.pdf}\par
   \vspace{4mm}\raggedright
   \begin{itemize}
     \item 150 frozen study scenes: \textbf{111 train, 23 dev, 16 test}.
@@ -159,20 +156,13 @@
       \PNFinalNearShore{} within 2\,km of shore.
   \end{itemize}
 }
-\block{References}{
-  \footnotesize
-  \begin{enumerate}[label={[\arabic*]},leftmargin=2.3em,labelsep=0.4em,itemsep=0.1em,topsep=0pt]
-    \item F.~S. Paolo et al. xView3-SAR: Detecting dark fishing activity using SAR imagery. NeurIPS 2022.
-    \item R. Torres et al. GMES Sentinel-1 mission. Remote Sens.\ Environ.\ 2012.
-    \item A. Dosovitskiy et al. An image is worth 16$\times$16 words. ICLR 2021.
-    \item S. Woo et al. ConvNeXt V2: Co-designing and scaling ConvNets with masked autoencoders. CVPR 2023.
-    \item A. Steiner et al. How to train your ViT? TMLR 2022.
-    \item J. Straka and I. Gruber. SatDINO: Self-supervised pretraining for remote sensing. arXiv:2508.21402, 2025.
-    \item D. Liu et al. SARMAE: Masked autoencoder for SAR representation learning. CVPR 2026.
-    \item K.~N. Clasen et al. reBEN: Refined BigEarthNet dataset. IGARSS 2025.
-    \item X. Zhou, D. Wang, and P. Kr\"ahenb\"uhl. Objects as points. arXiv:1904.07850, 2019.
-    \item T.-Y. Lin et al. Focal loss for dense object detection. ICCV 2017.
-  \end{enumerate}
+% References [n] are printed separately: see references.tex.
+\block{What the best detector finds}{
+  \centering
+  \includegraphics[width=\linewidth]{poster_detection_examples.pdf}\par
+  \vspace{2mm}{\small Best cell (\PNBestCellLabel) on two
+  8 $\times$ 8\,km verified crops (VH, dB): offshore it finds almost every
+  vessel; in this harbor, none.\par}
 }
 % =====================================================================
 \column{0.22}
@@ -196,15 +186,15 @@
   \input{figures/detector_pipeline.tex}\par
   \vspace{5mm}\raggedright
   \begin{itemize}
-    \item CenterNet-style heatmap \refn{9} with focal loss \refn{10}; F1
-      with 200\,m geographic matching.
-    \item Same optimizer, schedule, crops, data order and seed (0) for
-      every cell. Strict FP32: \PNGpuHours{} H100 GPU-hours.
+    \item CenterNet-style heatmap \refn{9} with focal loss \refn{10};
+      strict FP32, \PNGpuHours{} H100 GPU-hours.
+    \item Same optimizer, schedule, data order and seed (0) in every cell.
     \item 8 dev scenes pick each checkpoint and threshold; test and verified
-      scenes are scored \textbf{once}, with no retuning.
+      scenes are scored \textbf{once}.
   \end{itemize}
 }
-\block{Recall falls toward the coast}{
+% The offsets lift this last block of the column to halve the gap above it.
+\block[titleoffsety=14mm,bodyoffsety=14mm]{Recall falls toward the coast}{
   \centering
   \includegraphics[width=\linewidth]{poster_recall_by_distance.pdf}\par
   \vspace{4mm}\raggedright

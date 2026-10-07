@@ -187,15 +187,19 @@ def figure_recall_by_distance(train_counts, verified_counts, rescored, best_key,
     from src.analysis.poster_figures import GRID, INK, save_both
 
     x = np.arange(len(BIN_LABELS))
-    fig, (top, bottom) = plt.subplots(2, 1, figsize=(9.6, 6.6), sharex=True,
-                                      gridspec_kw={"height_ratios": [1, 1.2]})
+    fig, (top, bottom) = plt.subplots(2, 1, figsize=(9.6, 8.3), sharex=True,
+                                      gridspec_kw={"height_ratios": [1, 1.1]})
     top.bar(x - 0.2, 100 * train_counts / train_counts.sum(), width=0.38, color="#9AA3B2",
-            label="training labels (automated)")
+            label="training (machine)")
     top.bar(x + 0.2, 100 * verified_counts / verified_counts.sum(), width=0.38, color="#14213D",
-            label="verified labels (human)")
+            label="verified (human)")
+    top.set_ylim(0, 100)
+    top.set_yticks([0, 50, 100])
     top.set_ylabel("% of vessels")
-    top.set_title("Where the vessels are", color=INK)
-    top.legend(loc="upper left", fontsize=style["legend"])
+    # One legend row between the title and the bars, outside the data area.
+    top.set_title("Where the vessels are", color=INK, pad=58)
+    top.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=2, fontsize=style["legend"],
+               frameon=False, handlelength=1.2, columnspacing=1.6, borderaxespad=0.2)
     recalls = np.array([h / np.maximum(t, 1) for h, t in rescored["bins"].values()])
     bottom.fill_between(x, recalls.min(axis=0), recalls.max(axis=0), color=GRID, label="range, all 32 cells")
     hit, total = rescored["bins"][best_key]

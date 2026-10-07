@@ -46,7 +46,7 @@ ROLE = {
 OPTICAL_LINE = RGBColor(0xC4, 0x87, 0x00)
 
 # Matched to the PDF (body ~29.9 pt, headings 42.8 pt, captions 20.7 pt).
-BODY_PT, SMALL_PT, FOOT_PT, REF_PT, HEAD_PT = 29, 22, 20, 17, 42
+BODY_PT, SMALL_PT, FOOT_PT, HEAD_PT = 29, 22, 20, 42
 
 # Grid measured from poster.pdf: column (x, width) and section title tops.
 COLUMNS = {1: (0.86, 9.63), 2: (11.20, 9.63), 3: (21.53, 15.27), 4: (37.51, 9.63)}
@@ -272,13 +272,8 @@ def build(n: dict[str, str]) -> Presentation:
           "helps most, and does the answer depend on the backbone?", bullet=True),
     ], name="motivation")
     x, y, w = section(slide, 1, 14.60, "Data: xView3-SAR [1]")
-    img_w = 0.84 * w
-    _, img_h = picture(slide, GENERATED / "poster_detection_examples.png", x + (w - img_w) / 2, y, img_w,
-                       "figure: detection examples")
-    text(slide, x, y + img_h + 0.1, w, 0.8, [P((f"Best cell ({n['best_cell_label']}) on two 8 × 8 km verified crops: "
-                                               "offshore it finds almost every vessel; in this harbor, none.",
-                                               {"size": FOOT_PT}), align=PP_ALIGN.CENTER)], name="detection caption")
-    text(slide, x, y + img_h + 1.05, w, 28.0 - (y + img_h + 1.05), [
+    _, img_h = picture(slide, GENERATED / "poster_scene_context.png", x, y, w, "figure: scene and chip")
+    text(slide, x, y + img_h + 0.3, w, 26.3 - (y + img_h + 0.3), [
         P("150 frozen study scenes: ", B("111 train, 23 dev, 16 test"), ". Nested budgets: ",
           B("12 ⊂ 28 ⊂ 56 ⊂ 111"), " training scenes.", bullet=True),
         P(B("Train, dev and test labels are machine-made:"), " AIS matching plus automated detection ", R(1),
@@ -287,21 +282,12 @@ def build(n: dict[str, str]) -> Presentation:
           f"{n['final_vessels']} vessels, {n['final_dark']} dark, {n['final_near_shore']} within 2 km of shore.",
           bullet=True),
     ], name="data bullets")
-    x, y, w = section(slide, 1, 28.10, "References")
-    refs = [
-        "F. S. Paolo et al. xView3-SAR: Detecting dark fishing activity using SAR imagery. NeurIPS 2022.",
-        "R. Torres et al. GMES Sentinel-1 mission. Remote Sens. Environ. 2012.",
-        "A. Dosovitskiy et al. An image is worth 16×16 words. ICLR 2021.",
-        "S. Woo et al. ConvNeXt V2: Co-designing and scaling ConvNets with masked autoencoders. CVPR 2023.",
-        "A. Steiner et al. How to train your ViT? TMLR 2022.",
-        "J. Straka and I. Gruber. SatDINO: Self-supervised pretraining for remote sensing. arXiv:2508.21402, 2025.",
-        "D. Liu et al. SARMAE: Masked autoencoder for SAR representation learning. CVPR 2026.",
-        "K. N. Clasen et al. reBEN: Refined BigEarthNet dataset. IGARSS 2025.",
-        "X. Zhou, D. Wang, and P. Krähenbühl. Objects as points. arXiv:1904.07850, 2019.",
-        "T.-Y. Lin et al. Focal loss for dense object detection. ICCV 2017.",
-    ]
-    text(slide, x, y, w, 34.6 - y, [P((f"[{i}]  ", {"color": CITE, "size": REF_PT}), (ref, {"size": REF_PT}),
-                                      space_after=3) for i, ref in enumerate(refs, 1)], name="references")
+    # References [n] are printed separately (references.tex); their slot shows the detection crops.
+    x, y, w = section(slide, 1, 26.46, "What the best detector finds")
+    _, img_h = picture(slide, GENERATED / "poster_detection_examples.png", x, y, w, "figure: detection examples")
+    text(slide, x, y + img_h + 0.1, w, 0.8, [P((f"Best cell ({n['best_cell_label']}) on two 8 × 8 km verified crops "
+                                               "(VH, dB): offshore it finds almost every vessel; in this harbor, none.",
+                                               {"size": FOOT_PT}), align=PP_ALIGN.CENTER)], name="detection caption")
 
     # column 2 ----------------------------------------------------------------
     x, y, w = section(slide, 2, 7.32, f"8 arms × 4 budgets = {n['cells']} cells")
@@ -328,15 +314,14 @@ def build(n: dict[str, str]) -> Presentation:
                                       B("within"), " an architecture.")], name="design note")
     x, y, w = section(slide, 2, 15.04, "One shared point detector")
     bottom = pipeline(slide, x, y, w)
-    text(slide, x, bottom + 0.35, w, 26.3 - bottom - 0.35, [
-        P("CenterNet-style heatmap ", R(9), " with focal loss ", R(10), "; F1 with 200 m geographic matching.",
-          bullet=True),
-        P(f"Same optimizer, schedule, crops, data order and seed (0) for every cell. Strict FP32: {n['gpu_hours']} "
+    text(slide, x, bottom + 0.35, w, 24.7 - bottom - 0.35, [
+        P("CenterNet-style heatmap ", R(9), " with focal loss ", R(10), f"; strict FP32, {n['gpu_hours']} "
           "H100 GPU-hours.", bullet=True),
-        P("8 dev scenes pick each checkpoint and threshold; test and verified scenes are scored ", B("once"),
-          ", with no retuning.", bullet=True),
+        P("Same optimizer, schedule, data order and seed (0) in every cell.", bullet=True),
+        P("8 dev scenes pick each checkpoint and threshold; test and verified scenes are scored ", B("once"), ".",
+          bullet=True),
     ], name="detector bullets")
-    x, y, w = section(slide, 2, 26.40, "Recall falls toward the coast")
+    x, y, w = section(slide, 2, 24.79, "Recall falls toward the coast")
     _, img_h = picture(slide, GENERATED / "poster_recall_by_distance.png", x + 0.1, y, w - 0.2,
                        "figure: recall by distance to shore")
     text(slide, x, y + img_h + 0.12, w, 34.6 - (y + img_h + 0.12), [P((

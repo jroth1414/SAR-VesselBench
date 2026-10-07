@@ -24,7 +24,8 @@ Usage:
   python -m src.analysis.poster_figures --output-dir docs/poster/generated \
       [--rerun-reference <August evidence tree>] \
       [--train-labels train.csv --verified-labels validation.csv \
-       --verified-imagery <validation archives> --imagery-cache <dir>]
+       --verified-imagery <validation archives> --imagery-cache <dir>] \
+      [--context-scene <xView3 GRD dir>/835f7629c3a3a9abt]
 """
 
 from __future__ import annotations
@@ -501,6 +502,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--verified-labels", type=Path, help="xView3 validation.csv behind the 50 verified scenes")
     parser.add_argument("--verified-imagery", type=Path, help="directory of <scene>.tar.gz validation archives")
     parser.add_argument("--imagery-cache", type=Path, help="where extracted VH rasters are kept between runs")
+    parser.add_argument("--context-scene", type=Path,
+                        help="xView3 scene directory with VH_dB.tif for the scene-and-chip figure (poster_scene)")
     args = parser.parse_args(argv)
     coastal_inputs = (args.train_labels, args.verified_labels, args.verified_imagery)
     if any(coastal_inputs) and not all(coastal_inputs):
@@ -530,6 +533,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.train_labels is not None:
         coastal, best_key = _coastal(args, validated, details, kwargs)
         figures += 2
+    if args.context_scene is not None:
+        import tempfile
+
+        from src.analysis.poster_scene import figure_scene_context
+
+        figure_scene_context(args.context_scene, args.imagery_cache or Path(tempfile.gettempdir()) / "xview3-vh-cache",
+                             out)
+        figures += 1
     numbers = poster_numbers(validated, rerun, details, coastal)
     strings = number_strings(numbers)
     (out / "poster_numbers.json").write_text(
