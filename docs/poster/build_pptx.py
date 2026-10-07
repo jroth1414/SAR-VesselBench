@@ -2,8 +2,8 @@
 
 The slide mirrors poster.tex: the same header, answer strip, four-column grid
 (positions measured from the tikzposter PDF), section order, wording and
-footer. Text, the detector pipeline and the protocol steps are native,
-editable shapes; the two result figures are the 300-dpi PNGs that
+footer. Text, the detector pipeline and the stat tiles are native,
+editable shapes; the four figures are the 300-dpi PNGs that
 ``src.analysis.poster_figures`` writes beside the PDF versions. Every number
 comes from ``generated/poster_numbers.json``; none is typed here.
 
@@ -27,7 +27,6 @@ from pptx.util import Inches, Pt
 
 HERE = Path(__file__).resolve().parent
 GENERATED = HERE / "generated"
-STATIC = HERE.parent / "class_report" / "figures" / "static"
 OUT = HERE / "poster.pptx"
 
 FONT = "Arial"  # metric-compatible with the PDF's Helvetica-class TeX Gyre Heros
@@ -248,10 +247,11 @@ def build(n: dict[str, str]) -> Presentation:
     text(slide, 1.0, 3.85, 46.0, 0.6, [P(("Johns Hopkins University", {"size": 34, "color": WHITE}),
                                          align=PP_ALIGN.CENTER)], name="affiliation")
     rect(slide, 0.86, 5.70, 46.27, 1.04, ANSWER_BG, "answer strip")
-    text(slide, 1.1, 5.70, 45.8, 1.04, [P(B("Short answer: not consistently. ", size=34),
-        ("With 12 labeled scenes every pretrained encoder beats random initialization, but SAR pretraining beats "
-         "optical only for the CNN, and only while labels are scarce.", {"size": 34}), align=PP_ALIGN.CENTER,
-        space_after=0)], name="answer", anchor=MSO_ANCHOR.MIDDLE)
+    text(slide, 1.1, 5.70, 45.8, 1.04, [P(B("Answer: no. ", size=34),
+        (f"SAR pretraining beats optical in {n['sar_vs_optical_sar_wins']} of {n['sar_vs_optical_comparisons']} "
+         f"comparisons and ImageNet in {n['sar_vs_imagenet_sar_wins']} of {n['sar_vs_imagenet_comparisons']} "
+         f"(ImageNet wins {n['sar_vs_imagenet_rival_wins']}); its clearest edge is the CNN with 12–28 labeled "
+         "scenes.", {"size": 34}), align=PP_ALIGN.CENTER, space_after=0)], name="answer", anchor=MSO_ANCHOR.MIDDLE)
     rect(slide, 0, 34.85, 48, 1.15, NAVY, "footer bar")
     footer = {"size": 30, "color": WHITE}
     text(slide, 0.9, 34.85, 14, 1.15, [P(("Johns Hopkins University", footer), space_after=0)],
@@ -272,19 +272,22 @@ def build(n: dict[str, str]) -> Presentation:
           "helps most, and does the answer depend on the backbone?", bullet=True),
     ], name="motivation")
     x, y, w = section(slide, 1, 14.60, "Data: xView3-SAR [1]")
-    img_w = 0.82 * w
-    _, img_h = picture(slide, STATIC / "scene_context.png", x + (w - img_w) / 2, y, img_w, "scene context")
-    text(slide, x, y + img_h + 0.1, w, 0.6, [P(("One Sentinel-1 scene (about 300 × 220 km) and one 800-pixel chip "
-                                               "(8 × 8 km).", {"size": FOOT_PT}), align=PP_ALIGN.CENTER)], name="scene caption")
-    text(slide, x, y + img_h + 0.95, w, 26.0 - (y + img_h + 0.95), [
-        P("150 frozen study scenes: ", B("111 train, 23 dev, 16 test"), ".", bullet=True),
-        P("Nested budgets: ", B("12 ⊂ 28 ⊂ 56 ⊂ 111"), " training scenes (10, 25, 50, 100%).", bullet=True),
+    img_w = 0.84 * w
+    _, img_h = picture(slide, GENERATED / "poster_detection_examples.png", x + (w - img_w) / 2, y, img_w,
+                       "figure: detection examples")
+    text(slide, x, y + img_h + 0.1, w, 0.8, [P((f"Best cell ({n['best_cell_label']}) on two 8 × 8 km verified crops: "
+                                               "offshore it finds almost every vessel; in this harbor, none.",
+                                               {"size": FOOT_PT}), align=PP_ALIGN.CENTER)], name="detection caption")
+    text(slide, x, y + img_h + 1.05, w, 28.0 - (y + img_h + 1.05), [
+        P("150 frozen study scenes: ", B("111 train, 23 dev, 16 test"), ". Nested budgets: ",
+          B("12 ⊂ 28 ⊂ 56 ⊂ 111"), " training scenes.", bullet=True),
+        P(B("Train, dev and test labels are machine-made:"), " AIS matching plus automated detection ", R(1),
+          ". They miss vessels and are not complete ground truth.", bullet=True),
         P(B(f"{n['final_scenes']} near-shore, human-verified scenes"), ", opened once after test scoring: "
           f"{n['final_vessels']} vessels, {n['final_dark']} dark, {n['final_near_shore']} within 2 km of shore.",
           bullet=True),
-        P("Input [VH, VV, VH−VV] in dB, 10 m pixels.", bullet=True),
     ], name="data bullets")
-    x, y, w = section(slide, 1, 26.07, "References")
+    x, y, w = section(slide, 1, 28.10, "References")
     refs = [
         "F. S. Paolo et al. xView3-SAR: Detecting dark fishing activity using SAR imagery. NeurIPS 2022.",
         "R. Torres et al. GMES Sentinel-1 mission. Remote Sens. Environ. 2012.",
@@ -333,13 +336,13 @@ def build(n: dict[str, str]) -> Presentation:
         P("8 dev scenes pick each checkpoint and threshold; test and verified scenes are scored ", B("once"),
           ", with no retuning.", bullet=True),
     ], name="detector bullets")
-    x, y, w = section(slide, 2, 26.43, "Why SARMAE dips at 28 scenes")
-    _, img_h = picture(slide, GENERATED / "poster_sarmae_dynamics.png", x + 0.1, y, w - 0.2, "figure: SARMAE dynamics")
+    x, y, w = section(slide, 2, 26.40, "Recall falls toward the coast")
+    _, img_h = picture(slide, GENERATED / "poster_recall_by_distance.png", x + 0.1, y, w - 0.2,
+                       "figure: recall by distance to shore")
     text(slide, x, y + img_h + 0.12, w, 34.6 - (y + img_h + 0.12), [P((
-        f"At 28 scenes SARMAE peaks as warm-up ends, then overfits (training loss {n['sarmae_f25_loss_first']} → "
-        f"{n['sarmae_f25_loss_last']}; dev precision {n['sarmae_f25_dev_precision_first']} → "
-        f"{n['sarmae_f25_dev_precision_last']}). Early stopping keeps the epoch-{n['sarmae_f25_best_epoch']} "
-        "checkpoint.", {"size": FOOT_PT}))], name="SARMAE caption")
+        f"{n['final_scenes']} verified scenes; the band spans all {n['cells']} cells. Best-cell recall: "
+        f"{n['best_recall_beyond_ten_km']} beyond 10 km, {n['best_recall_zero_to_one_km']} within 1 km.",
+        {"size": FOOT_PT}))], name="recall caption")
 
     # column 3 ----------------------------------------------------------------
     x, y, w = section(slide, 3, 7.33, "Pretraining helps most when labels are scarce")
@@ -350,17 +353,20 @@ def build(n: dict[str, str]) -> Presentation:
         "human-verified scenes. Seed 0.", {"size": FOOT_PT}))], name="figure 1 caption")
     x, y, w = section(slide, 3, 20.47, "SAR vs. optical depends on backbone and budget")
     _, img_h = picture(slide, GENERATED / "poster_sar_minus_optical.png", x + 0.1, y, w - 0.2, "figure: SAR minus optical")
-    text(slide, x, y + img_h + 0.15, w, 1.0, [P((
-        f"Bars: 95% intervals from {n['bootstrap_resamples']} paired scene resamples. They cover scene sampling only: "
+    text(slide, x, y + img_h + 0.15, w, 1.6, [P(B("How to read: ", size=FOOT_PT), (
+        "each point is SAR F1 minus optical F1 at one label budget. Above 0, SAR wins; below 0, optical wins. "
+        "Solid: test scenes; dotted: verified scenes. A bar that does not cross 0 is a win; the "
+        f"{n['sar_vs_optical_comparisons']} points here are the comparisons counted in the answer above. Bars are "
+        f"95% intervals from {n['bootstrap_resamples']} paired scene resamples and cover scene sampling only: "
         f"retraining {n['rerun_cells']} unchanged cells moved test F1 by up to {n['rerun_max']}.",
         {"size": FOOT_PT}))], name="figure 2 caption")
-    x, y, w = section(slide, 3, 29.57, "The verified scenes expose a coastal label gap")
+    x, y, w = section(slide, 3, 30.26, "Near shore, every detector fails")
     tiles = [
-        (f"{n['train_near_shore_pct']} → {n['final_near_shore_pct']}",
-         ["vessels within 2 km of shore:", "training labels → verified scenes"]),
-        (f"{n['best_cell_near_shore_predictions']} / {n['best_cell_predictions']}",
-         ["best cell's predictions", "within 2 km of shore"]),
-        (n["best_cell_offshore_f1"], ["best cell's offshore verified F1", f"({n['best_cell_final']} overall)"]),
+        (f"{n['best_cell_near_shore_f1']} vs {n['best_cell_offshore_f1']}",
+         ["best cell's verified F1:", "within 2 km vs offshore"]),
+        (f"≤ {n['final_near_shore_recall_max']}", ["near-shore recall,", "every cell"]),
+        (f"{n['train_near_shore_pct']} vs {n['final_near_shore_pct']}",
+         ["vessels within 2 km of shore:", "training vs verified labels"]),
     ]
     tile_w = w / 3
     for i, (big, label) in enumerate(tiles):
@@ -370,10 +376,10 @@ def build(n: dict[str, str]) -> Presentation:
         text(slide, tx, y + 0.85, tile_w, 0.85, [P((line, {"size": FOOT_PT}), align=PP_ALIGN.CENTER, space_after=0)
                                                   for line in label], name=f"stat {i + 1} label")
     text(slide, x, y + 1.85, w, 0.9, [P((
-        f"Every cell reaches at most {n['final_near_shore_recall_max']} near-shore recall and "
-        f"{n['final_dark_recall_max']} dark-vessel recall, while precision stays at {n['final_precision_min']}–"
-        f"{n['final_precision_max']}: the detectors learned to stay silent near shore.", {"size": FOOT_PT}))],
-        name="stat note")
+        "The machine-made training labels place almost no vessels near shore, and the detectors almost never fire "
+        f"there: the best cell puts {n['best_cell_near_shore_predictions']} of its {n['best_cell_predictions']} "
+        f"predictions within 2 km. Precision stays at {n['final_precision_min']}–{n['final_precision_max']} in every "
+        "cell.", {"size": FOOT_PT}))], name="stat note")
 
     # column 4 ----------------------------------------------------------------
     x, y, w = section(slide, 4, 7.33, "Findings")
@@ -382,32 +388,35 @@ def build(n: dict[str, str]) -> Presentation:
          name="hero number")
     text(slide, x, y + 1.05, w, 1.1, [P("pretrained-vs-random comparisons at 12 training scenes have a 95% interval "
                                        "above zero.", align=PP_ALIGN.CENTER)], name="hero caption")
-    text(slide, x, y + 2.45, w, 20.3 - (y + 2.45), [
+    text(slide, x, y + 2.45, w, 20.8 - (y + 2.45), [
         P(B("Pretraining pays off with few labels."), f" Gains at 12 scenes: {n['test_gain12_min']} to "
           f"{n['test_gain12_max']} test F1, {n['final_gain12_min']} to {n['final_gain12_max']} verified F1.",
           numbered=True, space_after=12),
-        P(B("SAR beats optical only for the CNN, and only with few labels:"),
-          f" {n['test_cnn_sar_minus_opt_10']} {n['test_cnn_sar_minus_opt_10_ci']} test F1 at 12 scenes, but "
+        P(B("SAR's edge over optical depends on backbone and budget."),
+          f" CNN: {n['test_cnn_sar_minus_opt_10']} {n['test_cnn_sar_minus_opt_10_ci']} test F1 at 12 scenes, but "
           f"{n['final_cnn_sar_minus_opt_100']} {n['final_cnn_sar_minus_opt_100_ci']} verified F1 at 111. "
-          "ViT: no stable order.", numbered=True, space_after=12),
+          "ViT: the order flips between 28 and 56 scenes.", numbered=True, space_after=12),
         P(B("The input adapter matters."), " With a seeded 3-channel stem instead of band slicing, BigEarthNet-S2 "
           f"beats random at every budget ({n['cnn_optical_test_gain_min']} to {n['cnn_optical_test_gain_max']} "
           "test F1).", numbered=True, space_after=12),
-        P(B("The coastal gap is a label gap."), f" Only {n['train_near_shore_pct']} of training vessels lie within "
-          f"2 km of shore, against {n['final_near_shore_pct']} of verified ones.", numbered=True),
+        P(B("No detector works near shore:"), f" recall ≤ {n['final_near_shore_recall_max']} within 2 km in every "
+          f"cell. Training labels put {n['train_near_shore_pct']} of vessels there; the verified set, "
+          f"{n['final_near_shore_pct']}.", numbered=True),
     ], name="findings")
-    x, y, w = section(slide, 4, 20.36, "Limits")
-    text(slide, x, y, w, 25.8 - y, [
+    x, y, w = section(slide, 4, 20.84, "Limits")
+    text(slide, x, y, w, 28.6 - y, [
         P("One seed per cell; 8 dev scenes pick checkpoints and thresholds.", bullet=True),
-        P("Monotonicity gate failed: two SAR test curves drop by more than 0.02 as labels grow.", bullet=True),
+        P("Dev and test labels are machine-made, so test F1 measures agreement with them, not with every vessel.",
+          bullet=True),
+        P("Two SAR test curves drop by more than 0.02 as labels grow. ViT-SAR at 28 scenes overfit after warm-up; "
+          f"early stopping kept epoch {n['sarmae_f25_best_epoch']}.", bullet=True),
         P("Checkpoints differ in objective and corpus, not only domain.", bullet=True),
     ], name="limits")
-    x, y, w = section(slide, 4, 26.02, "Open questions & next steps")
+    x, y, w = section(slide, 4, 28.75, "Open questions & next steps")
     text(slide, x, y, w, 34.6 - y, [
         P("How do geospatial foundation models pretrained jointly on SAR and optical imagery fare against these "
           "single-source checkpoints?", bullet=True),
         P("Does SAR pretraining help where optical cannot: near shore and for small dark vessels?", bullet=True),
-        P("Would per-arm learning rates or longer early-stopping patience remove the small-budget dips?", bullet=True),
         P(B("Next:"), " near-shore training labels, a shoreline input channel, several seeds, and matched pretraining "
           "objectives across sensors.", bullet=True),
     ], name="open questions")

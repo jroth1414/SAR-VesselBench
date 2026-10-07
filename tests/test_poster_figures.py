@@ -47,6 +47,23 @@ def test_every_twelve_scene_gain_has_an_interval_above_zero(numbers: dict) -> No
     assert ci["low"] <= numbers["final_cnn_sar_minus_opt_100"] <= ci["high"] < 0
 
 
+def test_head_to_head_tallies_back_the_answer_strip(numbers: dict) -> None:
+    assert numbers["sar_vs_optical_comparisons"] == numbers["sar_vs_imagenet_comparisons"] == 16
+    assert (numbers["sar_vs_optical_sar_wins"], numbers["sar_vs_optical_rival_wins"]) == (6, 2)
+    assert (numbers["sar_vs_imagenet_sar_wins"], numbers["sar_vs_imagenet_rival_wins"]) == (3, 7)
+    # "Its clearest edge is the CNN with 12-28 labeled scenes": SAR wins there on both scene sets.
+    for metric in ("test", "final"):
+        for fraction in (10, 25):
+            assert numbers[f"{metric}_cnn_sar_minus_opt_{fraction}_ci"]["low"] > 0
+
+
+def test_best_cell_near_shore_numbers(numbers: dict) -> None:
+    shown = number_strings(numbers)
+    assert shown["best_cell_label"] == "ImageNet CNN, 111 scenes"
+    assert (shown["best_cell_near_shore_f1"], shown["best_cell_offshore_f1"]) == ("0.026", "0.724")
+    assert shown["final_near_shore_recall_max"] == "0.021"
+
+
 def test_every_macro_name_is_letters_only(numbers: dict) -> None:
     names = [macro_name(key) for key in number_strings(numbers)]
     assert all(name.isalpha() for name in names)

@@ -1,5 +1,5 @@
 % AIPR 2026 poster, 48 x 36 in landscape. Build from this directory:
-%   python -m src.analysis.poster_figures --output-dir docs/poster/generated   (from the repo root)
+%   python -m src.analysis.poster_figures ...   (from the repo root; inputs in README.md)
 %   tectonic -X compile poster.tex
 % Every number comes from generated/poster_macros.tex; none is typed here.
 \documentclass[25pt,a0paper,margin=0mm,innermargin=22mm,colspace=18mm,
@@ -17,7 +17,7 @@
 \renewcommand{\familydefault}{\sfdefault}
 \usepackage{amsmath,amssymb,booktabs,graphicx,enumitem,array,ragged2e}
 \usetikzlibrary{calc,positioning,arrows.meta,fit}
-\graphicspath{{generated/}{../class_report/figures/static/}}
+\graphicspath{{generated/}}
 \input{generated/poster_macros.tex}
 
 % ---- palette (Okabe-Ito roles shared with the report figures) ----------
@@ -119,9 +119,11 @@
 \answercolors
 \block{}{%
   \centering\fontsize{36}{46}\selectfont
-  \textbf{Short answer: not consistently.} With 12 labeled scenes every
-  pretrained encoder beats random initialization, but SAR pretraining beats
-  optical only for the CNN, and only while labels are scarce.\par}
+  \textbf{Answer: no.} SAR pretraining beats optical in
+  \PNSarVsOpticalSarWins{} of \PNSarVsOpticalComparisons{} comparisons and
+  ImageNet in \PNSarVsImagenetSarWins{} of \PNSarVsImagenetComparisons{}
+  (ImageNet wins \PNSarVsImagenetRivalWins); its clearest edge is the CNN
+  with 12--28 labeled scenes.\par}
 \normalcolors
 
 \begin{columns}
@@ -140,18 +142,21 @@
 }
 \block{Data: xView3-SAR \refn{1}}{
   \centering
-  \includegraphics[width=0.82\linewidth]{scene_context.png}\par
-  \vspace{2mm}{\small One Sentinel-1 scene (about 300 $\times$ 220\,km) and
-  one 800-pixel chip (8 $\times$ 8\,km).\par}
+  \includegraphics[width=0.84\linewidth]{poster_detection_examples.pdf}\par
+  \vspace{2mm}{\small Best cell (\PNBestCellLabel) on two
+  8 $\times$ 8\,km verified crops: offshore it finds almost every vessel;
+  in this harbor, none.\par}
   \vspace{4mm}\raggedright
   \begin{itemize}
     \item 150 frozen study scenes: \textbf{111 train, 23 dev, 16 test}.
-    \item Nested budgets: \textbf{12 $\subset$ 28 $\subset$ 56 $\subset$ 111}
-      training scenes (10, 25, 50, 100\%).
+      Nested budgets: \textbf{12 $\subset$ 28 $\subset$ 56 $\subset$ 111}
+      training scenes.
+    \item \textbf{Train, dev and test labels are machine-made:} AIS matching
+      plus automated detection \refn{1}. They miss vessels and are not
+      complete ground truth.
     \item \textbf{50 near-shore, human-verified scenes}, opened once after
       test scoring: \PNFinalVessels{} vessels, \PNFinalDark{} dark,
       \PNFinalNearShore{} within 2\,km of shore.
-    \item Input [VH, VV, VH$-$VV] in dB, 10\,m pixels.
   \end{itemize}
 }
 \block{References}{
@@ -199,16 +204,13 @@
       scenes are scored \textbf{once}, with no retuning.
   \end{itemize}
 }
-\block{Why SARMAE dips at 28 scenes}{
+\block{Recall falls toward the coast}{
   \centering
-  \includegraphics[width=\linewidth]{poster_sarmae_dynamics.pdf}\par
+  \includegraphics[width=\linewidth]{poster_recall_by_distance.pdf}\par
   \vspace{4mm}\raggedright
-  {\small At 28 scenes SARMAE peaks as warm-up ends, then overfits
-  (training loss \PNSarmaeFTwentyFiveLossFirst{} $\rightarrow$
-  \PNSarmaeFTwentyFiveLossLast; dev precision
-  \PNSarmaeFTwentyFiveDevPrecisionFirst{} $\rightarrow$
-  \PNSarmaeFTwentyFiveDevPrecisionLast). Early stopping keeps the
-  epoch-\PNSarmaeFTwentyFiveBestEpoch{} checkpoint.\par}
+  {\small \PNFinalScenes{} verified scenes; the band spans all \PNCells{}
+  cells. Best-cell recall: \PNBestRecallBeyondTenKm{} beyond 10\,km,
+  \PNBestRecallZeroToOneKm{} within 1\,km.\par}
 }
 % =====================================================================
 \column{0.34}
@@ -225,25 +227,31 @@
   \centering
   \includegraphics[width=\linewidth]{poster_sar_minus_optical.pdf}\par
   \vspace{5mm}\raggedright
-  {\small Bars: 95\% intervals from \PNBootstrapResamples{} paired scene
-  resamples. They cover scene sampling only: retraining \PNRerunCells{}
-  unchanged cells moved test F1 by up to \PNRerunMax.\par}
+  {\small \textbf{How to read:} each point is SAR F1 minus optical F1 at
+  one label budget. Above 0, SAR wins; below 0, optical wins. Solid: test
+  scenes; dotted: verified scenes. A bar that does not cross 0 is a win;
+  the \PNSarVsOpticalComparisons{} points here are the comparisons counted
+  in the answer above. Bars are 95\% intervals from
+  \PNBootstrapResamples{} paired scene resamples and cover scene sampling
+  only: retraining \PNRerunCells{} unchanged cells moved test F1 by up to
+  \PNRerunMax.\par}
 }
-\block{The verified scenes expose a coastal label gap}{
+\block{Near shore, every detector fails}{
   \centering
   \begin{tabular}{@{}c@{\hspace{12mm}}c@{\hspace{12mm}}c@{}}
-    \statnum{\PNTrainNearShorePct{} $\rightarrow$ \PNFinalNearShorePct} &
-    \statnum{\PNBestCellNearShorePredictions{} / \PNBestCellPredictions} &
-    \statnum{\PNBestCellOffshoreFOne} \\[2mm]
-    \statlabel{vessels within 2\,km of shore:\\training labels $\rightarrow$ verified scenes} &
-    \statlabel{best cell's predictions\\within 2\,km of shore} &
-    \statlabel{best cell's offshore verified F1\\(\PNBestCellFinal{} overall)} \\
+    \statnum{\PNBestCellNearShoreFOne{} vs \PNBestCellOffshoreFOne} &
+    \statnum{$\leq$\,\PNFinalNearShoreRecallMax} &
+    \statnum{\PNTrainNearShorePct{} vs \PNFinalNearShorePct} \\[2mm]
+    \statlabel{best cell's verified F1:\\within 2\,km vs offshore} &
+    \statlabel{near-shore recall,\\every cell} &
+    \statlabel{vessels within 2\,km of shore:\\training vs verified labels} \\
   \end{tabular}\par
   \vspace{5mm}\raggedright
-  {\small Every cell reaches at most \PNFinalNearShoreRecallMax{} near-shore
-  recall and \PNFinalDarkRecallMax{} dark-vessel recall, while precision
-  stays at \PNFinalPrecisionMin--\PNFinalPrecisionMax: the detectors learned
-  to stay silent near shore.\par}
+  {\small The machine-made training labels place almost no vessels near
+  shore, and the detectors almost never fire there: the best cell puts
+  \PNBestCellNearShorePredictions{} of its \PNBestCellPredictions{}
+  predictions within 2\,km. Precision stays at
+  \PNFinalPrecisionMin--\PNFinalPrecisionMax{} in every cell.\par}
 }
 % =====================================================================
 \column{0.22}
@@ -259,24 +267,28 @@
     \item \textbf{Pretraining pays off with few labels.} Gains at 12
       scenes: \PNTestGainTwelveMin{} to \PNTestGainTwelveMax{} test F1,
       \PNFinalGainTwelveMin{} to \PNFinalGainTwelveMax{} verified F1.
-    \item \textbf{SAR beats optical only for the CNN, and only with few
-      labels:} \PNTestCnnSarMinusOptTen{} \PNTestCnnSarMinusOptTenCi{} test
-      F1 at 12 scenes, but \PNFinalCnnSarMinusOptHundred{}
-      \PNFinalCnnSarMinusOptHundredCi{} verified F1 at 111. ViT: no stable
-      order.
+    \item \textbf{SAR's edge over optical depends on backbone and budget.}
+      CNN: \PNTestCnnSarMinusOptTen{} \PNTestCnnSarMinusOptTenCi{} test F1
+      at 12 scenes, but \PNFinalCnnSarMinusOptHundred{}
+      \PNFinalCnnSarMinusOptHundredCi{} verified F1 at 111. ViT: the order
+      flips between 28 and 56 scenes.
     \item \textbf{The input adapter matters.} With a seeded 3-channel stem
       instead of band slicing, BigEarthNet-S2 beats random at every budget
       (\PNCnnOpticalTestGainMin{} to \PNCnnOpticalTestGainMax{} test F1).
-    \item \textbf{The coastal gap is a label gap.} Only
-      \PNTrainNearShorePct{} of training vessels lie within 2\,km of shore,
-      against \PNFinalNearShorePct{} of verified ones.
+    \item \textbf{No detector works near shore:} recall
+      $\leq$\,\PNFinalNearShoreRecallMax{} within 2\,km in every cell.
+      Training labels put \PNTrainNearShorePct{} of vessels there; the
+      verified set, \PNFinalNearShorePct.
   \end{enumerate}
 }
 \block{Limits}{
   \begin{itemize}
     \item One seed per cell; 8 dev scenes pick checkpoints and thresholds.
-    \item Monotonicity gate failed: two SAR test curves drop by more than
-      0.02 as labels grow.
+    \item Dev and test labels are machine-made, so test F1 measures
+      agreement with them, not with every vessel.
+    \item Two SAR test curves drop by more than 0.02 as labels grow.
+      ViT-SAR at 28 scenes overfit after warm-up; early stopping kept
+      epoch \PNSarmaeFTwentyFiveBestEpoch.
     \item Checkpoints differ in objective and corpus, not only domain.
   \end{itemize}
 }
@@ -286,8 +298,6 @@
       optical imagery fare against these single-source checkpoints?
     \item Does SAR pretraining help where optical cannot: near shore and
       for small dark vessels?
-    \item Would per-arm learning rates or longer early-stopping patience
-      remove the small-budget dips?
     \item \textbf{Next:} near-shore training labels, a shoreline input
       channel, several seeds, and matched pretraining objectives across
       sensors.

@@ -13,14 +13,18 @@ it validated:
   tree, e.g. ``git archive 481200e results/h100/evidence``) and measures how
   far test F1 moves when unchanged cells are retrained;
 * the near-shore label gap uses the evidence tree's bound
-  ``TRAIN_LABEL_PROFILE.json``.
+  ``TRAIN_LABEL_PROFILE.json``;
+* the distance-to-shore figure and the example crops (``poster_coastal``)
+  read local xView3 labels and imagery, each checked before use.
 
 The report-scale renderers in ``heldout_results`` stay untouched; this module
 reuses only their role palette, markers and labels.
 
 Usage:
   python -m src.analysis.poster_figures --output-dir docs/poster/generated \
-      [--rerun-reference <August evidence tree>]
+      [--rerun-reference <August evidence tree>] \
+      [--train-labels train.csv --verified-labels validation.csv \
+       --verified-imagery <validation archives> --imagery-cache <dir>]
 """
 
 from __future__ import annotations
@@ -53,10 +57,9 @@ PRETRAINED = ("optical", "sar", "imagenet")
 METRIC_FILE = {"test": "test_metrics.json", "final": "final_verified_metrics.json"}
 NEAR_SHORE_KM = 2.0
 BOOTSTRAP_RESAMPLES, BOOTSTRAP_SEED = 10_000, 0
-# Training curves behind the ViT-SAR dip at 28 scenes, with SatDINO as the
-# same-budget comparison.
+# Training curves behind the ViT-SAR dip at 28 scenes (quoted in Limits), with
+# SatDINO as the same-budget comparison.
 DYNAMICS_CELLS = (("vit", "sar", 10), ("vit", "sar", 25), ("vit", "sar", 50), ("vit", "optical", 25))
-WARMUP_EPOCHS = 5  # shared recipe (configs: five warm-up epochs)
 INK = "#1F2328"
 MUTED = "#6B7280"
 GRID = "#E5E7EB"
@@ -193,6 +196,8 @@ def scene_details(evidence_root: Path, validated: Mapping[str, object]) -> dict[
             for fraction in FRACTIONS:
                 intervals[f"{metric}_{track}_sar_minus_opt_{fraction}"] = boot.difference(
                     counts[(track, "sar", fraction)], counts[(track, "optical", fraction)])
+                intervals[f"{metric}_{track}_sar_minus_imagenet_{fraction}"] = boot.difference(
+                    counts[(track, "sar", fraction)], counts[(track, "imagenet", fraction)])
         intervals[f"{metric}_vit_imagenet12_minus_random111"] = boot.difference(
             counts[("vit", "imagenet", 10)], counts[("vit", "floor", 100)])
         if metric == "final":
@@ -235,6 +240,7 @@ def poster_numbers(
     validated: Mapping[str, object],
     rerun: Mapping[str, float] | None,
     details: Mapping[str, object],
+    coastal: Mapping[str, float] | None = None,
 ) -> dict[str, object]:
     g = grids(validated)
     ids = _cell_ids(validated)
@@ -265,6 +271,12 @@ def poster_numbers(
     gain_keys = [k for k in intervals if k.endswith("_gain12")]
     n["gain12_comparisons"] = len(gain_keys)
     n["gain12_ci_above_zero"] = sum(1 for k in gain_keys if intervals[k]["low"] > 0)
+    # Head-to-head tallies: a win needs the whole 95% interval on one side of zero.
+    for rival, tag in (("opt", "optical"), ("imagenet", "imagenet")):
+        keys = [k for k in intervals if f"_sar_minus_{rival}_" in k]
+        n[f"sar_vs_{tag}_comparisons"] = len(keys)
+        n[f"sar_vs_{tag}_sar_wins"] = sum(1 for k in keys if intervals[k]["low"] > 0)
+        n[f"sar_vs_{tag}_rival_wins"] = sum(1 for k in keys if intervals[k]["high"] < 0)
     for metric in ("test", "final"):
         n[f"{metric}_gain12_min"] = min(gains(metric, 10))
         n[f"{metric}_gain12_max"] = max(gains(metric, 10))
@@ -293,11 +305,16 @@ def poster_numbers(
     best_key = max(offshore, key=lambda k: finals[ids[k]])
     best = offshore[best_key]
     n["best_cell"] = ids[best_key]
+    n["best_cell_label"] = (f"{ROLE_LABEL[best_key[1]]} {best_key[0].upper()}, "
+                            f"{FRACTION_SCENES[best_key[2]]} scenes")
     n["best_cell_test"] = tests[ids[best_key]]
     n["best_cell_final"] = finals[ids[best_key]]
     n["best_cell_offshore_f1"] = best["offshore_f1"]
     n["best_cell_predictions"] = int(best["predictions"])
     n["best_cell_near_shore_predictions"] = int(best["near_shore_predictions"])
+    n["best_cell_near_shore_f1"] = float(final[ids[best_key]]["near_shore_f1"])  # type: ignore[index]
+    if coastal is not None:
+        n.update(coastal)
     cells = validated["cells"]
     for label, key in (("sarmae_f10", ("vit", "sar", 10)), ("sarmae_f25", ("vit", "sar", 25)),
                        ("sarmae_f50", ("vit", "sar", 50)), ("satdino_f25", ("vit", "optical", 25))):
@@ -445,53 +462,32 @@ def figure_sar_minus_optical(details: Mapping[str, object], out_dir: Path) -> li
     return paths
 
 
-def figure_sarmae_dynamics(validated: Mapping[str, object], details: Mapping[str, object], out_dir: Path) -> list[Path]:
-    """Dev F1 by epoch for SARMAE at 28 and 56 scenes and SatDINO at 28 scenes."""
+# --------------------------------------------------------------------------- main
+def _coastal(args, validated, details, kwargs) -> tuple[dict[str, object], tuple]:
+    """Distance-to-shore figure, example crops and their numbers (needs local xView3 data)."""
 
-    import matplotlib.pyplot as plt
-    from matplotlib.lines import Line2D
+    import tempfile
+
+    from src.analysis import poster_coastal as pc
 
     ids = _cell_ids(validated)
-    cells = validated["cells"]
-    curves: Mapping[tuple, Mapping[str, object]] = details["curves"]  # type: ignore[assignment]
-    series = (
-        (("vit", "sar", 50), "SARMAE · 56", ROLE_COLOR["sar"], (0, (3, 2)), 3.2),
-        (("vit", "optical", 25), "SatDINO · 28", ROLE_COLOR["optical"], "-", 3.2),
-        (("vit", "sar", 25), "SARMAE · 28", ROLE_COLOR["sar"], "-", 5.0),
-    )
-    fig, axis = plt.subplots(figsize=(9.6, 5.3))
-    axis.axvspan(0, WARMUP_EPOCHS, color=GRID, zorder=0, lw=0)
-    axis.text(WARMUP_EPOCHS / 2, 0.875, "warm-up", ha="center", va="center", rotation=90,
-              fontsize=ANNOT_PT - 4, color=MUTED)
-    for key, label, color, style, width in series:
-        epochs = [e for e, *_ in curves[key]["dev"]]
-        f1s = [f for _, f, *_ in curves[key]["dev"]]
-        axis.plot(epochs, f1s, color=color, linestyle=style, lw=width, marker="o", markersize=9, zorder=3)
-        cell = cells[ids[key]]  # type: ignore[index]
-        best = int(cell["best_epoch"])
-        axis.plot([best], [f1s[epochs.index(best)]], marker="o", markersize=24, markerfacecolor="none",
-                  markeredgecolor=color, markeredgewidth=3.5, zorder=4)
-        if int(cell["epochs_run"]) < 50:
-            axis.plot([epochs[-1]], [f1s[-1]], marker="X", markersize=20, color=INK, zorder=5)
-        axis.annotate(label, xy=(epochs[-1], f1s[-1]), xytext=(18, 0), textcoords="offset points",
-                      va="center", ha="left", fontsize=ANNOT_PT - 2, fontweight="bold", color=INK)
-    axis.set_xlim(0, 62)
-    axis.set_xticks([0, 10, 20, 30, 40, 50])
-    axis.set_ylim(0.83, 0.93)
-    axis.set_xlabel("Epoch")
-    axis.set_ylabel("Dev F1 (8 scenes)")
-    handles = [Line2D([], [], marker="o", markersize=20, markerfacecolor="none", markeredgecolor=INK,
-                      markeredgewidth=3, linestyle="none"),
-               Line2D([], [], marker="X", markersize=16, color=INK, linestyle="none")]
-    fig.legend(handles, ["selected checkpoint", "early stop"], loc="upper center", ncol=2,
-               bbox_to_anchor=(0.5, 1.03), handletextpad=0.3, columnspacing=1.5)
-    fig.tight_layout(rect=(0, 0, 1, 0.92))
-    paths = save_both(fig, out_dir, "poster_sarmae_dynamics")
-    plt.close(fig)
-    return paths
+    root = args.evidence_root
+    audit = json.loads((root / "EVAL_GROUND_TRUTH_VALIDATED.json").read_text(encoding="utf-8"))
+    splits = json.loads(kwargs["splits_config"].read_text(encoding="utf-8"))
+    train_counts = pc.training_bin_counts(args.train_labels, list(map(str, splits["splits"]["train"])), audit)
+    rescored = pc.rescore_verified(root, ids, args.verified_labels)
+    finals = {e: float(r["f1"]) for e, r in validated["final_results"].items()}  # type: ignore[union-attr]
+    best_key = max(ids, key=lambda k: finals[ids[k]])
+    verified_counts = next(iter(rescored["bins"].values()))[1]
+    style = {"legend": LEGEND_PT - 2, "best_color": ROLE_COLOR[best_key[1]],
+             "best_label": "best cell"}  # the poster captions name it
+    pc.figure_recall_by_distance(train_counts, verified_counts, rescored, best_key, args.output_dir, style)
+    crops = pc.choose_crops(rescored["scenes"][best_key])
+    cache = args.imagery_cache or Path(tempfile.gettempdir()) / "xview3-vh-cache"
+    pc.figure_detection_examples(crops, rescored["scenes"][best_key], args.verified_imagery, cache, args.output_dir)
+    return pc.coastal_numbers(train_counts, verified_counts, rescored, best_key, crops), best_key
 
 
-# --------------------------------------------------------------------------- main
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--evidence-root", default=Path("results/h100/evidence"), type=Path)
@@ -500,7 +496,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--arms-config", default=Path("configs/arms.yaml"), type=Path)
     parser.add_argument("--detector-config", default=Path("configs/detector.yaml"), type=Path)
     parser.add_argument("--splits-config", default=Path("data/splits.json"), type=Path)
+    # Near-shore block: inputs outside the evidence tree, each checked before use (see poster_coastal).
+    parser.add_argument("--train-labels", type=Path, help="xView3 train.csv (hash-bound by the audit receipt)")
+    parser.add_argument("--verified-labels", type=Path, help="xView3 validation.csv behind the 50 verified scenes")
+    parser.add_argument("--verified-imagery", type=Path, help="directory of <scene>.tar.gz validation archives")
+    parser.add_argument("--imagery-cache", type=Path, help="where extracted VH rasters are kept between runs")
     args = parser.parse_args(argv)
+    coastal_inputs = (args.train_labels, args.verified_labels, args.verified_imagery)
+    if any(coastal_inputs) and not all(coastal_inputs):
+        parser.error("--train-labels, --verified-labels and --verified-imagery go together")
     kwargs = {"arms_config": args.arms_config, "detector_config": args.detector_config,
               "splits_config": args.splits_config}
     validated = validate_evidence(args.evidence_root, **kwargs)
@@ -521,15 +525,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     out.mkdir(parents=True, exist_ok=True)
     figure_label_efficiency(grids(validated), out)
     figure_sar_minus_optical(details, out)
-    figure_sarmae_dynamics(validated, details, out)
-    numbers = poster_numbers(validated, rerun, details)
+    figures = 2
+    coastal = None
+    if args.train_labels is not None:
+        coastal, best_key = _coastal(args, validated, details, kwargs)
+        figures += 2
+    numbers = poster_numbers(validated, rerun, details, coastal)
     strings = number_strings(numbers)
     (out / "poster_numbers.json").write_text(
         json.dumps({"values": numbers, "display": strings}, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8", newline="\n",
     )
     write_macros(strings, out / "poster_macros.tex")
-    print(json.dumps({"figures": 3, "numbers": len(numbers), "rerun": rerun}, indent=2))
+    print(json.dumps({"figures": figures, "numbers": len(numbers), "rerun": rerun}, indent=2))
     return 0
 
 

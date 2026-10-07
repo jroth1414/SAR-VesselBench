@@ -11,8 +11,9 @@
   endst/.style={stage, fill=roleimagenet!12, draw=roleimagenet!80!black},
   flow/.style={->, draw=ink, rounded corners=3pt}]
 \node[data, minimum width=50mm] (inp) {[VH, VV,\\ VH − VV]\\ 512² crop};
-\node[enc, anchor=west] (vit) at ($(inp.east)+(18mm,13mm)$) {ViT-B/16, stride 16};
-\node[enc, anchor=west] (cnn) at ($(inp.east)+(18mm,-13mm)$) {ConvNeXt-V2-B, s32 + up};
+% Encoders are 26 mm tall; centres 31 mm apart leave a 5 mm gap between them.
+\node[enc, anchor=west] (vit) at ($(inp.east)+(18mm,15.5mm)$) {ViT-B/16, stride 16};
+\node[enc, anchor=west] (cnn) at ($(inp.east)+(18mm,-15.5mm)$) {ConvNeXt-V2-B, s32 + up};
 % tikzposter owns the pgf layer list, so the group box is drawn unfilled.
 \node[draw=black!35, dashed, rounded corners=6pt, inner sep=5mm,
       fit=(vit)(cnn)] (encbox) {};
