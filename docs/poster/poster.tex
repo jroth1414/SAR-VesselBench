@@ -204,7 +204,7 @@
   \PNBestRecallZeroToOneKm{} within 1\,km.\par}
 }
 % =====================================================================
-\column{0.34}
+\column{0.30}
 \block{Pretraining helps most when labels are scarce}{
   \centering
   \includegraphics[width=\linewidth]{poster_label_efficiency.pdf}\par
@@ -214,7 +214,7 @@
   held-out test scenes. Bottom: \PNFinalScenes{} near-shore, human-verified
   scenes. Seed 0.\par}
 }
-\block{SAR vs.\ optical depends on backbone and budget}{
+\block{SAR vs.\ optical: no stable winner}{
   \centering
   \includegraphics[width=\linewidth]{poster_sar_minus_optical.pdf}\par
   \vspace{5mm}\raggedright
@@ -228,8 +228,7 @@
   \PNRerunMax.\par}
 }
 % Two columns of five; references.tex holds the same list with page ranges.
-% The offsets lift this last block of the column, as in column 2.
-\block[titleoffsety=14mm,bodyoffsety=14mm]{References}{
+\block{References}{
   \footnotesize\hyphenpenalty=10000\exhyphenpenalty=10000
   \setlist[enumerate]{label={[\arabic*]},leftmargin=2.1em,labelsep=0.35em,itemsep=0.2em,topsep=0pt}
   \begin{minipage}[t]{0.49\linewidth}
@@ -252,16 +251,12 @@
   \end{minipage}
 }
 % =====================================================================
-\column{0.22}
+\column{0.26}
+% Column 4 is the fullest (widest column, all text): slightly tighter item
+% spacing, and the two lower blocks are lifted (offsets add up: 7 mm, then
+% 14 mm) so each gap above them shrinks by 7 mm.
 \block{Findings}{
-  \begin{center}
-    {\fontsize{64}{70}\selectfont\bfseries\color{roleimagenet}\PNGainTwelveCiAboveZero{} / \PNGainTwelveComparisons}\par
-    \vspace{3mm}
-    pretrained-vs-random comparisons at 12 training scenes have a 95\%
-    interval above zero.\par
-  \end{center}
-  \vspace{3mm}
-  \begin{enumerate}
+  \begin{enumerate}[itemsep=0.45em]
     \item \textbf{Pretraining pays off with few labels.} Gains at 12
       scenes: \PNTestGainTwelveMin{} to \PNTestGainTwelveMax{} test F1,
       \PNFinalGainTwelveMin{} to \PNFinalGainTwelveMax{} verified F1.
@@ -277,10 +272,16 @@
       $\leq$\,\PNFinalNearShoreRecallMax{} within 2\,km in every cell.
       Training labels put \PNTrainNearShorePct{} of vessels there; the
       verified set, \PNFinalNearShorePct.
+    \item \textbf{ImageNet is the strongest default.} ImageNet beats SAR
+      pretraining in \PNSarVsImagenetRivalWins{} of
+      \PNSarVsImagenetComparisons{} comparisons (SAR wins
+      \PNSarVsImagenetSarWins). The best cell on both test
+      (\PNBestCellTest) and verified F1 (\PNBestCellFinal) is the ImageNet
+      ConvNeXt with 111 scenes.
   \end{enumerate}
 }
-\block{Limits}{
-  \begin{itemize}
+\block[titleoffsety=7mm,bodyoffsety=7mm]{Limits}{
+  \begin{itemize}[itemsep=0.25em]
     \item One seed per cell; 8 dev scenes pick checkpoints and thresholds.
     \item Dev and test labels are machine-made, so test F1 measures
       agreement with them, not with every vessel.
@@ -288,12 +289,17 @@
       ViT-SAR at 28 scenes overfit after warm-up; early stopping kept
       epoch \PNSarmaeFTwentyFiveBestEpoch.
     \item Checkpoints differ in objective and corpus, not only domain.
+    \item In-region test: Sentinel-1 revisits put some test scenes near
+      training scenes, so test F1 measures in-region generalization, not
+      generalization to new regions.
   \end{itemize}
 }
-\block{Open questions \& next steps}{
-  \begin{itemize}
+\block[titleoffsety=14mm,bodyoffsety=14mm]{Open questions \& next steps}{
+  \begin{itemize}[itemsep=0.25em]
     \item How do geospatial foundation models pretrained jointly on SAR and
       optical imagery fare against these single-source checkpoints?
+    \item Does SAR pretraining still trail ImageNet when both use the same
+      objective, architecture and number of pretraining images?
     \item Does SAR pretraining help where optical cannot: near shore and
       for small dark vessels?
     \item \textbf{Next:} near-shore training labels, a shoreline input

@@ -49,7 +49,7 @@ OPTICAL_LINE = RGBColor(0xC4, 0x87, 0x00)
 BODY_PT, SMALL_PT, FOOT_PT, REF_PT, HEAD_PT = 29, 22, 20, 17, 42
 
 # Grid measured from poster.pdf: column (x, width) and section title tops.
-COLUMNS = {1: (0.86, 9.63), 2: (11.20, 9.63), 3: (21.53, 15.27), 4: (37.51, 9.63)}
+COLUMNS = {1: (0.86, 9.63), 2: (11.20, 9.63), 3: (21.53, 13.39), 4: (35.63, 11.51)}
 SECTION_H = 0.85  # heading band; the rule sits at its bottom edge
 
 
@@ -337,7 +337,7 @@ def build(n: dict[str, str]) -> Presentation:
         f"F1 with 200 m matching. Each of the {n['cells']} cells is scored once with the threshold it picked on 8 dev "
         f"scenes. Top: {n['test_scenes']} held-out test scenes. Bottom: {n['final_scenes']} near-shore, "
         "human-verified scenes. Seed 0.", {"size": FOOT_PT}))], name="figure 1 caption")
-    x, y, w = section(slide, 3, 20.47, "SAR vs. optical depends on backbone and budget")
+    x, y, w = section(slide, 3, 19.95, "SAR vs. optical: no stable winner")
     _, img_h = picture(slide, GENERATED / "poster_sar_minus_optical.png", x + 0.1, y, w - 0.2, "figure: SAR minus optical")
     text(slide, x, y + img_h + 0.15, w, 1.6, [P(B("How to read: ", size=FOOT_PT), (
         "each point is SAR F1 minus optical F1 at one label budget. Above 0, SAR wins; below 0, optical wins. "
@@ -346,7 +346,7 @@ def build(n: dict[str, str]) -> Presentation:
         f"95% intervals from {n['bootstrap_resamples']} paired scene resamples and cover scene sampling only: "
         f"retraining {n['rerun_cells']} unchanged cells moved test F1 by up to {n['rerun_max']}.",
         {"size": FOOT_PT}))], name="figure 2 caption")
-    x, y, w = section(slide, 3, 29.57, "References")
+    x, y, w = section(slide, 3, 29.77, "References")
     refs = [
         "F. S. Paolo et al. xView3-SAR: Detecting dark fishing activity using SAR imagery. NeurIPS 2022.",
         "R. Torres et al. GMES Sentinel-1 mission. Remote Sens. Environ. 2012.",
@@ -368,39 +368,42 @@ def build(n: dict[str, str]) -> Presentation:
 
     # column 4 ----------------------------------------------------------------
     x, y, w = section(slide, 4, 7.33, "Findings")
-    text(slide, x, y - 0.1, w, 1.1, [P(B(f"{n['gain12_ci_above_zero']} / {n['gain12_comparisons']}", size=60,
-                                         color=ROLE["imagenet"]), align=PP_ALIGN.CENTER, space_after=0)],
-         name="hero number")
-    text(slide, x, y + 1.05, w, 1.1, [P("pretrained-vs-random comparisons at 12 training scenes have a 95% interval "
-                                       "above zero.", align=PP_ALIGN.CENTER)], name="hero caption")
-    text(slide, x, y + 2.45, w, 20.8 - (y + 2.45), [
+    text(slide, x, y, w, 18.7 - y, [
         P(B("Pretraining pays off with few labels."), f" Gains at 12 scenes: {n['test_gain12_min']} to "
           f"{n['test_gain12_max']} test F1, {n['final_gain12_min']} to {n['final_gain12_max']} verified F1.",
-          numbered=True, space_after=12),
+          numbered=True, space_after=10),
         P(B("SAR's edge over optical depends on backbone and budget."),
           f" CNN: {n['test_cnn_sar_minus_opt_10']} {n['test_cnn_sar_minus_opt_10_ci']} test F1 at 12 scenes, but "
           f"{n['final_cnn_sar_minus_opt_100']} {n['final_cnn_sar_minus_opt_100_ci']} verified F1 at 111. "
-          "ViT: the order flips between 28 and 56 scenes.", numbered=True, space_after=12),
+          "ViT: the order flips between 28 and 56 scenes.", numbered=True, space_after=10),
         P(B("The input adapter matters."), " With a seeded 3-channel stem instead of band slicing, BigEarthNet-S2 "
           f"beats random at every budget ({n['cnn_optical_test_gain_min']} to {n['cnn_optical_test_gain_max']} "
-          "test F1).", numbered=True, space_after=12),
+          "test F1).", numbered=True, space_after=10),
         P(B("No detector works near shore:"), f" recall ≤ {n['final_near_shore_recall_max']} within 2 km in every "
           f"cell. Training labels put {n['train_near_shore_pct']} of vessels there; the verified set, "
-          f"{n['final_near_shore_pct']}.", numbered=True),
+          f"{n['final_near_shore_pct']}.", numbered=True, space_after=10),
+        P(B("ImageNet is the strongest default."), f" ImageNet beats SAR pretraining in "
+          f"{n['sar_vs_imagenet_rival_wins']} of {n['sar_vs_imagenet_comparisons']} comparisons (SAR wins "
+          f"{n['sar_vs_imagenet_sar_wins']}). The best cell on both test ({n['best_cell_test']}) and verified F1 "
+          f"({n['best_cell_final']}) is the ImageNet ConvNeXt with 111 scenes.", numbered=True),
     ], name="findings")
-    x, y, w = section(slide, 4, 20.84, "Limits")
-    text(slide, x, y, w, 28.6 - y, [
+    x, y, w = section(slide, 4, 18.78, "Limits")
+    text(slide, x, y, w, 27.1 - y, [
         P("One seed per cell; 8 dev scenes pick checkpoints and thresholds.", bullet=True),
         P("Dev and test labels are machine-made, so test F1 measures agreement with them, not with every vessel.",
           bullet=True),
         P("Two SAR test curves drop by more than 0.02 as labels grow. ViT-SAR at 28 scenes overfit after warm-up; "
           f"early stopping kept epoch {n['sarmae_f25_best_epoch']}.", bullet=True),
         P("Checkpoints differ in objective and corpus, not only domain.", bullet=True),
+        P("In-region test: Sentinel-1 revisits put some test scenes near training scenes, so test F1 measures "
+          "in-region generalization, not generalization to new regions.", bullet=True),
     ], name="limits")
-    x, y, w = section(slide, 4, 28.75, "Open questions & next steps")
+    x, y, w = section(slide, 4, 27.19, "Open questions & next steps")
     text(slide, x, y, w, 34.6 - y, [
         P("How do geospatial foundation models pretrained jointly on SAR and optical imagery fare against these "
           "single-source checkpoints?", bullet=True),
+        P("Does SAR pretraining still trail ImageNet when both use the same objective, architecture and number of "
+          "pretraining images?", bullet=True),
         P("Does SAR pretraining help where optical cannot: near shore and for small dark vessels?", bullet=True),
         P(B("Next:"), " near-shore training labels, a shoreline input channel, several seeds, and matched pretraining "
           "objectives across sensors.", bullet=True),

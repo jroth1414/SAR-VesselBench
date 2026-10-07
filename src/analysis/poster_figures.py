@@ -401,7 +401,7 @@ def figure_label_efficiency(g, out_dir: Path) -> list[Path]:
 
     import matplotlib.pyplot as plt
 
-    fig, axes = plt.subplots(2, 2, figsize=(14.6, 9.8), sharex=True)
+    fig, axes = plt.subplots(2, 2, figsize=(14.6, 10.6), sharex=True)
     rows = (("test", "Test F1 (16 scenes)", (0.64, 0.90)),
             ("final", "Verified F1 (50 scenes)", (0.40, 0.59)))
     for r, (metric, ylabel, ylim) in enumerate(rows):
@@ -433,7 +433,7 @@ def figure_sar_minus_optical(details: Mapping[str, object], out_dir: Path) -> li
     import matplotlib.pyplot as plt
 
     intervals: Mapping[str, Mapping[str, float]] = details["intervals"]  # type: ignore[assignment]
-    fig, axes = plt.subplots(1, 2, figsize=(14.6, 5.9), sharey=True)
+    fig, axes = plt.subplots(1, 2, figsize=(14.6, 6.45), sharey=True)
     styles = (("test", "Test (16 scenes)", "-", "o", -0.09), ("final", "Verified (50 scenes)", (0, (1.2, 1.4)), "s", 0.09))
     for axis, track in zip(axes, TRACKS):
         axis.axhline(0, color=MUTED, lw=1.6, zorder=1)
