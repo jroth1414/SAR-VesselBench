@@ -37,7 +37,11 @@ jobs:
             tests/test_scorer_immutable.py
 
   tests:
-    name: Full CPU suite
+    # Models, data, scoring, evaluation, and the evidence-to-numbers pipeline.
+    # Tests of the cluster run machinery (resume and terminal recovery, run
+    # markers, the BES2 diagnostic campaign, the superseded August status
+    # snapshot) stay in tests/ but are not part of CI.
+    name: Science and evidence tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -51,4 +55,29 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r environment/env-cpu-test.txt --extra-index-url https://download.pytorch.org/whl/cpu
       - name: Run tests
-        run: python -m pytest -q
+        run: |
+          python -m pytest -q \
+            tests/test_centroids.py \
+            tests/test_chipper.py \
+            tests/test_decode.py \
+            tests/test_focal_loss_fp16.py \
+            tests/test_ground_truth.py \
+            tests/test_ground_truth_audit.py \
+            tests/test_inference_precision.py \
+            tests/test_layer_decay.py \
+            tests/test_locateanything_shore.py \
+            tests/test_scorer.py \
+            tests/test_splits.py \
+            tests/test_targets_transforms.py \
+            tests/test_threshold.py \
+            tests/test_heldout_contract.py \
+            tests/test_heldout_results.py \
+            tests/test_heldout_final_eval.py \
+            tests/test_heldout_terminal_recovery.py \
+            tests/test_scene_bootstrap.py \
+            tests/test_stage_evidence.py \
+            tests/test_train_label_profile.py \
+            tests/test_poster_coastal.py \
+            tests/test_poster_extras.py \
+            tests/test_poster_figures.py \
+            tests/test_poster_scene.py

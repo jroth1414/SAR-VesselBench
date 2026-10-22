@@ -45,7 +45,7 @@ data/            fixed scene splits and normalization statistics (no imagery)
 locks/           exact package locks; the H100 environment was built from env-v100node.txt
 environment/     CPU lock used by continuous integration
 results/h100/    evidence, generated numbers, code lineage, log excerpts
-tests/           unit and contract tests (CI runs them on Linux)
+tests/           unit and contract tests (CI runs the science and evidence tests on Linux)
 docs/poster/     the AIPR 2026 poster
 ```
 
