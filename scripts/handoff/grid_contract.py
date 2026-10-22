@@ -12,7 +12,10 @@ from .test_recovery_contract import PROTECTED_OBJECTS as TEST_PROTECTED
 from .terminal_contract import runtime_contract
 
 GRID_ANCESTOR = "b36fffa0fed0af9868b6043b62a6fc9b25d63250"
-INVENTORY_SHA256 = "eafca17583c6704283b3d7e3615345371eadafe3148202178704e68429bce8bb"
+# Public copy: one private cluster path in grid_inventory.json is replaced by
+# /cluster-site-redacted. The cluster-approved original hashed to
+# eafca17583c6704283b3d7e3615345371eadafe3148202178704e68429bce8bb.
+INVENTORY_SHA256 = "9bfd03ee51ef15e5f1292ee087cd48aca39d586d5b74c11baa01d18792046ce9"
 _raw_inventory = Path(__file__).with_name("grid_inventory.json").read_bytes()
 if hashlib.sha256(_raw_inventory).hexdigest() != INVENTORY_SHA256:
     raise PackageError("approved grid-finalization inventory bytes differ")
