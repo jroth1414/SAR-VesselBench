@@ -1,0 +1,360 @@
+"""Assert H100 inventory and exercise IEEE FP32 matmul/cuDNN in child processes."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+from collections.abc import Mapping
+
+from scripts.h100.contracts import (
+    EXPECTED_COMPUTE_CAPABILITY,
+    EXPECTED_GPU_COUNT,
+    validate_gpu_inventory,
+)
+from scripts.h100.lightning_contract import (
+    assert_pre_trainer_contract,
+    assert_trainer_contract,
+    validate_trainer_contract_evidence,
+)
+from scripts.h100.precision import assert_sitecustomize_active
+
+
+def _device_record(torch, index: int) -> dict:
+    props = torch.cuda.get_device_properties(index)
+    raw_uuid = getattr(props, "uuid", None)
+    if raw_uuid is None:
+        raw_uuid = getattr(props, "_uuid", None)
+    if raw_uuid is None:
+        raw_uuid = getattr(props, "_CUuuid", None)
+    uuid = str(raw_uuid or "").strip()
+    if not uuid:
+        raise RuntimeError(f"CUDA device {index} did not expose a hardware UUID")
+    return {
+        "index": index,
+        "name": props.name,
+        "uuid": uuid,
+        "compute_capability": [props.major, props.minor],
+        "total_memory_bytes": props.total_memory,
+    }
+
+
+def child_probe() -> dict:
+    import lightning as L
+    import torch
+
+    backend = assert_sitecustomize_active(torch)
+    if not torch.cuda.is_available() or torch.cuda.device_count() != 1:
+        raise RuntimeError("per-GPU child must see exactly one CUDA device")
+    device = torch.device("cuda:0")
+    record = _device_record(torch, 0)
+    if "H100" not in str(record["name"]).upper():
+        raise RuntimeError(f"child device is not an H100: {record['name']!r}")
+    if tuple(record["compute_capability"]) != EXPECTED_COMPUTE_CAPABILITY:
+        raise RuntimeError(
+            f"child device must be CC 9.0, got {record['compute_capability']}"
+        )
+
+    a = torch.randn(256, 256, dtype=torch.float32, device=device)
+    b = torch.randn(256, 256, dtype=torch.float32, device=device)
+    matmul = a @ b
+    conv = torch.nn.Conv2d(8, 8, kernel_size=3, padding=1, device=device)
+    image = torch.randn(2, 8, 64, 64, dtype=torch.float32, device=device)
+    convolved = conv(image)
+    pre_trainer = assert_pre_trainer_contract(
+        conv,
+        precision="32-true",
+        devices=1,
+        micro_batch=16,
+        gradient_accumulation=1,
+        torch_module=torch,
+    )
+    trainer = L.Trainer(
+        accelerator="gpu",
+        devices=1,
+        precision="32-true",
+        accumulate_grad_batches=1,
+        logger=False,
+        enable_checkpointing=False,
+        enable_progress_bar=False,
+        enable_model_summary=False,
+    )
+    runtime_contract = assert_trainer_contract(
+        trainer,
+        conv,
+        precision="32-true",
+        devices=1,
+        micro_batch=16,
+        gradient_accumulation=1,
+        pre_trainer=pre_trainer,
+        torch_module=torch,
+    )
+    torch.cuda.synchronize()
+    if matmul.dtype != torch.float32 or not torch.isfinite(matmul).all():
+        raise RuntimeError("strict-FP32 matmul probe failed")
+    if convolved.dtype != torch.float32 or not torch.isfinite(convolved).all():
+        raise RuntimeError("strict-FP32 cuDNN convolution probe failed")
+    return {
+        "device": record,
+        "backend": backend,
+        "finite": True,
+        "runtime_contract": runtime_contract,
+    }
+
+
+def bind_child_probes(
+    inventory: list[dict],
+    children: list[object],
+    *,
+    expected_backend: Mapping[str, str],
+) -> list[dict]:
+    """Bind each one-device child to the requested parent-visible H100."""
+
+    if len(children) != len(inventory):
+        raise RuntimeError(
+            "strict-FP32 child probe count does not match the parent GPU inventory"
+        )
+    bound: list[dict] = []
+    observed_uuids: set[str] = set()
+    identity_keys = (
+        "name",
+        "uuid",
+        "compute_capability",
+        "total_memory_bytes",
+    )
+    for parent_index, (expected, raw_child) in enumerate(
+        zip(inventory, children, strict=True)
+    ):
+        if not isinstance(raw_child, Mapping):
+            raise RuntimeError(f"child probe {parent_index} is not a JSON object")
+        device = raw_child.get("device")
+        if not isinstance(device, Mapping):
+            raise RuntimeError(f"child probe {parent_index} lacks device identity")
+        mismatches = {
+            key: (expected.get(key), device.get(key))
+            for key in identity_keys
+            if device.get(key) != expected.get(key)
+        }
+        if device.get("index") != 0:
+            mismatches["visible_index"] = (0, device.get("index"))
+        if raw_child.get("backend") != dict(expected_backend):
+            mismatches["backend"] = (dict(expected_backend), raw_child.get("backend"))
+        if raw_child.get("finite") is not True:
+            mismatches["finite"] = (True, raw_child.get("finite"))
+        try:
+            runtime_contract = validate_trainer_contract_evidence(
+                raw_child.get("runtime_contract")
+            )
+        except RuntimeError as exc:
+            runtime_contract = {}
+            mismatches["runtime_contract"] = ("valid", str(exc))
+        if mismatches:
+            raise RuntimeError(
+                f"child probe for parent GPU {parent_index} is mismatched: {mismatches}"
+            )
+        uuid = str(device["uuid"])
+        if uuid in observed_uuids:
+            raise RuntimeError(f"child probes reused GPU identity: {uuid}")
+        observed_uuids.add(uuid)
+        bound.append(
+            {
+                "requested_parent_index": parent_index,
+                "expected_parent_uuid": expected["uuid"],
+                "device": dict(device),
+                "backend": dict(raw_child["backend"]),
+                "finite": True,
+                "runtime_contract": runtime_contract,
+            }
+        )
+    return bound
+
+
+def validate_diagnostic_gpu_inventory(
+    devices: list[dict], expected_gpus: int
+) -> list[dict]:
+    """Validate only the approved one/two-GPU, nonreportable diagnostic lane."""
+
+    if expected_gpus not in (1, 2) or len(devices) != expected_gpus:
+        raise RuntimeError(
+            "diagnostic strict-FP32 probe requires exactly one or two H100s"
+        )
+    return _validate_h100_devices(devices, scope="diagnostic")
+
+
+def validate_terminal_gpu_inventory(devices: list[dict]) -> list[dict]:
+    """Validate the single full H100 used by an authorized terminal recovery."""
+
+    if len(devices) != 1:
+        raise RuntimeError("terminal recovery requires exactly one full H100")
+    device = devices[0]
+    if "MIG" in str(device.get("name", "")).upper() or str(
+        device.get("uuid", "")
+    ).upper().startswith("MIG-"):
+        raise RuntimeError("terminal recovery requires a full H100, not a MIG device")
+    return _validate_h100_devices(devices, scope="terminal recovery")
+
+
+def _validate_h100_devices(devices: list[dict], *, scope: str) -> list[dict]:
+    seen: set[str] = set()
+    names: set[str] = set()
+    memory_sizes: set[int] = set()
+    for index, device in enumerate(devices):
+        name = str(device.get("name", ""))
+        capability = tuple(device.get("compute_capability", ()))
+        identifier = str(device.get("uuid", "")).strip()
+        try:
+            memory = int(device.get("total_memory_bytes", 0))
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                f"{scope} H100 memory identity is invalid"
+            ) from exc
+        if (
+            "H100" not in name.upper()
+            or capability != EXPECTED_COMPUTE_CAPABILITY
+            or not identifier
+            or identifier in seen
+            or memory <= 0
+        ):
+            raise RuntimeError(
+                f"{scope} device {index} is not one unique CC-9.0 H100"
+            )
+        seen.add(identifier)
+        names.add(name)
+        memory_sizes.add(memory)
+    if len(names) != 1 or len(memory_sizes) != 1:
+        raise RuntimeError(
+            f"{scope} H100 allocation is not one hardware class"
+        )
+    return [dict(device) for device in devices]
+
+
+def _visible_device_tokens(expected_gpus: int) -> list[str]:
+    raw = os.environ.get("CUDA_VISIBLE_DEVICES")
+    if raw is None or not raw.strip():
+        return [str(index) for index in range(expected_gpus)]
+    tokens = [token.strip() for token in raw.split(",")]
+    if len(tokens) != expected_gpus or any(not token for token in tokens):
+        raise RuntimeError("CUDA_VISIBLE_DEVICES differs from H100 inventory")
+    return tokens
+
+
+def parent_probe(
+    expected_gpus: int,
+    *,
+    diagnostic: bool = False,
+    terminal_recovery: bool = False,
+) -> dict:
+    if terminal_recovery and (diagnostic or expected_gpus != 1):
+        raise RuntimeError(
+            "terminal recovery requires --expected-gpus 1 without --diagnostic"
+        )
+    import torch
+
+    backend = assert_sitecustomize_active(torch)
+    if torch.__version__ != "2.11.0+cu126":
+        raise RuntimeError(f"expected torch 2.11.0+cu126, found {torch.__version__}")
+    if "sm_90" not in torch.cuda.get_arch_list():
+        raise RuntimeError(f"torch build lacks sm_90 kernels: {torch.cuda.get_arch_list()}")
+    if not torch.cuda.is_available():
+        raise RuntimeError("torch.cuda.is_available() is false")
+    inventory = [_device_record(torch, index) for index in range(torch.cuda.device_count())]
+    if terminal_recovery:
+        validate_terminal_gpu_inventory(inventory)
+    elif diagnostic:
+        validate_diagnostic_gpu_inventory(inventory, expected_gpus)
+    else:
+        if expected_gpus != EXPECTED_GPU_COUNT:
+            raise RuntimeError("the reportable H100 lane requires exactly eight GPUs")
+        validate_gpu_inventory(inventory)
+    driver_lines = subprocess.run(
+        [
+            "nvidia-smi",
+            "--query-gpu=driver_version",
+            "--format=csv,noheader,nounits",
+        ],
+        text=True,
+        capture_output=True,
+        check=True,
+    ).stdout.splitlines()
+    drivers = {line.strip() for line in driver_lines if line.strip()}
+    if (
+        (not (diagnostic or terminal_recovery) and len(driver_lines) != expected_gpus)
+        or not driver_lines
+        or len(drivers) != 1
+    ):
+        raise RuntimeError("H100 allocation does not expose one exact driver version")
+
+    children: list[object] = []
+    device_tokens = _visible_device_tokens(expected_gpus)
+    for gpu in range(expected_gpus):
+        env = dict(os.environ, CUDA_VISIBLE_DEVICES=device_tokens[gpu])
+        completed = subprocess.run(
+            [sys.executable, "-m", "scripts.h100.strict_fp32_probe", "--child"],
+            env=env,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        children.append(json.loads(completed.stdout))
+    bound_children = bind_child_probes(
+        inventory,
+        children,
+        expected_backend=backend,
+    )
+    payload = {
+        "torch": torch.__version__,
+        "cuda_build": torch.version.cuda,
+        "driver_version": drivers.pop(),
+        "backend": backend,
+        "devices": inventory,
+        "child_probes": bound_children,
+    }
+    if diagnostic:
+        payload["diagnostic_scope"] = "bes2-train-dev-only"
+    if terminal_recovery:
+        payload["terminal_recovery_scope"] = (
+            "owner-approved-single-h100-terminal-recovery"
+        )
+    return payload
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--expected-gpus", type=int, default=EXPECTED_GPU_COUNT)
+    parser.add_argument(
+        "--diagnostic",
+        action="store_true",
+        help="allow only the BES2 diagnostic's one/two-H100 allocations",
+    )
+    parser.add_argument(
+        "--terminal-recovery",
+        action="store_true",
+        help="probe one H100 after the runtime validates terminal recovery approval",
+    )
+    parser.add_argument("--child", action="store_true")
+    args = parser.parse_args()
+    if args.child and args.diagnostic:
+        parser.error("--diagnostic is parent-only")
+    if args.terminal_recovery and (
+        args.child or args.diagnostic or args.expected_gpus != 1
+    ):
+        parser.error(
+            "--terminal-recovery requires --expected-gpus 1 without --child or --diagnostic"
+        )
+    payload = (
+        child_probe()
+        if args.child
+        else parent_probe(
+            args.expected_gpus,
+            diagnostic=args.diagnostic,
+            terminal_recovery=args.terminal_recovery,
+        )
+    )
+    print(json.dumps(payload, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

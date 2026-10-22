@@ -1,0 +1,184 @@
+# Excerpt of the full H100 training log for beS2-f100-s0.
+# Full log: 659341 lines, sha256 00437cc32db519caa0f296c58e0fe20587f2ab73c3dcecb75029081d470c9502 (operator archive).
+# Private site paths are replaced by: /cluster-apps-redacted, /cluster-local-redacted/xview3-, /cluster-site-redacted.
+[rank: 0] Seed set to 0
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+💡 Tip: For seamless cloud logging and experiment tracking, try installing [litlogger](https://pypi.org/project/litlogger/) to enable LitLogger, which logs metrics and artifacts automatically to the Lightning Experiments platform.
+/cluster-site-redacted/jroth/envs/xview3-h100-fp32-dgx-a4af214a/lib/python3.11/site-packages/lightning/pytorch/trainer/configuration_validator.py:70: You defined a `validation_step` but have no `val_dataloader`. Skipping val loop.
+You are using a CUDA device ('NVIDIA H100 80GB HBM3') that has Tensor Cores. To properly utilize them, you should set `torch.set_float32_matmul_precision('medium' | 'high')` which will trade-off precision for performance. For more details, read https://pytorch.org/docs/stable/generated/torch.set_float32_matmul_precision.html#torch.set_float32_matmul_precision
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [1]
+
+  | Name     | Type             | Params | Mode  | FLOPs
+--------------------------------------------------------------
+0 | backbone | ConvNeXtBackbone | 87.7 M | train | 0    
+1 | head     | HeatmapHead      | 6.3 M  | train | 0    
+--------------------------------------------------------------
+94.0 M    Trainable params
+0         Non-trainable params
+94.0 M    Total params
+375.955   Total estimated model params size (MB)
+481       Modules in train mode
+0         Modules in eval mode
+0         Total Flops
+SLURM auto-requeueing enabled. Setting signal handlers.
+/cluster-site-redacted/jroth/envs/xview3-h100-fp32-dgx-a4af214a/lib/python3.11/site-packages/lightning/pytorch/utilities/_pytree.py:21: `isinstance(treespec, LeafSpec)` is deprecated, use `isinstance(treespec, TreeSpec) and treespec.is_leaf()` instead.
+[bigearthnet_s2] {"description": "BigEarthNet-S2 post-stem transfer with a seeded three-channel first convolution", "loaded_target_keys": ["head.norm.bias", "head.norm.weight", "stages.0.blocks.0.conv_dw.bias", "stages.0.blocks.0.conv_dw.weight", "stages.0.blocks.0.mlp.fc1.bias", "stages.0.blocks.0.mlp.fc1.weight", "stages.0.blocks.0.mlp.fc2.bias", "stages.0.blocks.0.mlp.fc2.weight", "stages.0.blocks.0.mlp.grn.bias", "stages.0.blocks.0.mlp.grn.weight", "stages.0.blocks.0.norm.bias", "stages.0.blocks.0.norm.weight", "stages.0.blocks.1.conv_dw.bias", "stages.0.blocks.1.conv_dw.weight", "stages.0.blocks.1.mlp.fc1.bias", "stages.0.blocks.1.mlp.fc1.weight", "stages.0.blocks.1.mlp.fc2.bias", "stages.0.blocks.1.mlp.fc2.weight", "stages.0.blocks.1.mlp.grn.bias", "stages.0.blocks.1.mlp.grn.weight", "stages.0.blocks.1.norm.bias", "stages.0.blocks.1.norm.weight", "stages.0.blocks.2.conv_dw.bias", "stages.0.blocks.2.conv_dw.weight", "stages.0.blocks.2.mlp.fc1.bias", "stages.0.blocks.2.mlp.fc1.weight", "stages.0.blocks.2.mlp.fc2.bias", "stages.0.blocks.2.mlp.fc2.weight", "stages.0.blocks.2.mlp.grn.bias", "stages.0.blocks.2.mlp.grn.weight", "stages.0.blocks.2.norm.bias", "stages.0.blocks.2.norm.weight", "stages.1.blocks.0.conv_dw.bias", "stages.1.blocks.0.conv_dw.weight", "stages.1.blocks.0.mlp.fc1.bias", "stages.1.blocks.0.mlp.fc1.weight", "stages.1.blocks.0.mlp.fc2.bias", "stages.1.blocks.0.mlp.fc2.weight", "stages.1.blocks.0.mlp.grn.bias", "stages.1.blocks.0.mlp.grn.weight", "stages.1.blocks.0.norm.bias", "stages.1.blocks.0.norm.weight", "stages.1.blocks.1.conv_dw.bias", "stages.1.blocks.1.conv_dw.weight", "stages.1.blocks.1.mlp.fc1.bias", "stages.1.blocks.1.mlp.fc1.weight", "stages.1.blocks.1.mlp.fc2.bias", "stages.1.blocks.1.mlp.fc2.weight", "stages.1.blocks.1.mlp.grn.bias", "stages.1.blocks.1.mlp.grn.weight", "stages.1.blocks.1.norm.bias", "stages.1.blocks.1.norm.weight", "stages.1.blocks.2.conv_dw.bias", "stages.1.blocks.2.conv_dw.weight", "stages.1.blocks.2.mlp.fc1.bias", "stages.1.blocks.2.mlp.fc1.weight", "stages.1.blocks.2.mlp.fc2.bias", "stages.1.blocks.2.mlp.fc2.weight", "stages.1.blocks.2.mlp.grn.bias", "stages.1.blocks.2.mlp.grn.weight", "stages.1.blocks.2.norm.bias", "stages.1.blocks.2.norm.weight", "stages.1.downsample.0.bias", "stages.1.downsample.0.weight", "stages.1.downsample.1.bias", "stages.1.downsample.1.weight", "stages.2.blocks.0.conv_dw.bias", "stages.2.blocks.0.conv_dw.weight", "stages.2.blocks.0.mlp.fc1.bias", "stages.2.blocks.0.mlp.fc1.weight", "stages.2.blocks.0.mlp.fc2.bias", "stages.2.blocks.0.mlp.fc2.weight", "stages.2.blocks.0.mlp.grn.bias", "stages.2.blocks.0.mlp.grn.weight", "stages.2.blocks.0.norm.bias", "stages.2.blocks.0.norm.weight", "stages.2.blocks.1.conv_dw.bias", "stages.2.blocks.1.conv_dw.weight", "stages.2.blocks.1.mlp.fc1.bias", "stages.2.blocks.1.mlp.fc1.weight", "stages.2.blocks.1.mlp.fc2.bias", "stages.2.blocks.1.mlp.fc2.weight", "stages.2.blocks.1.mlp.grn.bias", "stages.2.blocks.1.mlp.grn.weight", "stages.2.blocks.1.norm.bias", "stages.2.blocks.1.norm.weight", "stages.2.blocks.10.conv_dw.bias", "stages.2.blocks.10.conv_dw.weight", "stages.2.blocks.10.mlp.fc1.bias", "stages.2.blocks.10.mlp.fc1.weight", "stages.2.blocks.10.mlp.fc2.bias", "stages.2.blocks.10.mlp.fc2.weight", "stages.2.blocks.10.mlp.grn.bias", "stages.2.blocks.10.mlp.grn.weight", "stages.2.blocks.10.norm.bias", "stages.2.blocks.10.norm.weight", "stages.2.blocks.11.conv_dw.bias", "stages.2.blocks.11.conv_dw.weight", "stages.2.blocks.11.mlp.fc1.bias", "stages.2.blocks.11.mlp.fc1.weight", "stages.2.blocks.11.mlp.fc2.bias", "stages.2.blocks.11.mlp.fc2.weight", "stages.2.blocks.11.mlp.grn.bias", "stages.2.blocks.11.mlp.grn.weight", "stages.2.blocks.11.norm.bias", "stages.2.blocks.11.norm.weight", "stages.2.blocks.12.conv_dw.bias", "stages.2.blocks.12.conv_dw.weight", "stages.2.blocks.12.mlp.fc1.bias", "stages.2.blocks.12.mlp.fc1.weight", "stages.2.blocks.12.mlp.fc2.bias", "stages.2.blocks.12.mlp.fc2.weight", "stages.2.blocks.12.mlp.grn.bias", "stages.2.blocks.12.mlp.grn.weight", "stages.2.blocks.12.norm.bias", "stages.2.blocks.12.norm.weight", "stages.2.blocks.13.conv_dw.bias", "stages.2.blocks.13.conv_dw.weight", "stages.2.blocks.13.mlp.fc1.bias", "stages.2.blocks.13.mlp.fc1.weight", "stages.2.blocks.13.mlp.fc2.bias", "stages.2.blocks.13.mlp.fc2.weight", "stages.2.blocks.13.mlp.grn.bias", "stages.2.blocks.13.mlp.grn.weight", "stages.2.blocks.13.norm.bias", "stages.2.blocks.13.norm.weight", "stages.2.blocks.14.conv_dw.bias", "stages.2.blocks.14.conv_dw.weight", "stages.2.blocks.14.mlp.fc1.bias", "stages.2.blocks.14.mlp.fc1.weight", "stages.2.blocks.14.mlp.fc2.bias", "stages.2.blocks.14.mlp.fc2.weight", "stages.2.blocks.14.mlp.grn.bias", "stages.2.blocks.14.mlp.grn.weight", "stages.2.blocks.14.norm.bias", "stages.2.blocks.14.norm.weight", "stages.2.blocks.15.conv_dw.bias", "stages.2.blocks.15.conv_dw.weight", "stages.2.blocks.15.mlp.fc1.bias", "stages.2.blocks.15.mlp.fc1.weight", "stages.2.blocks.15.mlp.fc2.bias", "stages.2.blocks.15.mlp.fc2.weight", "stages.2.blocks.15.mlp.grn.bias", "stages.2.blocks.15.mlp.grn.weight", "stages.2.blocks.15.norm.bias", "stages.2.blocks.15.norm.weight", "stages.2.blocks.16.conv_dw.bias", "stages.2.blocks.16.conv_dw.weight", "stages.2.blocks.16.mlp.fc1.bias", "stages.2.blocks.16.mlp.fc1.weight", "stages.2.blocks.16.mlp.fc2.bias", "stages.2.blocks.16.mlp.fc2.weight", "stages.2.blocks.16.mlp.grn.bias", "stages.2.blocks.16.mlp.grn.weight", "stages.2.blocks.16.norm.bias", "stages.2.blocks.16.norm.weight", "stages.2.blocks.17.conv_dw.bias", "stages.2.blocks.17.conv_dw.weight", "stages.2.blocks.17.mlp.fc1.bias", "stages.2.blocks.17.mlp.fc1.weight", "stages.2.blocks.17.mlp.fc2.bias", "stages.2.blocks.17.mlp.fc2.weight", "stages.2.blocks.17.mlp.grn.bias", "stages.2.blocks.17.mlp.grn.weight", "stages.2.blocks.17.norm.bias", "stages.2.blocks.17.norm.weight", "stages.2.blocks.18.conv_dw.bias", "stages.2.blocks.18.conv_dw.weight", "stages.2.blocks.18.mlp.fc1.bias", "stages.2.blocks.18.mlp.fc1.weight", "stages.2.blocks.18.mlp.fc2.bias", "stages.2.blocks.18.mlp.fc2.weight", "stages.2.blocks.18.mlp.grn.bias", "stages.2.blocks.18.mlp.grn.weight", "stages.2.blocks.18.norm.bias", "stages.2.blocks.18.norm.weight", "stages.2.blocks.19.conv_dw.bias", "stages.2.blocks.19.conv_dw.weight", "stages.2.blocks.19.mlp.fc1.bias", "stages.2.blocks.19.mlp.fc1.weight", "stages.2.blocks.19.mlp.fc2.bias", "stages.2.blocks.19.mlp.fc2.weight", "stages.2.blocks.19.mlp.grn.bias", "stages.2.blocks.19.mlp.grn.weight", "stages.2.blocks.19.norm.bias", "stages.2.blocks.19.norm.weight", "stages.2.blocks.2.conv_dw.bias", "stages.2.blocks.2.conv_dw.weight", "stages.2.blocks.2.mlp.fc1.bias", "stages.2.blocks.2.mlp.fc1.weight", "stages.2.blocks.2.mlp.fc2.bias", "stages.2.blocks.2.mlp.fc2.weight", "stages.2.blocks.2.mlp.grn.bias", "stages.2.blocks.2.mlp.grn.weight", "stages.2.blocks.2.norm.bias", "stages.2.blocks.2.norm.weight", "stages.2.blocks.20.conv_dw.bias", "stages.2.blocks.20.conv_dw.weight", "stages.2.blocks.20.mlp.fc1.bias", "stages.2.blocks.20.mlp.fc1.weight", "stages.2.blocks.20.mlp.fc2.bias", "stages.2.blocks.20.mlp.fc2.weight", "stages.2.blocks.20.mlp.grn.bias", "stages.2.blocks.20.mlp.grn.weight", "stages.2.blocks.20.norm.bias", "stages.2.blocks.20.norm.weight", "stages.2.blocks.21.conv_dw.bias", "stages.2.blocks.21.conv_dw.weight", "stages.2.blocks.21.mlp.fc1.bias", "stages.2.blocks.21.mlp.fc1.weight", "stages.2.blocks.21.mlp.fc2.bias", "stages.2.blocks.21.mlp.fc2.weight", "stages.2.blocks.21.mlp.grn.bias", "stages.2.blocks.21.mlp.grn.weight", "stages.2.blocks.21.norm.bias", "stages.2.blocks.21.norm.weight", "stages.2.blocks.22.conv_dw.bias", "stages.2.blocks.22.conv_dw.weight", "stages.2.blocks.22.mlp.fc1.bias", "stages.2.blocks.22.mlp.fc1.weight", "stages.2.blocks.22.mlp.fc2.bias", "stages.2.blocks.22.mlp.fc2.weight", "stages.2.blocks.22.mlp.grn.bias", "stages.2.blocks.22.mlp.grn.weight", "stages.2.blocks.22.norm.bias", "stages.2.blocks.22.norm.weight", "stages.2.blocks.23.conv_dw.bias", "stages.2.blocks.23.conv_dw.weight", "stages.2.blocks.23.mlp.fc1.bias", "stages.2.blocks.23.mlp.fc1.weight", "stages.2.blocks.23.mlp.fc2.bias", "stages.2.blocks.23.mlp.fc2.weight", "stages.2.blocks.23.mlp.grn.bias", "stages.2.blocks.23.mlp.grn.weight", "stages.2.blocks.23.norm.bias", "stages.2.blocks.23.norm.weight", "stages.2.blocks.24.conv_dw.bias", "stages.2.blocks.24.conv_dw.weight", "stages.2.blocks.24.mlp.fc1.bias", "stages.2.blocks.24.mlp.fc1.weight", "stages.2.blocks.24.mlp.fc2.bias", "stages.2.blocks.24.mlp.fc2.weight", "stages.2.blocks.24.mlp.grn.bias", "stages.2.blocks.24.mlp.grn.weight", "stages.2.blocks.24.norm.bias", "stages.2.blocks.24.norm.weight", "stages.2.blocks.25.conv_dw.bias", "stages.2.blocks.25.conv_dw.weight", "stages.2.blocks.25.mlp.fc1.bias", "stages.2.blocks.25.mlp.fc1.weight", "stages.2.blocks.25.mlp.fc2.bias", "stages.2.blocks.25.mlp.fc2.weight", "stages.2.blocks.25.mlp.grn.bias", "stages.2.blocks.25.mlp.grn.weight", "stages.2.blocks.25.norm.bias", "stages.2.blocks.25.norm.weight", "stages.2.blocks.26.conv_dw.bias", "stages.2.blocks.26.conv_dw.weight", "stages.2.blocks.26.mlp.fc1.bias", "stages.2.blocks.26.mlp.fc1.weight", "stages.2.blocks.26.mlp.fc2.bias", "stages.2.blocks.26.mlp.fc2.weight", "stages.2.blocks.26.mlp.grn.bias", "stages.2.blocks.26.mlp.grn.weight", "stages.2.blocks.26.norm.bias", "stages.2.blocks.26.norm.weight", "stages.2.blocks.3.conv_dw.bias", "stages.2.blocks.3.conv_dw.weight", "stages.2.blocks.3.mlp.fc1.bias", "stages.2.blocks.3.mlp.fc1.weight", "stages.2.blocks.3.mlp.fc2.bias", "stages.2.blocks.3.mlp.fc2.weight", "stages.2.blocks.3.mlp.grn.bias", "stages.2.blocks.3.mlp.grn.weight", "stages.2.blocks.3.norm.bias", "stages.2.blocks.3.norm.weight", "stages.2.blocks.4.conv_dw.bias", "stages.2.blocks.4.conv_dw.weight", "stages.2.blocks.4.mlp.fc1.bias", "stages.2.blocks.4.mlp.fc1.weight", "stages.2.blocks.4.mlp.fc2.bias", "stages.2.blocks.4.mlp.fc2.weight", "stages.2.blocks.4.mlp.grn.bias", "stages.2.blocks.4.mlp.grn.weight", "stages.2.blocks.4.norm.bias", "stages.2.blocks.4.norm.weight", "stages.2.blocks.5.conv_dw.bias", "stages.2.blocks.5.conv_dw.weight", "stages.2.blocks.5.mlp.fc1.bias", "stages.2.blocks.5.mlp.fc1.weight", "stages.2.blocks.5.mlp.fc2.bias", "stages.2.blocks.5.mlp.fc2.weight", "stages.2.blocks.5.mlp.grn.bias", "stages.2.blocks.5.mlp.grn.weight", "stages.2.blocks.5.norm.bias", "stages.2.blocks.5.norm.weight", "stages.2.blocks.6.conv_dw.bias", "stages.2.blocks.6.conv_dw.weight", "stages.2.blocks.6.mlp.fc1.bias", "stages.2.blocks.6.mlp.fc1.weight", "stages.2.blocks.6.mlp.fc2.bias", "stages.2.blocks.6.mlp.fc2.weight", "stages.2.blocks.6.mlp.grn.bias", "stages.2.blocks.6.mlp.grn.weight", "stages.2.blocks.6.norm.bias", "stages.2.blocks.6.norm.weight", "stages.2.blocks.7.conv_dw.bias", "stages.2.blocks.7.conv_dw.weight", "stages.2.blocks.7.mlp.fc1.bias", "stages.2.blocks.7.mlp.fc1.weight", "stages.2.blocks.7.mlp.fc2.bias", "stages.2.blocks.7.mlp.fc2.weight", "stages.2.blocks.7.mlp.grn.bias", "stages.2.blocks.7.mlp.grn.weight", "stages.2.blocks.7.norm.bias", "stages.2.blocks.7.norm.weight", "stages.2.blocks.8.conv_dw.bias", "stages.2.blocks.8.conv_dw.weight", "stages.2.blocks.8.mlp.fc1.bias", "stages.2.blocks.8.mlp.fc1.weight", "stages.2.blocks.8.mlp.fc2.bias", "stages.2.blocks.8.mlp.fc2.weight", "stages.2.blocks.8.mlp.grn.bias", "stages.2.blocks.8.mlp.grn.weight", "stages.2.blocks.8.norm.bias", "stages.2.blocks.8.norm.weight", "stages.2.blocks.9.conv_dw.bias", "stages.2.blocks.9.conv_dw.weight", "stages.2.blocks.9.mlp.fc1.bias", "stages.2.blocks.9.mlp.fc1.weight", "stages.2.blocks.9.mlp.fc2.bias", "stages.2.blocks.9.mlp.fc2.weight", "stages.2.blocks.9.mlp.grn.bias", "stages.2.blocks.9.mlp.grn.weight", "stages.2.blocks.9.norm.bias", "stages.2.blocks.9.norm.weight", "stages.2.downsample.0.bias", "stages.2.downsample.0.weight", "stages.2.downsample.1.bias", "stages.2.downsample.1.weight", "stages.3.blocks.0.conv_dw.bias", "stages.3.blocks.0.conv_dw.weight", "stages.3.blocks.0.mlp.fc1.bias", "stages.3.blocks.0.mlp.fc1.weight", "stages.3.blocks.0.mlp.fc2.bias", "stages.3.blocks.0.mlp.fc2.weight", "stages.3.blocks.0.mlp.grn.bias", "stages.3.blocks.0.mlp.grn.weight", "stages.3.blocks.0.norm.bias", "stages.3.blocks.0.norm.weight", "stages.3.blocks.1.conv_dw.bias", "stages.3.blocks.1.conv_dw.weight", "stages.3.blocks.1.mlp.fc1.bias", "stages.3.blocks.1.mlp.fc1.weight", "stages.3.blocks.1.mlp.fc2.bias", "stages.3.blocks.1.mlp.fc2.weight", "stages.3.blocks.1.mlp.grn.bias", "stages.3.blocks.1.mlp.grn.weight", "stages.3.blocks.1.norm.bias", "stages.3.blocks.1.norm.weight", "stages.3.blocks.2.conv_dw.bias", "stages.3.blocks.2.conv_dw.weight", "stages.3.blocks.2.mlp.fc1.bias", "stages.3.blocks.2.mlp.fc1.weight", "stages.3.blocks.2.mlp.fc2.bias", "stages.3.blocks.2.mlp.fc2.weight", "stages.3.blocks.2.mlp.grn.bias", "stages.3.blocks.2.mlp.grn.weight", "stages.3.blocks.2.norm.bias", "stages.3.blocks.2.norm.weight", "stages.3.downsample.0.bias", "stages.3.downsample.0.weight", "stages.3.downsample.1.bias", "stages.3.downsample.1.weight", "stem.0.bias", "stem.1.bias", "stem.1.weight"], "retained_seeded_target_keys": ["backbone.model.stem.0.weight"], "seeded_target_stem_sha256": "d3ab6509237ab6324010cce191d2aa3213541c3585cb8dd4ecd6dd10473a2487", "source_checkpoint": "bigearthnet_s2/model.safetensors", "source_checkpoint_sha256": "b09d0e41cc683878243a9128a6f4724d6a71d562318beeae716f0dce9cbbf454", "stem_policy": "timm-unsupported-input-conv-fallback-seeded-target-weight"}
+
+Training: |          | 0/? [00:00<?, ?it/s]
+Training: |          | 0/? [00:00<?, ?it/s]
+Epoch 0:   0%|          | 0/6588 [00:00<?, ?it/s]
+Epoch 0:   0%|          | 1/6588 [00:04<7:27:17,  0.25it/s]
+Epoch 0:   0%|          | 1/6588 [00:04<7:27:20,  0.25it/s, v_num=rics, train_loss=45.00]
+Epoch 0:   0%|          | 2/6588 [00:04<4:04:06,  0.45it/s, v_num=rics, train_loss=45.00]
+Epoch 0:   0%|          | 2/6588 [00:04<4:18:51,  0.42it/s, v_num=rics, train_loss=15.80]
+Epoch 0:   0%|          | 3/6588 [00:04<3:02:38,  0.60it/s, v_num=rics, train_loss=15.80]
+Epoch 0:   0%|          | 3/6588 [00:05<3:12:32,  0.57it/s, v_num=rics, train_loss=12.30]
+Epoch 0:   0%|          | 4/6588 [00:05<2:31:58,  0.72it/s, v_num=rics, train_loss=12.30]
+Epoch 0:   0%|          | 4/6588 [00:05<2:39:21,  0.69it/s, v_num=rics, train_loss=15.20]
+Epoch 0:   0%|          | 5/6588 [00:06<2:13:30,  0.82it/s, v_num=rics, train_loss=15.20]
+Epoch 0:   0%|          | 5/6588 [00:06<2:19:28,  0.79it/s, v_num=rics, train_loss=4.900]
+Epoch 0:   0%|          | 6/6588 [00:06<2:01:13,  0.90it/s, v_num=rics, train_loss=4.900]
+Epoch 0:   0%|          | 6/6588 [00:06<2:06:13,  0.87it/s, v_num=rics, train_loss=5.870]
+Epoch 0:   0%|          | 7/6588 [00:07<1:52:28,  0.98it/s, v_num=rics, train_loss=5.870]
+Epoch 0:   0%|          | 7/6588 [00:07<1:56:41,  0.94it/s, v_num=rics, train_loss=6.880]
+Epoch 0:   0%|          | 8/6588 [00:07<1:45:52,  1.04it/s, v_num=rics, train_loss=6.880]
+Epoch 0:   0%|          | 8/6588 [00:07<1:49:35,  1.00it/s, v_num=rics, train_loss=5.260]
+Epoch 0:   0%|          | 9/6588 [00:08<1:40:44,  1.09it/s, v_num=rics, train_loss=5.260]
+Epoch 0:   0%|          | 9/6588 [00:08<1:44:03,  1.05it/s, v_num=rics, train_loss=4.480]
+Epoch 0:   0%|          | 10/6588 [00:08<1:36:40,  1.13it/s, v_num=rics, train_loss=4.480]
+Epoch 0:   0%|          | 10/6588 [00:09<1:39:39,  1.10it/s, v_num=rics, train_loss=5.200]
+Epoch 0:   0%|          | 11/6588 [00:09<1:33:23,  1.17it/s, v_num=rics, train_loss=5.200]
+Epoch 0:   0%|          | 11/6588 [00:09<1:36:06,  1.14it/s, v_num=rics, train_loss=4.290]
+Epoch 0:   0%|          | 12/6588 [00:09<1:30:36,  1.21it/s, v_num=rics, train_loss=4.290]
+Epoch 0:   0%|          | 12/6588 [00:10<1:33:03,  1.18it/s, v_num=rics, train_loss=4.630]
+Epoch 0:   0%|          | 13/6588 [00:10<1:28:12,  1.24it/s, v_num=rics, train_loss=4.630]
+Epoch 0:   0%|          | 13/6588 [00:10<1:30:28,  1.21it/s, v_num=rics, train_loss=4.430]
+Epoch 0:   0%|          | 14/6588 [00:11<1:26:09,  1.27it/s, v_num=rics, train_loss=4.430]
+Epoch 0:   0%|          | 14/6588 [00:11<1:28:13,  1.24it/s, v_num=rics, train_loss=4.100]
+Epoch 0:   0%|          | 15/6588 [00:11<1:24:21,  1.30it/s, v_num=rics, train_loss=4.100]
+Epoch 0:   0%|          | 15/6588 [00:11<1:26:19,  1.27it/s, v_num=rics, train_loss=3.970]
+Epoch 0:   0%|          | 16/6588 [00:12<1:22:47,  1.32it/s, v_num=rics, train_loss=3.970]
+Epoch 0:   0%|          | 16/6588 [00:12<1:24:39,  1.29it/s, v_num=rics, train_loss=4.450]
+Epoch 0:   0%|          | 17/6588 [00:12<1:21:25,  1.34it/s, v_num=rics, train_loss=4.450]
+[... 659161 lines elided ...]
+Epoch 49: 100%|█████████▉| 6578/6588 [59:50<00:05,  1.83it/s, v_num=rics, train_loss=0.260, dev_f1=0.899]  
+Epoch 49: 100%|█████████▉| 6579/6588 [59:50<00:04,  1.83it/s, v_num=rics, train_loss=0.260, dev_f1=0.899]
+Epoch 49: 100%|█████████▉| 6579/6588 [59:50<00:04,  1.83it/s, v_num=rics, train_loss=0.00226, dev_f1=0.899]
+Epoch 49: 100%|█████████▉| 6580/6588 [59:50<00:04,  1.83it/s, v_num=rics, train_loss=0.00226, dev_f1=0.899]
+Epoch 49: 100%|█████████▉| 6580/6588 [59:51<00:04,  1.83it/s, v_num=rics, train_loss=0.00472, dev_f1=0.899]
+Epoch 49: 100%|█████████▉| 6581/6588 [59:51<00:03,  1.83it/s, v_num=rics, train_loss=0.00472, dev_f1=0.899]
+Epoch 49: 100%|█████████▉| 6581/6588 [59:51<00:03,  1.83it/s, v_num=rics, train_loss=0.00172, dev_f1=0.899]
+Epoch 49: 100%|█████████▉| 6582/6588 [59:51<00:03,  1.83it/s, v_num=rics, train_loss=0.00172, dev_f1=0.899]
+Epoch 49: 100%|█████████▉| 6582/6588 [59:52<00:03,  1.83it/s, v_num=rics, train_loss=0.136, dev_f1=0.899]  
+Epoch 49: 100%|█████████▉| 6583/6588 [59:52<00:02,  1.83it/s, v_num=rics, train_loss=0.136, dev_f1=0.899]
+Epoch 49: 100%|█████████▉| 6583/6588 [59:52<00:02,  1.83it/s, v_num=rics, train_loss=0.0018, dev_f1=0.899]
+Epoch 49: 100%|█████████▉| 6584/6588 [59:53<00:02,  1.83it/s, v_num=rics, train_loss=0.0018, dev_f1=0.899]
+Epoch 49: 100%|█████████▉| 6584/6588 [59:53<00:02,  1.83it/s, v_num=rics, train_loss=0.00261, dev_f1=0.899]
+Epoch 49: 100%|█████████▉| 6585/6588 [59:53<00:01,  1.83it/s, v_num=rics, train_loss=0.00261, dev_f1=0.899]
+Epoch 49: 100%|█████████▉| 6585/6588 [59:53<00:01,  1.83it/s, v_num=rics, train_loss=0.594, dev_f1=0.899]  
+Epoch 49: 100%|█████████▉| 6586/6588 [59:54<00:01,  1.83it/s, v_num=rics, train_loss=0.594, dev_f1=0.899]
+Epoch 49: 100%|█████████▉| 6586/6588 [59:54<00:01,  1.83it/s, v_num=rics, train_loss=0.00132, dev_f1=0.899]
+Epoch 49: 100%|█████████▉| 6587/6588 [59:54<00:00,  1.83it/s, v_num=rics, train_loss=0.00132, dev_f1=0.899]
+Epoch 49: 100%|█████████▉| 6587/6588 [59:54<00:00,  1.83it/s, v_num=rics, train_loss=0.187, dev_f1=0.899]  
+Epoch 49: 100%|██████████| 6588/6588 [59:55<00:00,  1.83it/s, v_num=rics, train_loss=0.187, dev_f1=0.899]
+Epoch 49: 100%|██████████| 6588/6588 [59:55<00:00,  1.83it/s, v_num=rics, train_loss=0.00105, dev_f1=0.899][dev eval, checkpoint epoch 49] {'f1': 0.9044943820224719, 'precision': 0.8765880217785844, 'recall': 0.9342359767891683, 'tp': 483, 'fp': 68, 'fn': 34, 'ignored_predictions': 75, 'threshold': 0.84716796875, 'n_candidates': 962, 'epoch': 49}
+
+Epoch 49: 100%|██████████| 6588/6588 [1:07:04<00:00,  1.64it/s, v_num=rics, train_loss=0.00105, dev_f1=0.904]`Trainer.fit` stopped: `max_epochs=50` reached.
+
+Epoch 49: 100%|██████████| 6588/6588 [1:07:13<00:00,  1.63it/s, v_num=rics, train_loss=0.00105, dev_f1=0.904]
+{
+ "result_schema": 2,
+ "exp_id": "beS2-f100-s0",
+ "git_sha": "06b2e61dbb85dc5fa5a5d5853f9ba15f6a87dca9",
+ "detector_sha256": "c42ae65bf9045cc93f0d73ae1437b2f6a1300670cb49d8e93f83a39d58a62a12",
+ "precision": "32-true",
+ "micro_batch": 16,
+ "gradient_accumulation": 1,
+ "effective_batch": 16,
+ "epochs_run": 50,
+ "best_dev_f1": 0.9044943820224719,
+ "best_dev": {
+  "f1": 0.9044943820224719,
+  "precision": 0.8765880217785844,
+  "recall": 0.9342359767891683,
+  "tp": 483,
+  "fp": 68,
+  "fn": 34,
+  "ignored_predictions": 75,
+  "threshold": 0.84716796875,
+  "n_candidates": 962,
+  "epoch": 49
+ },
+ "best_checkpoint": {
+  "relative_path": "checkpoints/best.ckpt",
+  "sha256": "8cc2d56791b13d3cf76598bdb289eebc6d0107a8ee47478c13638b4250cb1398",
+  "epoch": 49
+ },
+ "last_dev": {
+  "f1": 0.9044943820224719,
+  "precision": 0.8765880217785844,
+  "recall": 0.9342359767891683,
+  "tp": 483,
+  "fp": 68,
+  "fn": 34,
+  "ignored_predictions": 75,
+  "threshold": 0.84716796875,
+  "n_candidates": 962,
+  "epoch": 49
+ },
+ "train_loss": 0.0010459200711920857,
+ "h100_runtime_contract": {
+  "schema": 1,
+  "status": "verified",
+  "pre_trainer": {
+   "schema": 1,
+   "status": "verified",
+   "stage": "pre-trainer",
+   "precision": "32-true",
+   "devices": 1,
+   "micro_batch": 16,
+   "gradient_accumulation": 1,
+   "effective_batch": 16,
+   "strict_fp32": {
+    "cuda_matmul_fp32_precision": "ieee",
+    "cudnn_conv_fp32_precision": "ieee",
+    "cudnn_rnn_fp32_precision": "ieee"
+   },
+   "autocast": {
+    "global": false,
+    "cuda": false,
+    "cpu": false
+   },
+   "process": {
+    "WORLD_SIZE": "unset",
+    "SLURM_NTASKS": "1",
+    "effective_world_size": 1
+   },
+   "model": {
+    "floating_parameter_count": 392,
+    "floating_parameter_dtypes": [
+     "torch.float32"
+    ]
+   }
+  },
+  "resolved_trainer": {
+   "accelerator": "lightning.pytorch.accelerators.cuda.CUDAAccelerator",
+   "precision_plugin": "lightning.pytorch.plugins.precision.precision.Precision",
+   "precision": "32-true",
+   "gradient_scaler": null,
+   "strategy": "lightning.pytorch.strategies.single_device.SingleDeviceStrategy",
+   "root_device_type": "cuda",
+   "root_device_index": 0,
+   "num_devices": 1,
+   "world_size": 1,
+   "device_ids": [
+    0
+   ],
+   "gradient_accumulation": 1
+  }
+ }
+}
+[2026-10-01T17:52:37] beS2-f100-s0: scoring frozen TEST with cohort-bound best-dev threshold
+[2026-10-01T18:05:49] beS2-f100-s0: test F1 0.8405; near-shore F1 0.0000 on 2 GT
+[2026-10-01T18:05:49] scored 1 runs

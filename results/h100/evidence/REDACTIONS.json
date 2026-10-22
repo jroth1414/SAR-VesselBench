@@ -1,0 +1,429 @@
+{
+  "files": {
+    "beS1-f10-s0/runtime_provenance.json": {
+      "original_sha256": "04b7a17ab8ffb99aed39da95bff6e016599f12db3e013be24d1af3323119043f",
+      "replaced_with": [
+        "/cluster-site-redacted",
+        "/cluster-apps-redacted"
+      ]
+    },
+    "beS1-f100-s0/runtime_provenance.json": {
+      "original_sha256": "303a9d6831d84369ed4bb15ea09daea21d76987c2891208298595b5606de3dbf",
+      "replaced_with": [
+        "/cluster-site-redacted",
+        "/cluster-apps-redacted"
+      ]
+    },
+    "beS1-f25-s0/runtime_provenance.json": {
+      "original_sha256": "14b5641aa8b01758ef11b3abc58f9fbfa13ae48cff68eaf9246928e38e63533f",
+      "replaced_with": [
+        "/cluster-site-redacted",
+        "/cluster-apps-redacted"
+      ]
+    },
+    "beS1-f50-s0/runtime_provenance.json": {
+      "original_sha256": "d5ee23816ce90c4938707eaeef3488cfc62f1497765031f2dfffc8d511690f4c",
+      "replaced_with": [
+        "/cluster-site-redacted",
+        "/cluster-apps-redacted"
+      ]
+    },
+    "beS2-f10-s0/runtime_provenance.json": {
+      "original_sha256": "dd1b1cc5dfb0734e57a1c75f717e6878eb0194c80de1a1efea607809bf51902d",
+      "replaced_with": [
+        "/cluster-site-redacted",
+        "/cluster-apps-redacted"
+      ]
+    },
+    "beS2-f100-s0/runtime_provenance.json": {
+      "original_sha256": "85529c7d5c671821819ded9a65c8311642049a86e760e8b7b3c08785410963ad",
+      "replaced_with": [
+        "/cluster-site-redacted",
+        "/cluster-apps-redacted"
+      ]
+    },
+    "beS2-f25-s0/runtime_provenance.json": {
+      "original_sha256": "815bb5f3c26cc9a8f9346c26c19263ecca09e1c0d9fe03a4961014dd91b12333",
+      "replaced_with": [
+        "/cluster-site-redacted",
+        "/cluster-apps-redacted"
+      ]
+    },
+    "beS2-f50-s0/runtime_provenance.json": {
+      "original_sha256": "573cf82d6ebf3d69d3c8a929e5df10a0e3e079332b16ec430c7c6f52e36ff909",
+      "replaced_with": [
+        "/cluster-site-redacted",
+        "/cluster-apps-redacted"
+      ]
+    },
+    "cnnin1k-f10-s0/runtime_provenance.json": {
+      "original_sha256": "c376268562d672cfaab5ec68e1ed88df7ff3e2148049694f56752de987a5426f",
+      "replaced_with": [
+        "/cluster-site-redacted",
+        "/cluster-apps-redacted"
+      ]
+    },
+    "cnnin1k-f100-s0/runtime_provenance.json": {
+      "original_sha256": "3dbb54c0a41c2215f5c41e4f4ad5b89f960e96732627cab91588f407624740b7",
+      "replaced_with": [
+        "/cluster-site-redacted",
+        "/cluster-apps-redacted"
+      ]
+    },
+    "cnnin1k-f25-s0/runtime_provenance.json": {
+      "original_sha256": "9d87e033713da5d61e4ad0f8e7170377b2815b61498491bf47888ad66474376a",
+      "replaced_with": [
+        "/cluster-site-redacted",
+        "/cluster-apps-redacted"
+      ]
+    },
+    "cnnin1k-f50-s0/runtime_provenance.json": {
+      "original_sha256": "b155abda76b7edcb0df366aa4eb53d10062239f65a18f6641b196317cd629e26",
+      "replaced_with": [
+        "/cluster-site-redacted",
+        "/cluster-apps-redacted"
+      ]
+    },
+    "cnnrand-f10-s0/runtime_provenance.json": {
+      "original_sha256": "343b3b17fc2cbef9c874474807a7fa582cd111d2f2c93f80ab177486ee6b1b0b",
+      "replaced_with": [
+        "/cluster-site-redacted",
+        "/cluster-apps-redacted"
+      ]
+    },
+    "cnnrand-f100-s0/runtime_provenance.json": {
+      "original_sha256": "01ad8a35cbb22ea31cb92621c8bd18ded9dcb98cc8eac801ca7cf080b81f893e",
+      "replaced_with": [
+        "/cluster-site-redacted",
+        "/cluster-apps-redacted"
+      ]
+    },
+    "cnnrand-f25-s0/runtime_provenance.json": {
+      "original_sha256": "a88e9dd8d7bffa9edee5e395466e82689e892eb57db9420ec42db001a6b18dcd",
+      "replaced_with": [
+        "/cluster-site-redacted",
+        "/cluster-apps-redacted"
+      ]
+    },
+    "cnnrand-f50-s0/runtime_provenance.json": {
+      "original_sha256": "9338081030081729194f8343c8b6077f7ec48caa8f010eabadafa064ab3c29b8",
+      "replaced_with": [
+        "/cluster-site-redacted",
+        "/cluster-apps-redacted"
+      ]
+    },
+    "logs/h100_excerpts/beS1-f10-s0.log": {
+      "original_sha256": "ef64958154378180fd877d40f051775369cbff034bf7d0c76352751b52cefda3",
+      "replaced_with": [
+        "/cluster-site-redacted"
+      ]
+    },
+    "logs/h100_excerpts/beS1-f100-s0.log": {
+      "original_sha256": "17fc84969459389a6da1aebe92d0f619f165e3c78d078b21ba25a499b49b1dfc",
+      "replaced_with": [
+        "/cluster-site-redacted"
+      ]
+    },
+    "logs/h100_excerpts/beS1-f25-s0.log": {
+      "original_sha256": "9c9929719b064c3548f63b42168910527f9f49f142552f05c99741339d908f55",
+      "replaced_with": [
+        "/cluster-site-redacted"
+      ]
+    },
+    "logs/h100_excerpts/beS1-f50-s0.log": {
+      "original_sha256": "9fd476b08048dac381458859e7c679ffee336b98de5698aa2308d99aff529d1e",
+      "replaced_with": [
+        "/cluster-site-redacted"
+      ]
+    },
+    "logs/h100_excerpts/beS2-f10-s0.log": {
+      "original_sha256": "f91424c0e8030e251aab0b4443a2fc68c81c223448799d119d9249447c99dfa9",
+      "replaced_with": [
+        "/cluster-site-redacted",
+        "/cluster-local-redacted/xview3-"
+      ]
+    },
+    "logs/h100_excerpts/beS2-f100-s0.log": {
+      "original_sha256": "29578a03c195d582e0d5c03c449bf002624f5d5b4cb27f1e9b2d7caeadeaf2f5",
+      "replaced_with": [
+        "/cluster-site-redacted"
+      ]
+    },
+    "logs/h100_excerpts/beS2-f25-s0.log": {
+      "original_sha256": "6b2d86b804a8463010ec0d6345dbbeabbb74f787da147b095a01540d426421f4",
+      "replaced_with": [
+        "/cluster-site-redacted"
+      ]
+    },
+    "logs/h100_excerpts/beS2-f50-s0.log": {
+      "original_sha256": "7cca35bbc8f2b63d6dbc48f11373c7ac7590d5e004715a343a50aa680925ed3e",
+      "replaced_with": [
+        "/cluster-site-redacted"
+      ]
+    },
+    "logs/h100_excerpts/cnnin1k-f10-s0.log": {
+      "original_sha256": "71efcad23613194f3ec43c86ad83fc8b95d867f48f4ca4c703f7ff28e0d62c67",
+      "replaced_with": [
+        "/cluster-site-redacted"
+      ]
+    },
+    "logs/h100_excerpts/cnnin1k-f100-s0.log": {
+      "original_sha256": "b0c40280fbb78fe267039fbc6b94f95643fcd64ec1e072f407da8532b854aca3",
+      "replaced_with": [
+        "/cluster-site-redacted"
+      ]
+    },
+    "logs/h100_excerpts/cnnin1k-f25-s0.log": {
+      "original_sha256": "c97357ed754156481bb3e1755b3a2e96dec2ff0641569ad0409b5c53fdd3ddd1",
+      "replaced_with": [
+        "/cluster-site-redacted"
+      ]
+    },
+    "logs/h100_excerpts/cnnin1k-f50-s0.log": {
+      "original_sha256": "f01d3e44eff76fbc1483fe93f54201d2897159d3ce0ba8d7b058d233f236367c",
+      "replaced_with": [
+        "/cluster-site-redacted"
+      ]
+    },
+    "logs/h100_excerpts/cnnrand-f10-s0.log": {
+      "original_sha256": "09dc0fed057d6e420cc8e883b84bdbcb725099569c507501519f9332315888fd",
+      "replaced_with": [
+        "/cluster-site-redacted"
+      ]
+    },
+    "logs/h100_excerpts/cnnrand-f100-s0.log": {
+      "original_sha256": "a7d49a1be037a18fa8ed3f2f1a0f893b37736599e1657bd04a23913ff3d357bc",
+      "replaced_with": [
+        "/cluster-site-redacted",
+        "/cluster-local-redacted/xview3-"
+      ]
+    },
+    "logs/h100_excerpts/cnnrand-f25-s0.log": {
+      "original_sha256": "3fdd70ff0c475ac756b413037b2732bea957005019d9cc6e7023f7da6aa234d2",
+      "replaced_with": [
+        "/cluster-site-redacted"
+      ]
+    },
+    "logs/h100_excerpts/cnnrand-f50-s0.log": {
+      "original_sha256": "94f3af58c7b497cd4ecfc8e351bd93f1876bf51c41625db438c715d2a88f7c32",
+      "replaced_with": [
+        "/cluster-site-redacted"
+      ]
+    },
+    "logs/h100_excerpts/sarmae-f10-s0.log": {
+      "original_sha256": "08d9be93b23ea742ff93c03226ff36f5ca1e2a9fb46afa0f27856b89a84518d5",
+      "replaced_with": [
+        "/cluster-site-redacted"
+      ]
+    },
+    "logs/h100_excerpts/sarmae-f100-s0.log": {
+      "original_sha256": "17ba2b644e62b0726847ab0d078e56dd46c8eac4bf4a005e754cf11896029f3f",
+      "replaced_with": [
+        "/cluster-site-redacted"
+      ]
+    },
+    "logs/h100_excerpts/sarmae-f25-s0.log": {
+      "original_sha256": "7e1edfe17b4602f45a34b77bebcae6e66ba6419f0327adde1759fc77d5472b29",
+      "replaced_with": [
+        "/cluster-site-redacted"
+      ]
+    },
+    "logs/h100_excerpts/sarmae-f50-s0.log": {
+      "original_sha256": "7ee7e9675441da64ba2a7a739aecaa1e35570ba2346350ee9ff9ad74a8a41f10",
+      "replaced_with": [
+        "/cluster-site-redacted"
+      ]
+    },
+    "logs/h100_excerpts/satdino-f10-s0.log": {
+      "original_sha256": "cac55a9de7d8a9fd0fe01f80de0e2c2e5b835856b58d2d65082c5de01f08f7a4",
+      "replaced_with": [
+        "/cluster-site-redacted"
+      ]
+    },
+    "logs/h100_excerpts/satdino-f100-s0.log": {
+      "original_sha256": "25130b77a21047ce8badd1106c22f9f4dcfbbb1976deace0a92fbc9dad2d2b3e",
+      "replaced_with": [
+        "/cluster-site-redacted"
+      ]
+    },
+    "logs/h100_excerpts/satdino-f25-s0.log": {
+      "original_sha256": "7863b026bf6a458ffd1e4bf0aeeea42620d303de0eff9afd65f36d79b8c36fc4",
+      "replaced_with": [
+        "/cluster-site-redacted"
+      ]
+    },
+    "logs/h100_excerpts/satdino-f50-s0.log": {
+      "original_sha256": "5d4d1995a79dd87bd6e6200bc179bd77af50fd3d55d931ad74e1e1049cabc574",
+      "replaced_with": [
+        "/cluster-site-redacted"
+      ]
+    },
+    "logs/h100_excerpts/vitin1k-f10-s0.log": {
+      "original_sha256": "737a4c8cfa71a68873193c3d92bcd747413f620dc43a69ed66f6eb18efbd675d",
+      "replaced_with": [
+        "/cluster-site-redacted",
+        "/cluster-local-redacted/xview3-"
+      ]
+    },
+    "logs/h100_excerpts/vitin1k-f100-s0.log": {
+      "original_sha256": "e1be2fd78d644c02360f5569b5ae3a3b004a6b10326a5f468d0812d88fabc6e7",
+      "replaced_with": [
+        "/cluster-site-redacted"
+      ]
+    },
+    "logs/h100_excerpts/vitin1k-f25-s0.log": {
+      "original_sha256": "fb65e1d3a2854b7ac43f855596264899bae1387c98ef41d7bd197cab1cce952d",
+      "replaced_with": [
+        "/cluster-site-redacted"
+      ]
+    },
+    "logs/h100_excerpts/vitin1k-f50-s0.log": {
+      "original_sha256": "478ba615856356d834ee4d4fbb37b1d895558798ee32001111f881ed5cd5fe2d",
+      "replaced_with": [
+        "/cluster-site-redacted"
+      ]
+    },
+    "logs/h100_excerpts/vitrand-f10-s0.log": {
+      "original_sha256": "c64ba540afcb10c11e6d6f473621e510b5a21b6c5bf06d611d64e560774f9d6f",
+      "replaced_with": [
+        "/cluster-site-redacted"
+      ]
+    },
+    "logs/h100_excerpts/vitrand-f100-s0.log": {
+      "original_sha256": "1092a1b65421c6209dfdf18e170f3e84c6c08a6eccdeaafcee228d0de89d0fdb",
+      "replaced_with": [
+        "/cluster-site-redacted"
+      ]
+    },
+    "logs/h100_excerpts/vitrand-f25-s0.log": {
+      "original_sha256": "a98baeaea53bd630fc9c6e3897988a1f3f140115095f0cb2b21a3056c2947b45",
+      "replaced_with": [
+        "/cluster-site-redacted"
+      ]
+    },
+    "logs/h100_excerpts/vitrand-f50-s0.log": {
+      "original_sha256": "6c398cf59360691c65cec2660bcc8ea691b1ee6d8f1bcedc7ac46585275ec2b5",
+      "replaced_with": [
+        "/cluster-site-redacted"
+      ]
+    },
+    "sarmae-f10-s0/runtime_provenance.json": {
+      "original_sha256": "aded987e8be1c7401064594747d3f294aecafddce318350fa53aa286d85db027",
+      "replaced_with": [
+        "/cluster-site-redacted",
+        "/cluster-apps-redacted"
+      ]
+    },
+    "sarmae-f100-s0/runtime_provenance.json": {
+      "original_sha256": "bfc5c40bab9b3814d32cbfcb567a9ad831af5991596921df727f09ce25913ae6",
+      "replaced_with": [
+        "/cluster-site-redacted",
+        "/cluster-apps-redacted"
+      ]
+    },
+    "sarmae-f25-s0/runtime_provenance.json": {
+      "original_sha256": "decd6cd83b02eea023dca076ba727018c6af0688b0c4b993d6d4074618e32834",
+      "replaced_with": [
+        "/cluster-site-redacted",
+        "/cluster-apps-redacted"
+      ]
+    },
+    "sarmae-f50-s0/runtime_provenance.json": {
+      "original_sha256": "5f76b0624b7d862a0a8116ff37c6c86e792e952b1eb61a86002236c877c52cac",
+      "replaced_with": [
+        "/cluster-site-redacted",
+        "/cluster-apps-redacted"
+      ]
+    },
+    "satdino-f10-s0/runtime_provenance.json": {
+      "original_sha256": "b7395ae208e82d4a781d2217d807606d41a9f3adc13f5df045137d382df20709",
+      "replaced_with": [
+        "/cluster-site-redacted",
+        "/cluster-apps-redacted"
+      ]
+    },
+    "satdino-f100-s0/runtime_provenance.json": {
+      "original_sha256": "c1c9bed1901a78f09978bebcb64742a4642b9d157d3b543ce5fdae1225bce9d4",
+      "replaced_with": [
+        "/cluster-site-redacted",
+        "/cluster-apps-redacted"
+      ]
+    },
+    "satdino-f25-s0/runtime_provenance.json": {
+      "original_sha256": "dcdd3ea1cfd5cad8986f0ba7b7992cd595101fee2ac3c5d50d6d36600790563c",
+      "replaced_with": [
+        "/cluster-site-redacted",
+        "/cluster-apps-redacted"
+      ]
+    },
+    "satdino-f50-s0/runtime_provenance.json": {
+      "original_sha256": "d74500c523015f2f657f075831cc978f16f6b78f33aa4390afa12f7c925b3953",
+      "replaced_with": [
+        "/cluster-site-redacted",
+        "/cluster-apps-redacted"
+      ]
+    },
+    "vitin1k-f10-s0/runtime_provenance.json": {
+      "original_sha256": "2f1cd304e143fbd9af8409a0bdc242685a6767df766c700f3b65c911a96a1f98",
+      "replaced_with": [
+        "/cluster-site-redacted",
+        "/cluster-apps-redacted"
+      ]
+    },
+    "vitin1k-f100-s0/runtime_provenance.json": {
+      "original_sha256": "650c834fe36697b8417fbcb606300f197d75853ce72d8de3ad014b53d7bff2a9",
+      "replaced_with": [
+        "/cluster-site-redacted",
+        "/cluster-apps-redacted"
+      ]
+    },
+    "vitin1k-f25-s0/runtime_provenance.json": {
+      "original_sha256": "5657cf12612df0e8241eba8ffec6296139ee206c0137b0943bb886fdb8789421",
+      "replaced_with": [
+        "/cluster-site-redacted",
+        "/cluster-apps-redacted"
+      ]
+    },
+    "vitin1k-f50-s0/runtime_provenance.json": {
+      "original_sha256": "a21091886942348f05736b4b64d2ba69a062ac38130c6b95d1c782fa61975b02",
+      "replaced_with": [
+        "/cluster-site-redacted",
+        "/cluster-apps-redacted"
+      ]
+    },
+    "vitrand-f10-s0/runtime_provenance.json": {
+      "original_sha256": "20d2326479158f187a1e85ac5a2fde32d560bec7760f1a3fc1c3b79477ba7238",
+      "replaced_with": [
+        "/cluster-site-redacted",
+        "/cluster-apps-redacted"
+      ]
+    },
+    "vitrand-f100-s0/runtime_provenance.json": {
+      "original_sha256": "0fb81791a5f01953f93985a630d94631413e58f8a54f65ac3135a0d3199e7af0",
+      "replaced_with": [
+        "/cluster-site-redacted",
+        "/cluster-apps-redacted"
+      ]
+    },
+    "vitrand-f25-s0/runtime_provenance.json": {
+      "original_sha256": "b76cc71858b5aa18f6ca233d17b45fd1904ae8e197f7d060cfda0f4f951d4f19",
+      "replaced_with": [
+        "/cluster-site-redacted",
+        "/cluster-apps-redacted"
+      ]
+    },
+    "vitrand-f50-s0/runtime_provenance.json": {
+      "original_sha256": "47f476238cef9706f1f0db669aa6e51a0235735a7e09019873a4171db5d19586",
+      "replaced_with": [
+        "/cluster-site-redacted",
+        "/cluster-apps-redacted"
+      ]
+    }
+  },
+  "note": "Sanitized copies replace private cluster paths with the listed replacement strings. final_metrics.json, metrics.csv, and TRAINING_COHORT.json are byte-exact; the cohort hash-binds each final_metrics.json.",
+  "replacements": [
+    "/cluster-apps-redacted",
+    "/cluster-local-redacted/xview3-",
+    "/cluster-site-redacted"
+  ]
+}

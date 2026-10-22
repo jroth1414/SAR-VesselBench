@@ -1,0 +1,96 @@
+{
+  "best_checkpoint": {
+    "epoch": 49,
+    "relative_path": "checkpoints/terminal-best.ckpt",
+    "sha256": "fce3eb4460eca2380b60c2528820ab46526c878f474d37649fd6098c4216a7ee"
+  },
+  "best_dev": {
+    "epoch": 49,
+    "f1": 0.8371174728529122,
+    "fn": 93,
+    "fp": 72,
+    "ignored_predictions": 61,
+    "n_candidates": 2669,
+    "precision": 0.8548387096774194,
+    "recall": 0.8201160541586073,
+    "threshold": 0.8251953125,
+    "tp": 424
+  },
+  "best_dev_f1": 0.8371174728529122,
+  "detector_sha256": "c42ae65bf9045cc93f0d73ae1437b2f6a1300670cb49d8e93f83a39d58a62a12",
+  "effective_batch": 16,
+  "epochs_run": 50,
+  "exp_id": "beS2-f10-s0",
+  "git_sha": "06b2e61dbb85dc5fa5a5d5853f9ba15f6a87dca9",
+  "gradient_accumulation": 1,
+  "h100_runtime_contract": {
+    "pre_trainer": {
+      "autocast": {
+        "cpu": false,
+        "cuda": false,
+        "global": false
+      },
+      "devices": 1,
+      "effective_batch": 16,
+      "gradient_accumulation": 1,
+      "micro_batch": 16,
+      "model": {
+        "floating_parameter_count": 392,
+        "floating_parameter_dtypes": [
+          "torch.float32"
+        ]
+      },
+      "precision": "32-true",
+      "process": {
+        "SLURM_NTASKS": "1",
+        "WORLD_SIZE": "unset",
+        "effective_world_size": 1
+      },
+      "schema": 1,
+      "stage": "pre-trainer",
+      "status": "verified",
+      "strict_fp32": {
+        "cuda_matmul_fp32_precision": "ieee",
+        "cudnn_conv_fp32_precision": "ieee",
+        "cudnn_rnn_fp32_precision": "ieee"
+      }
+    },
+    "resolved_trainer": {
+      "accelerator": "lightning.pytorch.accelerators.cuda.CUDAAccelerator",
+      "device_ids": [
+        0
+      ],
+      "gradient_accumulation": 1,
+      "gradient_scaler": null,
+      "num_devices": 1,
+      "precision": "32-true",
+      "precision_plugin": "lightning.pytorch.plugins.precision.precision.Precision",
+      "root_device_index": 0,
+      "root_device_type": "cuda",
+      "strategy": "lightning.pytorch.strategies.single_device.SingleDeviceStrategy",
+      "world_size": 1
+    },
+    "schema": 1,
+    "status": "verified"
+  },
+  "last_dev": {
+    "epoch": 49,
+    "f1": 0.8371174728529122,
+    "fn": 93,
+    "fp": 72,
+    "ignored_predictions": 61,
+    "n_candidates": 2669,
+    "precision": 0.8548387096774194,
+    "recall": 0.8201160541586073,
+    "threshold": 0.8251953125,
+    "tp": 424
+  },
+  "micro_batch": 16,
+  "precision": "32-true",
+  "result_schema": 3,
+  "terminal_recovery": {
+    "relative_path": "terminal_recovery.json",
+    "sha256": "7a3743ad077634be92906d99d483dfabda5a7d63dc0e8e57805718f8031050af"
+  },
+  "train_loss": null
+}

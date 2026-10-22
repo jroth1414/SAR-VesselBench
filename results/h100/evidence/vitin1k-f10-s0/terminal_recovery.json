@@ -1,0 +1,86 @@
+{
+  "activation_sha256": "72b4838beb22b0cd3d849acee6912283f5ef4961e65ff7183222d599d68e0f63",
+  "added_optimizer_steps": 0,
+  "added_scheduler_steps": 0,
+  "added_training_batches": 0,
+  "campaign_git_sha": "06b2e61dbb85dc5fa5a5d5853f9ba15f6a87dca9",
+  "exp_id": "vitin1k-f10-s0",
+  "input_checkpoint": {
+    "epoch": 49,
+    "relative_path": "checkpoints/last.ckpt",
+    "sha256": "d9d1e9af69d2d2a631be53f997d15619bc72231da6bac0b46f8147d76132b1df"
+  },
+  "input_global_step": 35050,
+  "last_dev_before": {
+    "epoch": 44,
+    "f1": 0.8926108374384235,
+    "fn": 64,
+    "fp": 45,
+    "ignored_predictions": 64,
+    "n_candidates": 830,
+    "precision": 0.9096385542168675,
+    "recall": 0.8762088974854932,
+    "threshold": 0.9052734375,
+    "tp": 453
+  },
+  "loss_unavailable_reason": "terminal-resume-did-not-persist-train-loss",
+  "metrics_csv_absent": true,
+  "output_global_step": 35050,
+  "prior_best_checkpoint": {
+    "epoch": 39,
+    "relative_path": "checkpoints/best.ckpt",
+    "sha256": "71690b062cb36fab907f5b2486de18687680170be8f76d61b8ce13024f8cc319"
+  },
+  "prior_best_dev": {
+    "epoch": 39,
+    "f1": 0.8979980934223069,
+    "fn": 46,
+    "fp": 61,
+    "ignored_predictions": 70,
+    "n_candidates": 898,
+    "precision": 0.8853383458646616,
+    "recall": 0.9110251450676983,
+    "threshold": 0.8486328125,
+    "tp": 471
+  },
+  "runtime_seconds": 394.3666400387883,
+  "schema": 1,
+  "selected_checkpoint": {
+    "epoch": 39,
+    "relative_path": "checkpoints/best.ckpt",
+    "sha256": "71690b062cb36fab907f5b2486de18687680170be8f76d61b8ce13024f8cc319"
+  },
+  "selected_dev": {
+    "epoch": 39,
+    "f1": 0.8979980934223069,
+    "fn": 46,
+    "fp": 61,
+    "ignored_predictions": 70,
+    "n_candidates": 898,
+    "precision": 0.8853383458646616,
+    "recall": 0.9110251450676983,
+    "threshold": 0.8486328125,
+    "tp": 471
+  },
+  "status": "terminal-dev-recovered",
+  "terminal_dev": {
+    "epoch": 49,
+    "f1": 0.8923076923076922,
+    "fn": 53,
+    "fp": 59,
+    "ignored_predictions": 69,
+    "n_candidates": 824,
+    "precision": 0.887189292543021,
+    "recall": 0.8974854932301741,
+    "threshold": 0.841796875,
+    "tp": 464
+  },
+  "terminal_execution": {
+    "campaign_git_sha": "06b2e61dbb85dc5fa5a5d5853f9ba15f6a87dca9",
+    "git_sha": "1ec7a68fb3b25f90c55ef74950e7b7045d509d80",
+    "source_receipt_sha256": "acc25ad1c94b2b67dd6815a359b44f6d228153a058629e6eca2afe3f060092cb",
+    "terminal_manifest_sha256": "b5acb9572291c84fb71bb23e8f298bc3c1b8e477c64ad2030fb9f8160ed9211e",
+    "terminal_package_id": "xview3-h100-runtime-1ec7a68fb3b25f90c55ef74950e7b7045d509d80-e0a1e38b8008b89e474e662f4ab692271e17bbf2d00a5bf24dc8a6f0e3373348"
+  },
+  "terminal_model_unchanged": true
+}

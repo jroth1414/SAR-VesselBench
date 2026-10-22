@@ -1,0 +1,206 @@
+"""Separate immutable code/control package for the approved H100 terminal DEV recovery."""
+from __future__ import annotations
+
+import copy
+import hashlib
+import os
+import shutil
+import tempfile
+from collections.abc import Mapping
+from datetime import datetime, timezone
+from pathlib import Path, PurePosixPath
+
+from .bes2_amendment import _artifact_paths
+from .package import (
+    PackageError, _canonical_json, _create_git_bundle, _git_source, _git_value,
+    _inside_repository_worktrees, _load_json, _package_regular_files,
+    _parse_sha256sums, _physical_record, _plain_artifact,
+    _require_no_symlink_components, _require_source_ancestor,
+    _validate_control_record, _write_bytes,
+)
+from .terminal_contract import (
+    POLICY, PROTECTED_OBJECTS, TERMINAL_ANCESTOR, runtime_contract,
+    validate_terminal_control,
+)
+from .replacement_contract import base_payload_identity
+from .runtime_amendment import _verify_git_bundle_round_trip
+
+PACKAGE_TYPE = "h100-terminal-recovery-amendment"
+BUNDLE_PATH = "code/xview3-terminal-recovery.bundle"
+CONTROL_PATH = "controls/TERMINAL_RECOVERY.json"
+
+
+def verify_terminal_source(repo: Path) -> None:
+    """Require the reviewed terminal recovery and every unchanged scientific object."""
+    if _git_value(repo, "status", "--porcelain=v1", "--untracked-files=all"):
+        raise PackageError("terminal recovery requires a clean execution checkout")
+    _require_source_ancestor(repo, _git_value(repo, "rev-parse", "HEAD"), TERMINAL_ANCESTOR)
+    for relative, expected in PROTECTED_OBJECTS.items():
+        if _git_value(repo, "rev-parse", f"HEAD:{relative}") != expected:
+            raise PackageError(f"terminal recovery altered reviewed model/recipe/guard source: {relative}")
+
+
+def verify_terminal_amendment(package_root: Path) -> dict:
+    root = _require_no_symlink_components(package_root, leaf="directory")
+
+    def control_file(name):
+        return _require_no_symlink_components(root / name, leaf="file")
+
+    ready = _load_json(control_file("READY.json"))
+    manifest = _load_json(control_file("manifest.json"))
+    _validate_control_record(root, ready.get("manifest", {}), "manifest.json")
+    _validate_control_record(root, ready.get("checksums", {}), "SHA256SUMS")
+    if set(manifest) != {
+        "format_version", "package_type", "package_id", "created_utc", "source",
+        "base_payload", "amendment_identity", "amendment_identity_sha256",
+        "counts", "artifacts",
+    } or manifest.get("format_version") != 2 or manifest.get("package_type") != PACKAGE_TYPE:
+        raise PackageError("terminal recovery manifest schema is invalid")
+    control = validate_terminal_control(manifest["amendment_identity"])
+    source = control["source"]
+    digest = hashlib.sha256(_canonical_json(control)).hexdigest()
+    package_id = f"xview3-h100-runtime-{source['git_commit']}-{digest}"
+    if (
+        manifest["source"] != source or manifest["amendment_identity_sha256"] != digest
+        or manifest["package_id"] != package_id
+        or manifest["base_payload"] != base_payload_identity()
+        or manifest["counts"] != {"git_bundles": 1, "control_json": 1}
+    ):
+        raise PackageError("terminal recovery manifest content identity mismatch")
+    if set(ready) != {
+        "format_version", "status", "package_id", "git_commit",
+        "amendment_identity_sha256", "manifest", "checksums",
+    } or any(ready.get(key) != value for key, value in {
+        "format_version": 2, "status": "READY", "package_id": package_id,
+        "git_commit": source["git_commit"], "amendment_identity_sha256": digest,
+    }.items()):
+        raise PackageError("terminal recovery READY identity mismatch")
+    artifacts = manifest["artifacts"]
+    if not isinstance(artifacts, list) or len(artifacts) != 2 or any(not isinstance(a, Mapping) for a in artifacts):
+        raise PackageError("terminal recovery requires exactly two artifacts")
+    by_kind = {a.get("kind"): a for a in artifacts}
+    if set(by_kind) != {"git_bundle", "terminal_control"}:
+        raise PackageError("terminal recovery artifact inventory is not allowlisted")
+    maximum = control["contract"]["maximum_physical_file_bytes"]
+    paths = {}
+    for kind, name, relative in (
+        ("git_bundle", source["branch"], BUNDLE_PATH),
+        ("terminal_control", "TERMINAL_RECOVERY", CONTROL_PATH),
+    ):
+        paths[kind] = _artifact_paths(
+            root, by_kind[kind], maximum=maximum,
+            expected_kind=kind, expected_name=name, expected_root=relative,
+        )
+        expected_paths = (
+            [relative] if len(paths[kind]) == 1 else
+            [f"{relative}.part-{index:05d}" for index in range(len(paths[kind]))]
+        )
+        if [part["path"] for part in by_kind[kind]["parts"]] != expected_paths:
+            raise PackageError("terminal recovery artifact physical paths are not canonical")
+    if (
+        len(paths["terminal_control"]) != 1
+        or paths["terminal_control"][0].read_bytes() != _canonical_json(control)
+    ):
+        raise PackageError("terminal recovery control artifact differs from canonical bound identity")
+    if by_kind["git_bundle"]["archive_sha256"] != source["git_bundle_sha256"]:
+        raise PackageError("terminal recovery source bundle hash mismatch")
+    expected_sums = {part["path"]: part["sha256"] for a in artifacts for part in a["parts"]}
+    if len(expected_sums) != sum(len(a["parts"]) for a in artifacts):
+        raise PackageError("terminal recovery physical paths must be unique")
+    if _parse_sha256sums(control_file("SHA256SUMS")) != expected_sums:
+        raise PackageError("terminal recovery checksums inventory mismatch")
+    inventory = _package_regular_files(root)
+    if inventory != set(expected_sums) | {"manifest.json", "SHA256SUMS", "READY.json"}:
+        raise PackageError("terminal recovery package file inventory is not exact")
+    if any((root / relative).stat().st_size > maximum for relative in inventory):
+        raise PackageError("terminal recovery physical file exceeds the package limit")
+    with tempfile.TemporaryDirectory(prefix="xview3-terminal-verify-") as temp:
+        bundle = Path(temp) / "source.bundle"
+        with bundle.open("wb") as output:
+            for part in paths["git_bundle"]:
+                with part.open("rb") as input_file:
+                    shutil.copyfileobj(input_file, output)
+        metadata = _verify_git_bundle_round_trip(
+            bundle, branch=source["branch"], commit=source["git_commit"],
+            required_ancestor=TERMINAL_ANCESTOR, production=True,
+            checkout_validator=verify_terminal_source,
+        )
+        if manifest["created_utc"] != metadata["created_utc"]:
+            raise PackageError("terminal recovery creation time differs from committed source")
+    return manifest
+
+
+def build_terminal_amendment(
+    *, repo_root: Path, output_dir: Path, maximum_physical_file_bytes: int,
+) -> Path:
+    contract = runtime_contract(maximum_physical_file_bytes)
+    repo = _require_no_symlink_components(repo_root, leaf="directory")
+    output = _require_no_symlink_components(output_dir, leaf="directory")
+    if _inside_repository_worktrees(output, repo):
+        raise PackageError("terminal recovery output must be outside repository worktrees")
+    branch = _git_value(repo, "branch", "--show-current")
+    commit, epoch = _git_source(repo, branch, production=True)
+    verify_terminal_source(repo)
+    staging = Path(tempfile.mkdtemp(prefix=".xview3-terminal-", dir=output))
+    try:
+        bundle = staging / BUNDLE_PATH
+        _create_git_bundle(repo, bundle, branch, commit, TERMINAL_ANCESTOR, production=False)
+        bundle_artifact = _plain_artifact(
+            bundle, staging, kind="git_bundle", name=branch,
+            extraction_root=PurePosixPath(BUNDLE_PATH), max_part_bytes=maximum_physical_file_bytes,
+        )
+        source = {
+            "branch": branch, "git_commit": commit, "required_ancestor": TERMINAL_ANCESTOR,
+            "git_bundle_sha256": bundle_artifact["archive_sha256"],
+        }
+        control = {
+            "schema": 1, "policy": copy.deepcopy(POLICY), "source": source,
+            "contract": contract,
+            "protected_source": {"required_ancestor": TERMINAL_ANCESTOR, "git_objects": dict(PROTECTED_OBJECTS)},
+        }
+        validate_terminal_control(control)
+        control_path = staging / CONTROL_PATH
+        _write_bytes(control_path, _canonical_json(control))
+        control_artifact = _plain_artifact(
+            control_path, staging, kind="terminal_control", name="TERMINAL_RECOVERY",
+            extraction_root=PurePosixPath(CONTROL_PATH), max_part_bytes=maximum_physical_file_bytes,
+        )
+        if len(control_artifact["parts"]) != 1:
+            raise PackageError("terminal recovery control must fit in one physical file")
+        identity_sha = hashlib.sha256(_canonical_json(control)).hexdigest()
+        package_id = f"xview3-h100-runtime-{commit}-{identity_sha}"
+        artifacts = [bundle_artifact, control_artifact]
+        manifest = {
+            "format_version": 2, "package_type": PACKAGE_TYPE, "package_id": package_id,
+            "created_utc": datetime.fromtimestamp(epoch, timezone.utc).isoformat(),
+            "source": source, "base_payload": base_payload_identity(),
+            "amendment_identity": control, "amendment_identity_sha256": identity_sha,
+            "counts": {"git_bundles": 1, "control_json": 1}, "artifacts": artifacts,
+        }
+        _write_bytes(staging / "manifest.json", _canonical_json(manifest))
+        sums = "".join(f"{part['sha256']}  {part['path']}\n" for a in artifacts for part in a["parts"])
+        _write_bytes(staging / "SHA256SUMS", sums.encode())
+        ready = {
+            "format_version": 2, "status": "READY", "package_id": package_id,
+            "git_commit": commit, "amendment_identity_sha256": identity_sha,
+            "manifest": _physical_record(staging / "manifest.json", staging),
+            "checksums": _physical_record(staging / "SHA256SUMS", staging),
+        }
+        _write_bytes(staging / "READY.json", _canonical_json(ready))
+        verify_terminal_amendment(staging)
+        destination = output / package_id
+        if os.path.lexists(destination):
+            raise PackageError("terminal recovery destination already exists")
+        os.rename(staging, destination)
+        return destination
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+
+
+def generate_terminal_bootstrap(*, repo_root: Path, package_root: Path, output: Path) -> dict:
+    from .runtime_bootstrap import _generate_runtime_bootstrap
+    return _generate_runtime_bootstrap(
+        repo_root=repo_root, runtime_package_root=package_root, output=output,
+        verifier=verify_terminal_amendment, production=True,
+    )

@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+message: "If you use this code or the trained checkpoints, please cite the paper below."
+title: "SAR-VesselBench: label-efficient dark-vessel detection in SAR"
+type: software
+license: MIT
+repository-code: "https://github.com/jroth1414/SAR-VesselBench"
+authors:
+  - family-names: Roth
+    given-names: John
+  - family-names: Wagner
+    given-names: Kyle
+  - family-names: "d'Aliberti"
+    given-names: Liv
+preferred-citation:
+  type: conference-paper
+  title: "Label-Efficient Dark-Vessel Detection in SAR: Does SAR-Domain Pretraining Outperform Optical and ImageNet Transfer across ViT and CNN?"
+  authors:
+    - family-names: Roth
+      given-names: John
+    - family-names: Wagner
+      given-names: Kyle
+    - family-names: "d'Aliberti"
+      given-names: Liv
+  collection-title: "54th Applied Imagery Pattern Recognition Workshop (AIPR 2026)"
+  publisher:
+    name: Springer
+  year: 2026

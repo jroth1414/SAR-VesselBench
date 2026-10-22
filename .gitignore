@@ -1,0 +1,56 @@
+# Never commit data, runs, or heavy artifacts (study ground rule).
+# data/* (not data/) so the two frozen split/stats artifacts CAN be
+# committed once they exist — everything else under data/ stays ignored.
+data/*
+!data/splits.json
+!data/stats.json
+runs/
+# Regenerable build artifact of `python -m src.analysis.h100_results
+# generate` (default --progress-log path); not committed.
+results/h100/logs/campaign_status.txt
+*.pt
+*.pth
+*.ckpt
+*.tif
+*.tiff
+*.parquet
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+.venv*/
+venv/
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Office lock/owner files
+~$*
+
+# Credentials must never enter the repository (keep any local copy outside the
+# worktree; the Box JWT config lives under the user profile, not here).
+xview3-jwt.json
+*.jwt.json
+*.pem
+*.key
+.env
+*.env
+
+# Local working files that must never ride into a commit: presentation decks,
+# drafts, archives, and scratch figures at the repository root or under docs/.
+# Committed report artifacts live in docs/class_report/ and docs/results/.
+/*.pdf
+/*.pptx
+/*.zip
+/docs/*.pdf
+/docs/*.png
+/docs/*.docx
+/docs/*.tex
+/docs/*.pptx
+/docs/figures/

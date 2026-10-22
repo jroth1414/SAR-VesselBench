@@ -1,0 +1,11 @@
+{
+  "campaign_id": "sprint7f-v100-references-1a82d508-20260824",
+  "campaign_role": "corrected-v100-references",
+  "core_campaign_id": "fresh34-v100-fp32-20260726",
+  "core_git_sha": "48e10534a8c7baf0662acd548f52928da69f23c8",
+  "environment_lock_sha256": "7c651f762b84801fcdf50a48accca05911b2b7f6bc1c536cb1acce0d7fa22154",
+  "environment_sha256": "d629b8aa127eeb02cc3522e91487183e58f51046fe2651f4ab3ee0677a1cdf76",
+  "git_sha": "1a82d508fbeb9fdf6868a9637611e9018952fb43",
+  "runtime_launcher_sha256": "942993acbb6b5ec72ab01cd9e3c070b953947598818288c449edca360b91ebc8",
+  "schema": 1
+}

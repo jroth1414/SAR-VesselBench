@@ -1,0 +1,16 @@
+# Enforce LF in the working tree for all text files, on every platform.
+#
+# WHY THIS MATTERS HERE: the frozen-artifact guards (test_scorer_immutable,
+# and later test_splits_immutable / test_detector_immutable) pin a sha256 of
+# the file BYTES. A Windows checkout with core.autocrlf=true rewrites LF->CRLF
+# and silently changes every hash, making the guard fail on a byte-identical
+# repo. eol=lf makes checkouts byte-identical everywhere so the pins hold.
+* text=auto eol=lf
+
+# Binary artifacts — never normalize.
+*.pdf  binary
+*.pptx binary
+*.png  binary
+*.jpg  binary
+*.tif  binary
+*.tiff binary

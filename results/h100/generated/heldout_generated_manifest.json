@@ -1,0 +1,21 @@
+{
+ "generator": "src.analysis.heldout_results",
+ "inputs": {
+  "arms_config_sha256": "4e1b0837d580572110f62611133d1599d7ef56b206e9adb2023d979b6c1ec8a8",
+  "cohort_sha256": "a8996efd01a95e78bfb4ae46bc93120d842407d109ee74d111d310e8aa5cbef5",
+  "detector_sha256": "c42ae65bf9045cc93f0d73ae1437b2f6a1300670cb49d8e93f83a39d58a62a12"
+ },
+ "outputs": {
+  "heldout_label_efficiency.pdf": "9d71e36ca0f3ce1d88220329d9d7375219c92159b30732e3d5ad0b8e08e2e426",
+  "heldout_operating_points.pdf": "cb1a0dcd3a4fc3faa7e464898d0554b2ba997ebae50eae8a06b1a1ba39f0415f",
+  "heldout_results.tex": "7f92d144edf038c51546469f3cd1d21864940913b831cbc6e857ebaae51306d1",
+  "heldout_training_dynamics.pdf": "efc4d5fff8dfb1f8600618c11a20d72c81f995a1f47ce8af6d269efb2c2e38a2",
+  "heldout_transfer_gains.pdf": "f1b9391722fffc10bcb7adf49725c6f257c468ab0c9afee1febe6cf9b89536cd"
+ },
+ "summary": {
+  "cells": 32,
+  "final_results": 32,
+  "gpu_hours": 567.6,
+  "test_results": 32
+ }
+}

@@ -1,0 +1,142 @@
+{
+  "schema": 1,
+  "stages": [
+    {
+      "stage": "training",
+      "branch": "sprint-10q-replacement-owner-export",
+      "git_commit": "06b2e61dbb85dc5fa5a5d5853f9ba15f6a87dca9",
+      "git_bundle_sha256": "218e344dc7457df171b6f98d5c8f2cae8ed23f536c056a6e43a9abd9b680e9ed",
+      "required_ancestor": "93d479419c6b3a1d314b0753b4edd84495ed9cac",
+      "protected_git_objects": {
+        "configs": "58e1d496056a5485e001a9f279f7cab440311ea6",
+        "data": "f8218453bc0ba623b0043d860d8b3d25ffe90ede",
+        "locks": "0df8b4b5f502f59e41e3206dbd83a102ab9b7f9b",
+        "src/data": "ad81aa9720877978233fb52e02f5ac444e32c052",
+        "src/eval": "06feb6992463f15bf5eb8d38f6318acac4a7f739",
+        "src/models": "1fd2f60db4d3b95e5c51c77438d2b3727398d394",
+        "src/train": "383beffd2f9fb406863aa5f0262ff7d4507acf8f",
+        "tests/test_backbone_parity.py": "a0db2742f6924a37803c2587ca8b038373b36e78",
+        "tests/test_fm_checkpoints_load.py": "f26d483b367f9c47a78f7e8cc92d87654ca60ef0",
+        "tests/test_scorer_immutable.py": "faa061b409245bbf3585957efa508d15cf7dc3c5",
+        "tests/test_split_disjoint.py": "93d4f6f1df9b016ecdb0820e2e5c97fffc6a7ab4"
+      }
+    },
+    {
+      "stage": "resume_recovery",
+      "branch": "sprint-10v-replacement-recovery-export",
+      "git_commit": "d471e4ca175bbd65c1cb09559673f35dbdfe9111",
+      "git_bundle_sha256": "89010f4771d48a4b67050169d9092e8915140ee845e5a8436e49aa040f933245",
+      "required_ancestor": "f856c1acd6b9f646f66ef15bc31476b5f4ebab02",
+      "protected_git_objects": {
+        "configs": "58e1d496056a5485e001a9f279f7cab440311ea6",
+        "data": "f8218453bc0ba623b0043d860d8b3d25ffe90ede",
+        "locks": "0df8b4b5f502f59e41e3206dbd83a102ab9b7f9b",
+        "src/data": "ad81aa9720877978233fb52e02f5ac444e32c052",
+        "src/eval": "06feb6992463f15bf5eb8d38f6318acac4a7f739",
+        "src/models": "1fd2f60db4d3b95e5c51c77438d2b3727398d394",
+        "src/train": "db1ac3ff149473c80fb4718295afaed1e3913ba1",
+        "tests/test_backbone_parity.py": "a0db2742f6924a37803c2587ca8b038373b36e78",
+        "tests/test_fm_checkpoints_load.py": "f26d483b367f9c47a78f7e8cc92d87654ca60ef0",
+        "tests/test_scorer_immutable.py": "faa061b409245bbf3585957efa508d15cf7dc3c5",
+        "tests/test_split_disjoint.py": "93d4f6f1df9b016ecdb0820e2e5c97fffc6a7ab4"
+      }
+    },
+    {
+      "stage": "resume_recovery_lineage",
+      "branch": "sprint-10x-replacement-recovery-lineage",
+      "git_commit": "3808f4ab5f8aea8e6b552f7f2b100fd47adc919f",
+      "git_bundle_sha256": "5196efa552c6ec1fdf4204fe51d68a6669c638fd0caa344e5d36c440561ced92",
+      "required_ancestor": "f856c1acd6b9f646f66ef15bc31476b5f4ebab02",
+      "protected_git_objects": {
+        "configs": "58e1d496056a5485e001a9f279f7cab440311ea6",
+        "data": "f8218453bc0ba623b0043d860d8b3d25ffe90ede",
+        "locks": "0df8b4b5f502f59e41e3206dbd83a102ab9b7f9b",
+        "src/data": "ad81aa9720877978233fb52e02f5ac444e32c052",
+        "src/eval": "06feb6992463f15bf5eb8d38f6318acac4a7f739",
+        "src/models": "1fd2f60db4d3b95e5c51c77438d2b3727398d394",
+        "src/train": "db1ac3ff149473c80fb4718295afaed1e3913ba1",
+        "tests/test_backbone_parity.py": "a0db2742f6924a37803c2587ca8b038373b36e78",
+        "tests/test_fm_checkpoints_load.py": "f26d483b367f9c47a78f7e8cc92d87654ca60ef0",
+        "tests/test_scorer_immutable.py": "faa061b409245bbf3585957efa508d15cf7dc3c5",
+        "tests/test_split_disjoint.py": "93d4f6f1df9b016ecdb0820e2e5c97fffc6a7ab4"
+      }
+    },
+    {
+      "stage": "terminal_recovery",
+      "branch": "sprint-10ag-replacement-terminal-cohort",
+      "git_commit": "1ec7a68fb3b25f90c55ef74950e7b7045d509d80",
+      "git_bundle_sha256": "64541cecd79f81d3f247cede75f142ca8e8b46c4bce6bdb7d23f32f6a41a0440",
+      "required_ancestor": "3808f4ab5f8aea8e6b552f7f2b100fd47adc919f",
+      "protected_git_objects": {
+        "configs": "58e1d496056a5485e001a9f279f7cab440311ea6",
+        "data": "f8218453bc0ba623b0043d860d8b3d25ffe90ede",
+        "locks": "0df8b4b5f502f59e41e3206dbd83a102ab9b7f9b",
+        "src/data": "ad81aa9720877978233fb52e02f5ac444e32c052",
+        "src/eval": "69e5b30b6b5b45f56bd7fb08de561b2e3e486f85",
+        "src/models": "1fd2f60db4d3b95e5c51c77438d2b3727398d394",
+        "src/train": "8bb9d845735a07025e13352527c1a019c7450aca",
+        "tests/test_backbone_parity.py": "a0db2742f6924a37803c2587ca8b038373b36e78",
+        "tests/test_fm_checkpoints_load.py": "f26d483b367f9c47a78f7e8cc92d87654ca60ef0",
+        "tests/test_scorer_immutable.py": "faa061b409245bbf3585957efa508d15cf7dc3c5",
+        "tests/test_split_disjoint.py": "93d4f6f1df9b016ecdb0820e2e5c97fffc6a7ab4"
+      }
+    },
+    {
+      "stage": "test_scoring",
+      "branch": "sprint-10am-replacement-test-cohort",
+      "git_commit": "84133e1ea6a3e52bc20dbed19a1a1c5706f41518",
+      "git_bundle_sha256": "c552aa29c2ac29969488dabae99d8b719da85a705185e42ba65934f53edd6289",
+      "required_ancestor": "716f9267af594765e08211d00681414ee9fd8574",
+      "protected_git_objects": {
+        "configs": "58e1d496056a5485e001a9f279f7cab440311ea6",
+        "data": "f8218453bc0ba623b0043d860d8b3d25ffe90ede",
+        "locks": "0df8b4b5f502f59e41e3206dbd83a102ab9b7f9b",
+        "scripts/score_test_cohort.py": "4fd536f94979c6f67e68ecad794dfccf1f97c2cc",
+        "src/data": "ad81aa9720877978233fb52e02f5ac444e32c052",
+        "src/eval": "69e5b30b6b5b45f56bd7fb08de561b2e3e486f85",
+        "src/models": "1fd2f60db4d3b95e5c51c77438d2b3727398d394",
+        "src/train": "8bb9d845735a07025e13352527c1a019c7450aca",
+        "tests/test_backbone_parity.py": "a0db2742f6924a37803c2587ca8b038373b36e78",
+        "tests/test_fm_checkpoints_load.py": "f26d483b367f9c47a78f7e8cc92d87654ca60ef0",
+        "tests/test_scorer_immutable.py": "faa061b409245bbf3585957efa508d15cf7dc3c5",
+        "tests/test_split_disjoint.py": "93d4f6f1df9b016ecdb0820e2e5c97fffc6a7ab4"
+      }
+    },
+    {
+      "stage": "grid_finalization",
+      "branch": "sprint-10av-replacement-grid-cohort",
+      "git_commit": "9ce106a4957c4ccd5f3a3f5da0d69aff7efc6a7d",
+      "git_bundle_sha256": "1ea51c023e7fe022cb1698c99dc38e19e6e7da62397fa9d72f30053c5862977b",
+      "required_ancestor": "b36fffa0fed0af9868b6043b62a6fc9b25d63250",
+      "protected_git_objects": {
+        "configs": "58e1d496056a5485e001a9f279f7cab440311ea6",
+        "data": "f8218453bc0ba623b0043d860d8b3d25ffe90ede",
+        "locks": "0df8b4b5f502f59e41e3206dbd83a102ab9b7f9b",
+        "scripts/h100/campaign.py": "99eac0a777a950daa67b94e1a681af48c16572af",
+        "scripts/h100/cell.py": "493d6017fa4d2047d0c957f7c0cc6734237a1482",
+        "scripts/h100/resume_recovery.py": "a055118f1ca3669d773f392c7a4883edf6eb85bd",
+        "scripts/h100/terminal_recovery.py": "8a7c2fca2622a0977a73c9aa0650035bbd7a26e3",
+        "scripts/h100/test_recovery.py": "77de537802ad7c191b4de393143a99b1a2db94d2",
+        "scripts/score_test_cohort.py": "4fd536f94979c6f67e68ecad794dfccf1f97c2cc",
+        "src/analysis/curves.py": "3b0cec5646089ae7967bdaf324534f63b41fd175",
+        "src/data": "ad81aa9720877978233fb52e02f5ac444e32c052",
+        "src/eval": "69e5b30b6b5b45f56bd7fb08de561b2e3e486f85",
+        "src/models": "1fd2f60db4d3b95e5c51c77438d2b3727398d394",
+        "src/train": "8bb9d845735a07025e13352527c1a019c7450aca",
+        "tests/test_backbone_parity.py": "a0db2742f6924a37803c2587ca8b038373b36e78",
+        "tests/test_fm_checkpoints_load.py": "f26d483b367f9c47a78f7e8cc92d87654ca60ef0",
+        "tests/test_scorer_immutable.py": "faa061b409245bbf3585957efa508d15cf7dc3c5",
+        "tests/test_split_disjoint.py": "93d4f6f1df9b016ecdb0820e2e5c97fffc6a7ab4"
+      }
+    },
+    {
+      "stage": "final_verified_evaluation",
+      "branch": "sprint-10bf-replacement-final-acceptance",
+      "git_commit": "eabe977091991de064794ede6aeb85497116fcdb",
+      "git_bundle_sha256": "bf25355f0b42a36bf4d46818c934cd1bf57d20fa7c9938838a7d631d56d2beaa",
+      "required_ancestor": "9ce106a4957c4ccd5f3a3f5da0d69aff7efc6a7d",
+      "protected_git_objects": {},
+      "recovered": false
+    }
+  ]
+}

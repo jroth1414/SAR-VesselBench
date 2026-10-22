@@ -1,0 +1,184 @@
+# Excerpt of the full H100 training log for satdino-f100-s0.
+# Full log: 659082 lines, sha256 0137a2ba83c9e40e2db2b253e25513ceb659f47262f32bb730b51bba9c770309 (operator archive).
+# Private site paths are replaced by: /cluster-apps-redacted, /cluster-local-redacted/xview3-, /cluster-site-redacted.
+[rank: 0] Seed set to 0
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+💡 Tip: For seamless cloud logging and experiment tracking, try installing [litlogger](https://pypi.org/project/litlogger/) to enable LitLogger, which logs metrics and artifacts automatically to the Lightning Experiments platform.
+/cluster-site-redacted/jroth/envs/xview3-h100-fp32-dgx-a4af214a/lib/python3.11/site-packages/lightning/pytorch/trainer/configuration_validator.py:70: You defined a `validation_step` but have no `val_dataloader`. Skipping val loop.
+You are using a CUDA device ('NVIDIA H100 80GB HBM3') that has Tensor Cores. To properly utilize them, you should set `torch.set_float32_matmul_precision('medium' | 'high')` which will trade-off precision for performance. For more details, read https://pytorch.org/docs/stable/generated/torch.set_float32_matmul_precision.html#torch.set_float32_matmul_precision
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [5]
+
+  | Name     | Type        | Params | Mode  | FLOPs
+---------------------------------------------------------
+0 | backbone | ViTBackbone | 85.8 M | train | 0    
+1 | head     | HeatmapHead | 4.2 M  | train | 0    
+---------------------------------------------------------
+90.0 M    Trainable params
+0         Non-trainable params
+90.0 M    Total params
+359.987   Total estimated model params size (MB)
+288       Modules in train mode
+0         Modules in eval mode
+0         Total Flops
+SLURM auto-requeueing enabled. Setting signal handlers.
+/cluster-site-redacted/jroth/envs/xview3-h100-fp32-dgx-a4af214a/lib/python3.11/site-packages/lightning/pytorch/utilities/_pytree.py:21: `isinstance(treespec, LeafSpec)` is deprecated, use `isinstance(treespec, TreeSpec) and treespec.is_leaf()` instead.
+[satdino_b] matched=150 missing=0 unexpected=0
+
+Training: |          | 0/? [00:00<?, ?it/s]
+Training: |          | 0/? [00:00<?, ?it/s]
+Epoch 0:   0%|          | 0/6588 [00:00<?, ?it/s]
+Epoch 0:   0%|          | 1/6588 [00:02<4:57:45,  0.37it/s]
+Epoch 0:   0%|          | 1/6588 [00:02<4:57:49,  0.37it/s, v_num=rics, train_loss=190.0]
+Epoch 0:   0%|          | 2/6588 [00:02<2:34:56,  0.71it/s, v_num=rics, train_loss=190.0]
+Epoch 0:   0%|          | 2/6588 [00:03<2:45:04,  0.66it/s, v_num=rics, train_loss=54.10]
+Epoch 0:   0%|          | 3/6588 [00:03<1:54:10,  0.96it/s, v_num=rics, train_loss=54.10]
+Epoch 0:   0%|          | 3/6588 [00:03<2:00:45,  0.91it/s, v_num=rics, train_loss=33.00]
+Epoch 0:   0%|          | 4/6588 [00:03<1:33:24,  1.17it/s, v_num=rics, train_loss=33.00]
+Epoch 0:   0%|          | 4/6588 [00:03<1:38:32,  1.11it/s, v_num=rics, train_loss=21.80]
+Epoch 0:   0%|          | 5/6588 [00:03<1:21:05,  1.35it/s, v_num=rics, train_loss=21.80]
+Epoch 0:   0%|          | 5/6588 [00:03<1:25:12,  1.29it/s, v_num=rics, train_loss=8.890]
+Epoch 0:   0%|          | 6/6588 [00:03<1:12:52,  1.51it/s, v_num=rics, train_loss=8.890]
+Epoch 0:   0%|          | 6/6588 [00:04<1:16:17,  1.44it/s, v_num=rics, train_loss=8.890]
+Epoch 0:   0%|          | 7/6588 [00:04<1:07:04,  1.64it/s, v_num=rics, train_loss=8.890]
+Epoch 0:   0%|          | 7/6588 [00:04<1:09:57,  1.57it/s, v_num=rics, train_loss=7.950]
+Epoch 0:   0%|          | 8/6588 [00:04<1:02:40,  1.75it/s, v_num=rics, train_loss=7.950]
+Epoch 0:   0%|          | 8/6588 [00:04<1:05:13,  1.68it/s, v_num=rics, train_loss=5.560]
+Epoch 0:   0%|          | 9/6588 [00:04<59:14,  1.85it/s, v_num=rics, train_loss=5.560]  
+Epoch 0:   0%|          | 9/6588 [00:05<1:01:31,  1.78it/s, v_num=rics, train_loss=3.820]
+Epoch 0:   0%|          | 10/6588 [00:05<56:30,  1.94it/s, v_num=rics, train_loss=3.820] 
+Epoch 0:   0%|          | 10/6588 [00:05<58:33,  1.87it/s, v_num=rics, train_loss=5.230]
+Epoch 0:   0%|          | 11/6588 [00:05<54:22,  2.02it/s, v_num=rics, train_loss=5.230]
+Epoch 0:   0%|          | 11/6588 [00:05<56:10,  1.95it/s, v_num=rics, train_loss=4.090]
+Epoch 0:   0%|          | 12/6588 [00:05<52:29,  2.09it/s, v_num=rics, train_loss=4.090]
+Epoch 0:   0%|          | 12/6588 [00:05<54:09,  2.02it/s, v_num=rics, train_loss=3.440]
+Epoch 0:   0%|          | 13/6588 [00:06<50:53,  2.15it/s, v_num=rics, train_loss=3.440]
+Epoch 0:   0%|          | 13/6588 [00:06<52:26,  2.09it/s, v_num=rics, train_loss=3.830]
+Epoch 0:   0%|          | 14/6588 [00:06<49:32,  2.21it/s, v_num=rics, train_loss=3.830]
+Epoch 0:   0%|          | 14/6588 [00:06<50:58,  2.15it/s, v_num=rics, train_loss=3.470]
+Epoch 0:   0%|          | 15/6588 [00:06<48:21,  2.27it/s, v_num=rics, train_loss=3.470]
+Epoch 0:   0%|          | 15/6588 [00:06<49:42,  2.20it/s, v_num=rics, train_loss=3.320]
+Epoch 0:   0%|          | 16/6588 [00:06<47:19,  2.31it/s, v_num=rics, train_loss=3.320]
+Epoch 0:   0%|          | 16/6588 [00:07<48:34,  2.25it/s, v_num=rics, train_loss=3.310]
+Epoch 0:   0%|          | 17/6588 [00:07<46:23,  2.36it/s, v_num=rics, train_loss=3.310]
+[... 658902 lines elided ...]
+Epoch 49: 100%|█████████▉| 6578/6588 [31:53<00:02,  3.44it/s, v_num=rics, train_loss=0.000732, dev_f1=0.922]
+Epoch 49: 100%|█████████▉| 6579/6588 [31:53<00:02,  3.44it/s, v_num=rics, train_loss=0.000732, dev_f1=0.922]
+Epoch 49: 100%|█████████▉| 6579/6588 [31:53<00:02,  3.44it/s, v_num=rics, train_loss=0.00515, dev_f1=0.922] 
+Epoch 49: 100%|█████████▉| 6580/6588 [31:53<00:02,  3.44it/s, v_num=rics, train_loss=0.00515, dev_f1=0.922]
+Epoch 49: 100%|█████████▉| 6580/6588 [31:54<00:02,  3.44it/s, v_num=rics, train_loss=0.265, dev_f1=0.922]  
+Epoch 49: 100%|█████████▉| 6581/6588 [31:54<00:02,  3.44it/s, v_num=rics, train_loss=0.265, dev_f1=0.922]
+Epoch 49: 100%|█████████▉| 6581/6588 [31:54<00:02,  3.44it/s, v_num=rics, train_loss=0.000228, dev_f1=0.922]
+Epoch 49: 100%|█████████▉| 6582/6588 [31:54<00:01,  3.44it/s, v_num=rics, train_loss=0.000228, dev_f1=0.922]
+Epoch 49: 100%|█████████▉| 6582/6588 [31:54<00:01,  3.44it/s, v_num=rics, train_loss=0.000493, dev_f1=0.922]
+Epoch 49: 100%|█████████▉| 6583/6588 [31:54<00:01,  3.44it/s, v_num=rics, train_loss=0.000493, dev_f1=0.922]
+Epoch 49: 100%|█████████▉| 6583/6588 [31:54<00:01,  3.44it/s, v_num=rics, train_loss=1.220, dev_f1=0.922]   
+Epoch 49: 100%|█████████▉| 6584/6588 [31:54<00:01,  3.44it/s, v_num=rics, train_loss=1.220, dev_f1=0.922]
+Epoch 49: 100%|█████████▉| 6584/6588 [31:55<00:01,  3.44it/s, v_num=rics, train_loss=0.000545, dev_f1=0.922]
+Epoch 49: 100%|█████████▉| 6585/6588 [31:55<00:00,  3.44it/s, v_num=rics, train_loss=0.000545, dev_f1=0.922]
+Epoch 49: 100%|█████████▉| 6585/6588 [31:55<00:00,  3.44it/s, v_num=rics, train_loss=0.000549, dev_f1=0.922]
+Epoch 49: 100%|█████████▉| 6586/6588 [31:55<00:00,  3.44it/s, v_num=rics, train_loss=0.000549, dev_f1=0.922]
+Epoch 49: 100%|█████████▉| 6586/6588 [31:55<00:00,  3.44it/s, v_num=rics, train_loss=0.00905, dev_f1=0.922] 
+Epoch 49: 100%|█████████▉| 6587/6588 [31:55<00:00,  3.44it/s, v_num=rics, train_loss=0.00905, dev_f1=0.922]
+Epoch 49: 100%|█████████▉| 6587/6588 [31:56<00:00,  3.44it/s, v_num=rics, train_loss=0.000831, dev_f1=0.922]
+Epoch 49: 100%|██████████| 6588/6588 [31:56<00:00,  3.44it/s, v_num=rics, train_loss=0.000831, dev_f1=0.922]
+Epoch 49: 100%|██████████| 6588/6588 [31:56<00:00,  3.44it/s, v_num=rics, train_loss=0.00136, dev_f1=0.922] [dev eval, checkpoint epoch 49] {'f1': 0.921904761904762, 'precision': 0.9080675422138836, 'recall': 0.9361702127659575, 'tp': 484, 'fp': 49, 'fn': 33, 'ignored_predictions': 83, 'threshold': 0.88720703125, 'n_candidates': 743, 'epoch': 49}
+
+Epoch 49: 100%|██████████| 6588/6588 [38:28<00:00,  2.85it/s, v_num=rics, train_loss=0.00136, dev_f1=0.922]`Trainer.fit` stopped: `max_epochs=50` reached.
+
+Epoch 49: 100%|██████████| 6588/6588 [38:28<00:00,  2.85it/s, v_num=rics, train_loss=0.00136, dev_f1=0.922]
+{
+ "result_schema": 2,
+ "exp_id": "satdino-f100-s0",
+ "git_sha": "06b2e61dbb85dc5fa5a5d5853f9ba15f6a87dca9",
+ "detector_sha256": "c42ae65bf9045cc93f0d73ae1437b2f6a1300670cb49d8e93f83a39d58a62a12",
+ "precision": "32-true",
+ "micro_batch": 16,
+ "gradient_accumulation": 1,
+ "effective_batch": 16,
+ "epochs_run": 50,
+ "best_dev_f1": 0.9222011385199242,
+ "best_dev": {
+  "f1": 0.9222011385199242,
+  "precision": 0.9050279329608939,
+  "recall": 0.9400386847195358,
+  "tp": 486,
+  "fp": 51,
+  "fn": 31,
+  "ignored_predictions": 83,
+  "threshold": 0.89697265625,
+  "n_candidates": 747,
+  "epoch": 44
+ },
+ "best_checkpoint": {
+  "relative_path": "checkpoints/best.ckpt",
+  "sha256": "3b2fa9a3f8879219140dbd454bef2b27d3685c2c21d6460087b861252a194b35",
+  "epoch": 44
+ },
+ "last_dev": {
+  "f1": 0.921904761904762,
+  "precision": 0.9080675422138836,
+  "recall": 0.9361702127659575,
+  "tp": 484,
+  "fp": 49,
+  "fn": 33,
+  "ignored_predictions": 83,
+  "threshold": 0.88720703125,
+  "n_candidates": 743,
+  "epoch": 49
+ },
+ "train_loss": 0.0013554557226598263,
+ "h100_runtime_contract": {
+  "schema": 1,
+  "status": "verified",
+  "pre_trainer": {
+   "schema": 1,
+   "status": "verified",
+   "stage": "pre-trainer",
+   "precision": "32-true",
+   "devices": 1,
+   "micro_batch": 16,
+   "gradient_accumulation": 1,
+   "effective_batch": 16,
+   "strict_fp32": {
+    "cuda_matmul_fp32_precision": "ieee",
+    "cudnn_conv_fp32_precision": "ieee",
+    "cudnn_rnn_fp32_precision": "ieee"
+   },
+   "autocast": {
+    "global": false,
+    "cuda": false,
+    "cpu": false
+   },
+   "process": {
+    "WORLD_SIZE": "unset",
+    "SLURM_NTASKS": "1",
+    "effective_world_size": 1
+   },
+   "model": {
+    "floating_parameter_count": 160,
+    "floating_parameter_dtypes": [
+     "torch.float32"
+    ]
+   }
+  },
+  "resolved_trainer": {
+   "accelerator": "lightning.pytorch.accelerators.cuda.CUDAAccelerator",
+   "precision_plugin": "lightning.pytorch.plugins.precision.precision.Precision",
+   "precision": "32-true",
+   "gradient_scaler": null,
+   "strategy": "lightning.pytorch.strategies.single_device.SingleDeviceStrategy",
+   "root_device_type": "cuda",
+   "root_device_index": 0,
+   "num_devices": 1,
+   "world_size": 1,
+   "device_ids": [
+    0
+   ],
+   "gradient_accumulation": 1
+  }
+ }
+}
+[2026-10-01T18:47:35] satdino-f100-s0: scoring frozen TEST with cohort-bound best-dev threshold
+[2026-10-01T19:00:31] satdino-f100-s0: test F1 0.8567; near-shore F1 0.2500 on 2 GT
+[2026-10-01T19:00:31] scored 1 runs
