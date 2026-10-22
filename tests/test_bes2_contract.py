@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 import math
+import subprocess
 from pathlib import Path
 
 import pytest
 
 from src.analysis.bes2_contract import (
+    DEV_BASE_GIT_SHA,
     DIAGNOSTIC_FRACTIONS,
     FROZEN_COMPARATOR_EXPERIMENTS,
     H100_CAMPAIGN_GIT_SHA,
@@ -270,6 +272,15 @@ def test_final_consumption_gate_rejects_per_cell_final_results(tmp_path):
 
 def test_approved_dev_base_training_path_is_byte_identical_to_h100_campaign_revision():
     repo = Path(__file__).resolve().parents[1]
+    # The check reads two development-history commits by id. The public
+    # repository ships one release commit, so the check only runs in a clone
+    # that carries that history.
+    for sha in (DEV_BASE_GIT_SHA, H100_CAMPAIGN_GIT_SHA):
+        present = subprocess.run(
+            ["git", "-C", str(repo), "cat-file", "-e", f"{sha}^{{commit}}"], capture_output=True
+        ).returncode == 0
+        if not present:
+            pytest.skip(f"needs development-history commit {sha[:7]}, absent from the public history")
     # Once Sprint 10a is merged, the dev ref necessarily advances.  The
     # diagnostic contract remains bound to the approved pre-sprint dev object,
     # which is also what the Judy audit verifies at runtime.
